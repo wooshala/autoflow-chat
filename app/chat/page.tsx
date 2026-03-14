@@ -89,11 +89,20 @@ export default function ChatPage() {
         image_url = up.image_url;
         storage_path = up.storage_path;
       }
-      const desc = text.trim() || `${issueType} 문제 발생`;
-      const res = await fetch('/api/maintenance/create', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room_no: roomNo, issue_type: issueType, description: desc, created_by: user.id, image_url, storage_path })
-      });
+   const desc = text.trim() || `${issueType} 문제 발생`;
+
+const res = await fetch('/api/maintenance/create', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    room_no: roomNo,
+    issue_type: issueType,
+    description: desc,
+    created_by: user.id,
+    image_url: null,
+    storage_path
+  })
+});
       const data = await res.json();
       if (data.chat_message) setMessages((prev) => [...prev, data.chat_message]);
       setShowMaintenance(false);
