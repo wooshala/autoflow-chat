@@ -56,20 +56,33 @@ export default function ChatPage() {
         image_url = up.image_url;
         image_storage_path = up.storage_path;
       }
-      const res = await fetch('/api/chat/send', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          message: text.trim() || '사진',
-          message_type: photo ? 'image' : 'text',
-          room_no: roomNo || null,
-          image_url,
-          image_storage_path
-        })
-      });
-      const data = await res.json();
-      setMessages((prev) => [...prev, data.message]);
-      resetComposer();
+const res = await fetch('/api/chat/send', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    user_id: user.id,
+    message: text.trim() || '사진',
+    message_type: photo ? 'image' : 'text',
+    room_no: roomNo || null,
+    image_url,
+    image_storage_path
+  })
+});
+
+const data = await res.json();
+
+if (!res.ok) {
+  alert(data?.error || '채팅 전송 실패');
+  return;
+}
+
+if (!data?.message) {
+  alert('채팅 응답이 비정상입니다.');
+  return;
+}
+
+setMessages((prev) => [...prev, data.message]);
+resetComposer();
     } finally {
       setSubmitting(false);
     }
@@ -103,10 +116,19 @@ const res = await fetch('/api/maintenance/create', {
     storage_path
   })
 });
-      const data = await res.json();
-      if (data.chat_message) setMessages((prev) => [...prev, data.chat_message]);
-      setShowMaintenance(false);
-      resetComposer();
+const data = await res.json();
+
+if (!res.ok) {
+  alert(data?.error || '유지보수 등록 실패');
+  return;
+}
+
+if (data?.chat_message) {
+  setMessages((prev) => [...prev, data.chat_message]);
+}
+
+setShowMaintenance(false);
+resetComposer();
     } finally {
       setSubmitting(false);
     }
