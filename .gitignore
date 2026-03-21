@@ -2,3 +2,12 @@ node_modules/
 .next/ 
 .env 
 .env.local 
+
+# Supabase CLI / local temp
+supabase/.temp/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Windows
+desktop.ini

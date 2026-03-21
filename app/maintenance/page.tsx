@@ -13,8 +13,50 @@ export default function MaintenancePage() {
   const [tab, setTab] = useState<TicketStatus | 'all'>('all');
 
   useEffect(() => {
-    fetch(`/api/maintenance/list${tab === 'all' ? '' : `?status=${tab}`}`).then((r) => r.json()).then((d) => setTickets(d.tickets || []));
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(
+          `/api/maintenance/list${tab === 'all' ? '' : `?status=${tab}`}`
+        );
+
+        if (!res.ok) {
+          if (!cancelled) setTickets([]);
+          return;
+        }
+
+        const text = await res.text();
+        if (!text) {
+          if (!cancelled) setTickets([]);
+          return;
+        }
+
+        const data = JSON.parse(text);
+        if (!cancelled) setTickets(data?.tickets || []);
+      } catch {
+        if (!cancelled) setTickets([]);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [tab]);
+
+  useEffect(() => {
+    const uncovered = Array.from(
+      new Set(
+        (tickets || [])
+          .map((t: any) => String(t?.issue_type || ''))
+          .filter((v) => v && !(v in ISSUE_UI))
+      )
+    );
+    if (uncovered.length > 0) {
+      console.warn('[maintenance] ISSUE_UI에 없는 issue_type 값:', uncovered);
+    }
+  }, [tickets]);
 
   return (
     <main className="flex h-screen flex-col bg-gray-100">
@@ -32,10 +74,13 @@ export default function MaintenancePage() {
       </header>
       <section className="flex-1 overflow-y-auto p-3 space-y-3">
         {tickets.map((ticket) => (
+          (() => {
+            const issue = (ISSUE_UI as any)[(ticket as any).issue_type] || ISSUE_UI['기타'];
+            return (
           <button key={ticket.id} onClick={() => router.push(`/maintenance/${ticket.id}`)} className="card block w-full overflow-hidden text-left">
             <div className="flex items-center gap-2 px-4 pt-4">
               <span className="rounded-xl bg-gray-900 px-3 py-1 text-white font-extrabold">{ticket.room_no}</span>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${ISSUE_UI[ticket.issue_type].badge}`}>{ISSUE_UI[ticket.issue_type].emoji} {ticket.issue_type}</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${issue.badge}`}>{issue.emoji} {String((ticket as any).issue_type || '기타')}</span>
               <span className={`ml-auto rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_UI[ticket.status].badge}`}>{STATUS_UI[ticket.status].label}</span>
             </div>
             <div className="px-4 py-2 text-sm font-medium text-gray-800">{ticket.description}</div>
@@ -45,6 +90,8 @@ export default function MaintenancePage() {
               <span>{new Date(ticket.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           </button>
+            );
+          })()
         ))}
       </section>
       <Navigation active="maintenance" />

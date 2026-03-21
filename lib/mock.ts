@@ -1,13 +1,15 @@
 import { ChatMessage, MaintenancePhoto, MaintenanceTicket, User } from '@/lib/types';
 
+export type MockStore = {
+  users: User[];
+  messages: ChatMessage[];
+  tickets: MaintenanceTicket[];
+  photos: MaintenancePhoto[];
+};
+
 declare global {
   // eslint-disable-next-line no-var
-  var __autoflowMockStore: {
-    users: User[];
-    messages: ChatMessage[];
-    tickets: MaintenanceTicket[];
-    photos: MaintenancePhoto[];
-  } | undefined;
+  var __autoflowMockStore: MockStore | undefined;
 }
 
 function nowMinus(minutes: number) {
@@ -16,7 +18,7 @@ function nowMinus(minutes: number) {
 
 function seedStore() {
   const users: User[] = [
-    { id: 'u-admin', name: '김관리자', role: 'admin', language: 'ko', pin: '0000', created_at: nowMinus(600) },
+    { id: '61622137-1e31-4e58-8c32-6c6ac8d1247f', name: '김관리자', role: 'admin', language: 'ko', pin: '0000', created_at: nowMinus(600) },
     { id: 'u-front', name: '이프론트', role: 'front', language: 'ko', pin: '1111', created_at: nowMinus(590) },
     { id: 'u-vn', name: 'Nguyen Van A', role: 'cleaning', language: 'vi', pin: '2222', created_at: nowMinus(580) },
     { id: 'u-ru', name: 'Anna Ivanova', role: 'cleaning', language: 'ru', pin: '3333', created_at: nowMinus(570) }
@@ -70,9 +72,12 @@ function seedStore() {
   return { users, messages, tickets: [ticket2, ticket1], photos: [photo1, photo2] };
 }
 
-export function getMockStore() {
-  if (!global.__autoflowMockStore) {
-    global.__autoflowMockStore = seedStore();
-  }
-  return global.__autoflowMockStore;
+export function getMockStore(): MockStore {
+  // production에서는 mock store 사용 안함
+  return {
+    users: [],
+    messages: [],
+    tickets: [],
+    photos: []
+  };
 }

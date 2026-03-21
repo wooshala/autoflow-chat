@@ -18,8 +18,45 @@ create table if not exists chat_messages (
   original_lang text,
   translated_text jsonb,
   ticket_id uuid,
+  ai_action text,
   created_at timestamptz not null default now()
 );
+
+alter table if exists chat_messages
+  add column if not exists ai_action text;
+
+alter table if exists chat_messages
+  add column if not exists duplicate_ticket_id uuid;
+
+alter table if exists chat_messages
+  add column if not exists sender_side text;
+
+alter table if exists chat_messages
+  add column if not exists is_deleted boolean not null default false;
+
+alter table if exists chat_messages
+  add column if not exists deleted_at timestamptz;
+
+create table if not exists chat_rooms (
+  id uuid primary key default gen_random_uuid(),
+  name text not null default '기본 대화방',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists chat_room_participants (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references chat_rooms(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  role text not null default 'member' check (role in ('owner', 'admin', 'member')),
+  status text not null default 'active' check (status in ('active', 'removed')),
+  joined_at timestamptz not null default now(),
+  removed_at timestamptz,
+  unique (room_id, user_id)
+);
+
+create index if not exists chat_room_participants_room_active_idx
+  on chat_room_participants (room_id)
+  where status = 'active';
 
 create table if not exists maintenance_tickets (
   id uuid primary key default gen_random_uuid(),

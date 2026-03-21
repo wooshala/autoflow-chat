@@ -3,9 +3,11 @@ import { IS_MOCK } from '@/lib/env';
 
 export async function uploadImage(file: File) {
   if (IS_MOCK || !supabaseAdmin) {
+    const seed = `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.name.replace(/\s+/g, '-')}`;
     return {
-      image_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=800&h=600&fit=crop',
-      storage_path: `mock/${Date.now()}-${file.name.replace(/\s+/g, '-')}`
+      // mock 모드에서도 업로드마다 URL이 달라져 캐시/고정 이미지 문제를 방지
+      image_url: `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/600`,
+      storage_path: `mock/${seed}`
     };
   }
 

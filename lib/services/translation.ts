@@ -18,24 +18,32 @@ export async function detectAndTranslate(text: string): Promise<{ detected_lang:
   if (!openai) return { detected_lang: fallbackLang, translations: fallback };
 
   try {
-    const response = await openai.chat.completions.create({
-      model: MODEL,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content: 'Detect the language and translate the user text into ko, vi, ru, en. Return JSON with keys detected_lang and translations where translations is an object with keys ko, vi, ru, en.'
-        },
-        { role: 'user', content: text }
-      ]
-    });
+    const response = await Promise.race([
+      openai.chat.completions.create({
+        model: MODEL,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: 'Detect the language and translate the user text into ko, vi, ru, en. Return JSON with keys detected_lang and translations where translations is an object with keys ko, vi, ru, en.'
+          },
+          { role: 'user', content: text }
+        ]
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('TRANSLATION_TIMEOUT')), 500);
+      })
+    ]);
     const raw = response.choices[0]?.message?.content || '{}';
     const parsed = JSON.parse(raw) as { detected_lang?: string; translations?: TranslatedText };
     return {
       detected_lang: parsed.detected_lang || fallbackLang,
       translations: { ...fallback, ...(parsed.translations || {}) }
     };
-  } catch {
+  } catch (error: any) {
+    if (String(error?.message || '').includes('TRANSLATION_TIMEOUT')) {
+      console.log('[TRANSLATION_TIMEOUT]', { preview: text.slice(0, 40) });
+    }
     return { detected_lang: fallbackLang, translations: fallback };
   }
 }

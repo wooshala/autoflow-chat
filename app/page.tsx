@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type LoginUser = { id: string; name: string; role: string; language: string; avatar: string; colors: string; pin: string };
 
 const USERS: LoginUser[] = [
-  { id: 'u-admin', name: '김관리자', role: '매니저', language: '🇰🇷 한국어', avatar: '👑', colors: 'from-yellow-400 to-amber-500', pin: '0000' },
+  { id: '61622137-1e31-4e58-8c32-6c6ac8d1247f', name: '김관리자', role: '매니저', language: '🇰🇷 한국어', avatar: '👑', colors: 'from-yellow-400 to-amber-500', pin: '0000' },
   { id: 'u-front', name: '이프론트', role: '프론트 직원', language: '🇰🇷 한국어', avatar: '🧑‍💼', colors: 'from-emerald-400 to-teal-500', pin: '1111' },
   { id: 'u-vn', name: 'Nguyen Van A', role: '청소 직원', language: '🇻🇳 Tiếng Việt', avatar: '🧹', colors: 'from-violet-400 to-indigo-500', pin: '2222' },
   { id: 'u-ru', name: 'Anna Ivanova', role: '청소 직원', language: '🇷🇺 Русский', avatar: '🧹', colors: 'from-rose-400 to-red-500', pin: '3333' }
@@ -20,6 +20,38 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   const dots = useMemo(() => [0,1,2,3], []);
+
+  useEffect(() => {
+    console.log('[LOGIN_SCREEN_MOUNT]', { path: '/' });
+    console.log('[AUTH_INIT]', { source: 'localStorage.autoflow_user' });
+    const raw = localStorage.getItem('autoflow_user');
+    if (!raw) {
+      console.log('[AUTH_USER]', { hasUser: false });
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      console.log('[AUTH_USER]', { hasUser: true, id: parsed?.id || null });
+    } catch {
+      localStorage.removeItem('autoflow_user');
+      console.log('[AUTH_USER]', { hasUser: false, reason: 'invalid_json_removed' });
+    }
+  }, []);
+
+  useEffect(() => {
+    console.log('[PIN_RENDER_CONDITION]', {
+      selectedUser: selected?.id || null,
+      showPinPad: Boolean(selected)
+    });
+  }, [selected]);
+
+  function resetSession() {
+    localStorage.removeItem('autoflow_user');
+    setSelected(null);
+    setPin('');
+    setError('');
+    console.log('[AUTH_USER]', { hasUser: false, reason: 'manual_reset' });
+  }
 
   async function inputDigit(digit: string) {
     if (!selected || loading || pin.length >= 4) return;
@@ -39,6 +71,7 @@ export default function LoginPage() {
           setPin('');
         } else {
           localStorage.setItem('autoflow_user', JSON.stringify(data.user));
+          console.log('[LOGIN_REDIRECT]', { to: '/chat', userId: data?.user?.id || null });
           router.push('/chat');
         }
       } finally {
@@ -54,6 +87,7 @@ export default function LoginPage() {
           <div className="text-5xl mb-2">🏨</div>
           <h1 className="text-3xl font-extrabold">AutoFlow</h1>
           <p className="text-blue-200 text-sm mt-1">채팅 + 유지보수 기록 MVP</p>
+          <button onClick={resetSession} className="mt-3 text-xs underline text-blue-100">세션 초기화</button>
         </div>
 
         {!selected ? (
