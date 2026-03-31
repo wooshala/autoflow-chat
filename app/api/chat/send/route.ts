@@ -4,8 +4,39 @@ import { uploadImage } from '@/lib/services/upload';
 import { mapAiIssueTypeToKo, parseMessage } from '@/lib/aiParser';
 import { createTicket, listTickets } from '@/lib/services/maintenance';
 import { ChatMessage, IssueType } from '@/lib/types';
+import { supabaseAdmin } from '@/lib/supabase';
 
 type AutoTicketSkipReason = 'duplicate' | 'not_ticketable' | 'no_room' | 'ai_error';
+
+function urlHost(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    return new URL(raw).host;
+  } catch {
+    return null;
+  }
+}
+
+function getAdminChosenUrlHost(): string | null {
+  const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || null;
+  const primaryUrl = process.env.SUPABASE_PRIMARY_URL || null;
+  const chosenAdminUrl = primaryUrl || publicUrl;
+  return urlHost(chosenAdminUrl);
+}
+
+function logSupabaseEnvCtx(tag: string) {
+  const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || null;
+  const primaryUrl = process.env.SUPABASE_PRIMARY_URL || null;
+  const chosenAdminUrl = primaryUrl || publicUrl;
+  console.log(tag, {
+    public_url_host: urlHost(publicUrl),
+    primary_url_host: urlHost(primaryUrl),
+    admin_chosen_url_host: urlHost(chosenAdminUrl),
+    has_primary_url_env: Boolean(primaryUrl),
+    has_service_role_key_env: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    has_anon_key_env: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  });
+}
 
 function extractRoom(message: string) {
   const match = message.match(/\d{3,4}/);
@@ -240,6 +271,7 @@ async function runAiPostProcess(input: {
 export async function POST(req: NextRequest) {
   const requestStarted = Date.now();
   console.log('[CHAT_SEND_START]');
+  logSupabaseEnvCtx('[DIAG_SUPABASE_CTX_SEND]');
   try {
     const formData = await req.formData();
 
@@ -314,6 +346,64 @@ export async function POST(req: NextRequest) {
       image_url: image_url || null,
       image_storage_path: image_storage_path || null
     });
+
+    // DB time probe (diagnostic only)
+    try {
+      const { data, error } = await supabaseAdmin!.rpc('diag_db_now');
+      console.log('[DB_NOW_SEND]', {
+        db_now: data ?? null,
+        admin_chosen_url_host: getAdminChosenUrlHost(),
+        message_id: saved.id,
+        ok: !error,
+        error: error ? (error as any).message || String(error) : null
+      });
+    } catch (e: any) {
+      console.log('[DB_NOW_SEND]', {
+        db_now: null,
+        admin_chosen_url_host: getAdminChosenUrlHost(),
+        message_id: saved.id,
+        ok: false,
+        error: e?.message || String(e)
+      });
+    }
+    console.log('[SEND_ROW_PERSISTED_KEYS]', {
+      id: saved.id,
+      created_at: saved.created_at,
+      user_id: saved.user_id,
+      room_no: saved.room_no ?? null,
+      ticket_id: saved.ticket_id ?? null,
+      message_type: saved.message_type,
+      sender_side: saved.sender_side ?? null,
+      duplicate_ticket_id: saved.duplicate_ticket_id ?? null,
+      ai_action: saved.ai_action ?? null,
+      note: 'no conversation_id in schema; scope is global chat_messages + room_no'
+    });
+
+    // Diagnostics only: allow list route to probe the exact id next.
+    (globalThis as any).__autoflowLastSentChatMessage = {
+      id: saved.id,
+      created_at: saved.created_at,
+      at_ms: Date.now()
+    };
+    console.log('[DIAG_LAST_SENT_MESSAGE_SET]', {
+      ok: true,
+      message_id: saved.id,
+      created_at: saved.created_at
+    });
+
+    // Temporary defense: keep a small in-memory buffer of recently saved messages (server-side source of truth)
+    // so list responses can be patched when list reads are stale.
+    try {
+      const key = '__autoflowRecentSavedChatMessages';
+      const existing = (globalThis as any)[key] as { at_ms: number; message: any }[] | undefined;
+      const next = Array.isArray(existing) ? [...existing] : [];
+      next.push({ at_ms: Date.now(), message: saved });
+      // keep last 20
+      (globalThis as any)[key] = next.slice(-20);
+      console.log('[DIAG_RECENT_SAVED_BUFFER]', { ok: true, size: (globalThis as any)[key].length });
+    } catch (e: any) {
+      console.log('[DIAG_RECENT_SAVED_BUFFER]', { ok: false, error: e?.message || String(e) });
+    }
     console.log('[CHAT_SAVE_ONLY_DONE]', {
       message_id: saved.id,
       db_insert_ms: Date.now() - insertStarted

@@ -33,11 +33,20 @@ export default function RoomParticipantsPanel({ roomId }: Props) {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         const msg = typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`;
-        throw new Error(msg);
+        console.warn('[PARTICIPANTS_LOAD_FAILED]', {
+          ok: false,
+          status: res.status,
+          message: msg,
+          room_id: id
+        });
+        setParticipants([]);
+        setError(msg);
+        return;
       }
       const data = (await res.json()) as ChatRoomParticipantListItem[];
       setParticipants(Array.isArray(data) ? data : []);
     } catch (e) {
+      console.warn('[PARTICIPANTS_LOAD_FAILED]', e);
       setError(e instanceof Error ? e.message : '불러오기 실패');
       setParticipants([]);
     } finally {

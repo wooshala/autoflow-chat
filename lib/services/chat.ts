@@ -19,7 +19,9 @@ export async function listChatMessages(limit = 50): Promise<ChatMessage[]> {
   console.log('[CHAT_LIST_QUERY_ORDER]', {
     scope: 'all_messages',
     order: 'created_at_desc',
-    limit
+    limit,
+    filters: 'none (entire chat_messages)',
+    limit_applies_after_order: true
   });
   const { data, error } = await supabaseAdmin
     .from('chat_messages')

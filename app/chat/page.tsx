@@ -9,6 +9,10 @@ import RoomParticipantsPanel from '@/components/RoomParticipantsPanel';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_LIST_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function sortMessagesAsc(items: ChatMessage[]): ChatMessage[] {
   return [...items].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
 }
@@ -37,9 +41,19 @@ export default function ChatPage() {
   const realtimeConnectedRef = useRef(false);
   const isMountedRef = useRef(false);
   const isLoadingRef = useRef(false);
+  const lastLoadSourceRef = useRef<string | null>(null);
+  const initialRetryCountRef = useRef(0);
+  const initialAttemptIdRef = useRef(0);
   const pollIntervalRef = useRef<number | null>(null);
   const pollingStartedRef = useRef(false);
   const lastRealtimeActivityAtRef = useRef(Date.now());
+  /** full_table 성공 후에만 갱신되는 안전 since (stale since/delta-only 방지) */
+  const safeSinceRef = useRef<string | null>(null);
+  const hasSuccessfulFullLoadRef = useRef(false);
+  /** BFCache/visibility restore 등에서 다음 watchdog은 full_table 강제 */
+  const forceFullReloadRef = useRef(false);
+  const lastRestoreFullLoadAtRef = useRef(0);
+  const lastDoubleFullLoadAtRef = useRef(0);
   /** INSERT postgres_changes만 기록 — SUBSCRIBED/UPDATE와 구분해 push 실패 확정용 */
   const lastRealtimeInsertPushAtRef = useRef<number | null>(null);
   /** 동일 since로 delta가 연속 0건일 때 백오프 (임시 안전망 과호출 방지) */
@@ -80,11 +94,15 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    console.log('[AUTH_INIT]', { source: 'chat/localStorage.autoflow_user' });
     const raw = localStorage.getItem('autoflow_user');
     if (!raw) {
-      console.log('[AUTH_USER]', { hasUser: false, location: '/chat' });
-      console.log('[LOGIN_REDIRECT]', { from: '/chat', to: '/' });
+      console.log('[LOGIN_REDIRECT]', {
+        from: '/chat',
+        to: '/',
+        reason: 'missing_autoflow_user',
+        has_mounted: isMountedRef.current,
+        last_load_source: lastLoadSourceRef.current
+      });
       router.push('/');
       return;
     }
@@ -92,16 +110,26 @@ export default function ChatPage() {
       const parsed = JSON.parse(raw) as User | null;
       if (!parsed?.id) {
         localStorage.removeItem('autoflow_user');
-        console.log('[AUTH_USER]', { hasUser: false, location: '/chat', reason: 'missing_user_id' });
+        console.log('[LOGIN_REDIRECT]', {
+          from: '/chat',
+          to: '/',
+          reason: 'missing_user_id',
+          has_mounted: isMountedRef.current,
+          last_load_source: lastLoadSourceRef.current
+        });
         router.push('/');
         return;
       }
       setUser(parsed);
-      console.log('[AUTH_USER]', { hasUser: true, location: '/chat', id: parsed.id });
     } catch {
       localStorage.removeItem('autoflow_user');
-      console.log('[AUTH_USER]', { hasUser: false, location: '/chat', reason: 'invalid_json_removed' });
-      console.log('[LOGIN_REDIRECT]', { from: '/chat', to: '/' });
+      console.log('[LOGIN_REDIRECT]', {
+        from: '/chat',
+        to: '/',
+        reason: 'invalid_json_removed',
+        has_mounted: isMountedRef.current,
+        last_load_source: lastLoadSourceRef.current
+      });
       router.push('/');
     }
   }, [router]);
@@ -110,14 +138,41 @@ export default function ChatPage() {
     messagesRef.current = messages;
   }, [messages]);
 
-  async function load(source: string = 'manual', opts?: { since?: string }) {
-    if (!isMountedRef.current) return;
-    if (isLoadingRef.current) return;
+  async function load(
+    source: string = 'manual',
+    opts?: { since?: string; mode?: 'full' | 'delta' }
+  ): Promise<{ ok: boolean; count: number; maxCreatedAt: string | null }> {
+    if (!isMountedRef.current) {
+      console.log('[CHAT_LOAD_SKIPPED]', {
+        source,
+        reason: 'not_mounted',
+        has_user_state: Boolean(user?.id),
+        user_id: user?.id ?? null
+      });
+      return;
+    }
+    if (isLoadingRef.current) {
+      console.log('[CHAT_LOAD_SKIPPED]', {
+        source,
+        reason: 'already_loading',
+        last_load_source: lastLoadSourceRef.current,
+        has_user_state: Boolean(user?.id),
+        user_id: user?.id ?? null
+      });
+      return;
+    }
 
     const controller = new AbortController();
     loadAbortRef.current = controller;
     isLoadingRef.current = true;
-    console.log('[CHAT_LIST_LOAD_START]', { source });
+    lastLoadSourceRef.current = source;
+    if (source === 'initial' || source === 'initial_retry') {
+      console.log('[CHAT_LOAD_START]', {
+        source,
+        since: opts?.since ?? null,
+        limit: opts?.since ? 40 : 50
+      });
+    }
 
     try {
       const params = new URLSearchParams();
@@ -135,8 +190,20 @@ export default function ChatPage() {
 
       const data = await res.json();
       const nextMessages = Array.isArray(data?.messages) ? data.messages : null;
+      if (source === 'initial' || source === 'initial_retry') {
+        console.log('[CHAT_SET_MESSAGES_COUNT]', nextMessages?.length ?? 0);
+      }
       if (!controller.signal.aborted && isMountedRef.current) {
         if (nextMessages) {
+          const thisMax = maxCreatedAt(nextMessages as ChatMessage[]);
+          const effectiveMode: 'full' | 'delta' =
+            opts?.mode || (opts?.since ? 'delta' : 'full');
+          if (effectiveMode === 'full') {
+            // 초기/복귀는 full_table 성공 후에만 since 갱신
+            safeSinceRef.current = thisMax;
+            hasSuccessfulFullLoadRef.current = true;
+            console.log('[SAFE_SINCE_UPDATED_AFTER_FULL]', { source, safeSince: safeSinceRef.current });
+          }
           setMessages((prev) => {
             const byId = new Map<string, ChatMessage>();
             prev.forEach((m) => {
@@ -178,10 +245,7 @@ export default function ChatPage() {
             console.log('[WATCHDOG_DELTA_EMPTY]', { since: sinceKey, streak, backoff_ms: backoffMs });
           }
         } else {
-          console.error('[CHAT_LIST_SHAPE_MISMATCH]', {
-            source,
-            keys: data && typeof data === 'object' ? Object.keys(data) : null
-          });
+          console.error('[CHAT_LIST_SHAPE_MISMATCH]', { source });
         }
       }
       const first3 = (nextMessages || []).slice(0, 3).map((m: any) => ({
@@ -189,35 +253,66 @@ export default function ChatPage() {
         message: m?.message || '',
         created_at: m?.created_at || null
       }));
-      console.log('[CHAT_LIST_RESPONSE_IDS]', {
-        source,
-        ids: (nextMessages || []).map((m: any) => m?.id || null)
-      });
-      console.log('[CHAT_LIST_RESPONSE]', {
-        source,
+      if (source === 'initial' || source === 'initial_retry') {
+        console.log('[CHAT_LIST_RESPONSE]', {
+          source,
+          count: nextMessages?.length || 0,
+          first3
+        });
+        console.log('[CHAT_LIST_LOAD_OK]', {
+          source,
+          count: nextMessages?.length || 0
+        });
+      }
+      if (source === 'initial' || source === 'initial_retry') {
+        console.log('[CHAT_INITIAL_SUCCESS]', { source, count: nextMessages?.length || 0 });
+      }
+      return {
+        ok: true,
         count: nextMessages?.length || 0,
-        first3
-      });
-      console.log('[CHAT_LIST_LOAD_OK]', {
-        source,
-        count: nextMessages?.length || 0
-      });
+        maxCreatedAt: nextMessages ? maxCreatedAt(nextMessages as ChatMessage[]) : null
+      };
     } catch (error: any) {
       if (error?.name === 'AbortError') {
+        if (source === 'initial' || source === 'initial_retry') {
+          console.log('[CHAT_INITIAL_ABORT]', {
+            source,
+            reason: 'abort_signal',
+            attempt_id: initialAttemptIdRef.current
+          });
+        }
         console.log('[CHAT_LIST_LOAD_ABORT]', { source });
-        return;
+        return { ok: false, count: 0, maxCreatedAt: null };
       }
       console.error('[CHAT_LIST_LOAD_ERROR]', {
         source,
         error: error?.message || String(error)
       });
       // 실패해도 기존 messages 유지 (UI 크래시 방지)
+      if (source === 'initial' || source === 'initial_retry') {
+        console.log('[CHAT_INITIAL_LOAD]', {
+          source,
+          ok: false,
+          reason: 'error',
+          error: error?.message || String(error),
+          attempt_id: initialAttemptIdRef.current
+        });
+      }
+      return { ok: false, count: 0, maxCreatedAt: null };
     } finally {
       if (loadAbortRef.current === controller) {
         loadAbortRef.current = null;
       }
       isLoadingRef.current = false;
     }
+  }
+
+  async function loadFull(source: string) {
+    return await load(source, { mode: 'full' });
+  }
+
+  async function loadDelta(source: string, since: string) {
+    return await load(source, { since, mode: 'delta' });
   }
 
   const logUpsertDebug = (...args: unknown[]) => {
@@ -272,15 +367,139 @@ export default function ChatPage() {
 
   useEffect(() => {
     isMountedRef.current = true;
-    void load('initial');
+    initialAttemptIdRef.current += 1;
+    initialRetryCountRef.current = 0;
+    console.log('[CHAT_INITIAL_LOAD]', {
+      source: 'initial',
+      ok: null,
+      attempt_id: initialAttemptIdRef.current
+    });
+
+    void (async () => {
+      const attemptId = initialAttemptIdRef.current;
+      const first = await loadFull('initial');
+      if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
+      if (first?.ok) return;
+
+      if (initialRetryCountRef.current >= 1) return;
+      initialRetryCountRef.current = 1;
+      console.log('[CHAT_INITIAL_RETRY]', {
+        reason: 'initial_failed_or_aborted',
+        hasUser: Boolean(user?.id),
+        isMounted: isMountedRef.current,
+        attempt_id: attemptId
+      });
+      // Ensure in-flight flags are cleared before retry.
+      isLoadingRef.current = false;
+      loadAbortRef.current = null;
+      await sleep(200);
+      if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
+      await loadFull('initial_retry');
+    })();
+
     return () => {
       isMountedRef.current = false;
       if (loadAbortRef.current) {
+        console.log('[CHAT_LIST_ABORT_REQUESTED]', {
+          reason: 'unmount_cleanup',
+          last_load_source: lastLoadSourceRef.current,
+          action: 'abort'
+        });
         loadAbortRef.current.abort();
+        // Ensure next mount can load again.
+        loadAbortRef.current = null;
+        isLoadingRef.current = false;
       }
     };
   }, []);
+
   useEffect(() => {
+    // Visibility / BFCache restore: perform a guarded full reload only when we likely missed updates.
+    const FULL_RESTORE_THROTTLE_MS = 5000;
+    const RESTORE_IF_INACTIVE_MS = 20000;
+
+    const requestFullReload = (source: string, reason: string) => {
+      const now = Date.now();
+      if (now - lastRestoreFullLoadAtRef.current < FULL_RESTORE_THROTTLE_MS) {
+        console.log('[FULL_RELOAD_SKIPPED]', { source, reason: 'restore_throttle' });
+        return;
+      }
+      if (isLoadingRef.current) {
+        console.log('[FULL_RELOAD_SKIPPED]', { source, reason: 'already_loading' });
+        return;
+      }
+      lastRestoreFullLoadAtRef.current = now;
+      const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
+      console.log('[CHAT_VISIBILITY_RESTORE]', {
+        reason,
+        ms_since_activity: msSinceActivity
+      });
+      void loadFull(source);
+    };
+
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        const pushEver = lastRealtimeInsertPushAtRef.current != null;
+        const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
+        const empty = messagesRef.current.length === 0;
+        if (!pushEver) {
+          requestFullReload('bfcache_pageshow', 'push_ever_false');
+        } else if (empty) {
+          requestFullReload('bfcache_pageshow', 'messages_empty');
+        } else if (msSinceActivity > RESTORE_IF_INACTIVE_MS) {
+          requestFullReload('bfcache_pageshow', 'inactive_too_long');
+        } else {
+          console.log('[FULL_RELOAD_SKIPPED]', { source: 'bfcache_pageshow', reason: 'recently_active' });
+        }
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      const pushEver = lastRealtimeInsertPushAtRef.current != null;
+      const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
+      const empty = messagesRef.current.length === 0;
+      if (!pushEver) {
+        requestFullReload('visibility_restore', 'push_ever_false');
+        return;
+      }
+      if (empty) {
+        requestFullReload('visibility_restore', 'messages_empty');
+        return;
+      }
+      if (msSinceActivity > RESTORE_IF_INACTIVE_MS) {
+        requestFullReload('visibility_restore', 'inactive_too_long');
+        return;
+      }
+      console.log('[FULL_RELOAD_SKIPPED]', { source: 'visibility_restore', reason: 'recently_active' });
+    };
+
+    window.addEventListener('pageshow', onPageShow);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+  useEffect(() => {
+    console.log('[CHAT_WATCHDOG_EFFECT_MOUNT]');
+    // Stabilization step: re-enable realtime subscribe reflection only.
+    // Keep polling/watchdog/delta disabled.
+    const ENABLE_REALTIME = true;
+    const ENABLE_POLLING_WATCHDOG_DELTA = true;
+    const ENABLE_FULL_SYNC_ON_SUBSCRIBED = false;
+
+    console.log('[CHAT_WATCHDOG_EFFECT_STATE]', {
+      hasSupabase: !!supabase,
+      enabled: ENABLE_POLLING_WATCHDOG_DELTA
+    });
+
+    if (!ENABLE_POLLING_WATCHDOG_DELTA) {
+      console.log('[CHAT_AUTO_REFRESH_DISABLED]', { feature: 'polling_watchdog_delta' });
+    }
+    if (ENABLE_POLLING_WATCHDOG_DELTA) {
+      console.log('[CHAT_WATCHDOG_ARMED]', { enabled: true });
+    }
     const POLLING_LEADER_KEY = 'autoflow_polling_leader';
     const LEADER_TTL_MS = 45000;
 
@@ -315,9 +534,17 @@ export default function ChatPage() {
     const DISCONNECTED_POLL_MIN_MS = 30000;
 
     const tick = () => {
-      if (!isMountedRef.current) return;
+      console.log('[CHAT_WATCHDOG_INTERVAL_ENTER]');
+      if (!ENABLE_POLLING_WATCHDOG_DELTA) {
+        console.log('[CHAT_WATCHDOG_SKIP]', { reason: 'disabled' });
+        return;
+      }
+      if (!isMountedRef.current) {
+        console.log('[CHAT_WATCHDOG_SKIP]', { reason: 'not_mounted' });
+        return;
+      }
       if (document.hidden) {
-        console.log('[POLLING_SKIPPED]', { reason: 'hidden_tab' });
+        console.log('[CHAT_WATCHDOG_SKIP]', { reason: 'hidden_tab' });
         return;
       }
       const connected = realtimeConnectedRef.current;
@@ -326,49 +553,32 @@ export default function ChatPage() {
       const stale =
         connected && Date.now() - lastRealtimeActivityAtRef.current > silenceLimitMs;
 
-      if (connected && !stale) {
-        console.log('[POLLING_SKIPPED]', { reason: 'realtime_ok', silence_limit_ms: silenceLimitMs });
+      if (!connected) {
+        console.log('[CHAT_WATCHDOG_SKIP]', { reason: 'not_connected' });
         return;
       }
-
-      if (connected && stale) {
-        if (Date.now() < quietWatchdogBackoffUntilRef.current) {
-          console.log('[REALTIME_STALE_POLL_SKIPPED]', {
-            reason: 'watchdog_empty_backoff',
-            until_ms: quietWatchdogBackoffUntilRef.current
-          });
-          return;
-        }
-        const since = maxCreatedAt(messagesRef.current);
-        const pushAt = lastRealtimeInsertPushAtRef.current;
-        console.log('[REALTIME_STALE_POLL]', {
-          since: since || '(full)',
-          bypass_leader: true,
-          insert_push_ever: pushAt != null,
-          ms_since_insert_push: pushAt != null ? Date.now() - pushAt : null,
-          note:
-            pushAt == null
-              ? 'no_INSERT_push_yet_infra_or_rls'
-              : 'had_insert_push_stale_is_idle_or_delayed'
+      if (!stale) {
+        console.log('[CHAT_WATCHDOG_SKIP]', {
+          reason: 'not_stale',
+          silence_limit_ms: silenceLimitMs,
+          push_ever: pushEver,
+          ms_since_activity: Date.now() - lastRealtimeActivityAtRef.current
         });
-        void load('realtime_quiet_watchdog', since ? { since } : undefined);
         return;
       }
 
-      if (!isPollingLeader()) {
-        console.log('[POLLING_SKIPPED]', { reason: 'not_leader' });
-        return;
-      }
-      const now = Date.now();
-      if (now - lastDisconnectedPollAtRef.current < DISCONNECTED_POLL_MIN_MS) {
-        console.log('[POLLING_SKIPPED]', { reason: 'disconnected_throttle' });
-        return;
-      }
-      lastDisconnectedPollAtRef.current = now;
-      void load('polling_fallback');
+      // Watchdog only: when realtime appears stale, do a full refresh.
+      // (Keep general delta fetch / visibility restore disabled in this step.)
+      const since = safeSinceRef.current;
+      console.log('[CHAT_WATCHDOG_TICK]', { reason: 'realtime_stale', since: since || null });
+      void (async () => {
+        const result = await loadFull('realtime_quiet_watchdog_full');
+        console.log('[CHAT_WATCHDOG_RESULT]', { ok: Boolean(result?.ok), count: result?.count ?? 0 });
+      })();
     };
 
-    if (!pollIntervalRef.current) {
+    if (ENABLE_POLLING_WATCHDOG_DELTA && !pollIntervalRef.current) {
+      console.log('[CHAT_WATCHDOG_ARMING_NOW]');
       pollIntervalRef.current = window.setInterval(tick, TICK_MS);
       pollingStartedRef.current = true;
       console.log('[POLLING_TICK_STARTED]', {
@@ -381,79 +591,42 @@ export default function ChatPage() {
     const PG_INSERT_FILTER = { event: 'INSERT' as const, schema: 'public', table: 'chat_messages' };
     const PG_UPDATE_FILTER = { event: 'UPDATE' as const, schema: 'public', table: 'chat_messages' };
 
-    console.log('[REALTIME_SUBSCRIBE_START]', {
-      channel: 'chat_messages_realtime',
-      postgres_changes: [PG_INSERT_FILTER, PG_UPDATE_FILTER]
-    });
-
-    const channel = supabase
-      .channel('chat_messages_realtime')
-      .on(
-        'postgres_changes',
-        PG_INSERT_FILTER,
-        (payload) => {
-          console.log('[REALTIME_PG_INSERT_FIRE_RAW]', { t: Date.now() });
-          console.log('[REALTIME_PG_INSERT_FIRE]', {
-            hasPayload: Boolean(payload),
-            hasNew: Boolean(payload?.new),
-            newKeys:
-              payload?.new && typeof payload.new === 'object' ? Object.keys(payload.new as object) : []
-          });
-          const row = payload?.new as ChatMessage | undefined;
-          if (!row?.id) {
-            console.warn('[REALTIME_EVENT_INSERT_SKIP]', { reason: 'missing_new_or_id', hasNew: Boolean(payload?.new) });
-            return;
-          }
-          lastRealtimeActivityAtRef.current = Date.now();
-          lastRealtimeInsertPushAtRef.current = Date.now();
-          quietWatchdogEmptyStreakRef.current = 0;
-          lastQuietWatchdogSinceKeyRef.current = null;
-          quietWatchdogBackoffUntilRef.current = 0;
-          console.log('[REALTIME_PUSH_CONFIRMED]', { message_id: row.id });
-          console.log('[REALTIME_EVENT_INSERT]', { message_id: row.id, ai_action: row.ai_action, ticket_id: row.ticket_id, duplicate_ticket_id: row.duplicate_ticket_id });
-          upsertMessageRow(row);
-        }
-      )
-      .on(
-        'postgres_changes',
-        PG_UPDATE_FILTER,
-        (payload) => {
-          console.log('[REALTIME_PG_UPDATE_FIRE_RAW]', { t: Date.now() });
-          const row = payload?.new as ChatMessage | undefined;
-          if (!row?.id) {
-            console.warn('[REALTIME_EVENT_UPDATE_SKIP]', { reason: 'missing_new_or_id', hasNew: Boolean(payload?.new) });
-            return;
-          }
-          lastRealtimeActivityAtRef.current = Date.now();
-          console.log('[REALTIME_EVENT_UPDATE]', { message_id: row.id, ai_action: row.ai_action, ticket_id: row.ticket_id, duplicate_ticket_id: row.duplicate_ticket_id });
-          upsertMessageRow(row);
-        }
-      )
-      .subscribe((status) => {
-        const connected = status === 'SUBSCRIBED';
-        realtimeConnectedRef.current = connected;
-        console.log('[REALTIME_SUBSCRIBE_STATUS]', {
-          status,
-          connected,
-          compare_with: {
-            expect_raw_insert_log: 'REALTIME_PG_INSERT_FIRE_RAW',
-            expect_push: 'REALTIME_PUSH_CONFIRMED'
-          }
-        });
-        if (connected) {
-          lastRealtimeActivityAtRef.current = Date.now();
-          console.log('[REALTIME_CHANNEL_REGISTERED]', {
-            channel: 'chat_messages_realtime',
-            filters: [PG_INSERT_FILTER, PG_UPDATE_FILTER],
-            note: 'SUBSCRIBED_only_means_socket_ok_compare_RAW_logs_for_push'
-          });
-          void load('realtime_subscribed');
-        } else {
-          console.log('[REALTIME_DISCONNECTED]', {
-            status
-          });
-        }
+    if (ENABLE_REALTIME) {
+      console.log('[CHAT_REALTIME_SUBSCRIBE_START]', {
+        channel: 'chat_messages_realtime',
+        postgres_changes: [PG_INSERT_FILTER, PG_UPDATE_FILTER]
       });
+    }
+
+    const channel = ENABLE_REALTIME
+      ? supabase
+          .channel('chat_messages_realtime')
+          .on('postgres_changes', PG_INSERT_FILTER, (payload) => {
+            const row = payload?.new as ChatMessage | undefined;
+            if (!row?.id) return;
+            lastRealtimeActivityAtRef.current = Date.now();
+            lastRealtimeInsertPushAtRef.current = Date.now();
+            console.log('[CHAT_REALTIME_EVENT]', { type: 'INSERT', messageId: row.id });
+            upsertMessageRow(row);
+          })
+          .on('postgres_changes', PG_UPDATE_FILTER, (payload) => {
+            const row = payload?.new as ChatMessage | undefined;
+            if (!row?.id) return;
+            lastRealtimeActivityAtRef.current = Date.now();
+            console.log('[CHAT_REALTIME_EVENT]', { type: 'UPDATE', messageId: row.id });
+            upsertMessageRow(row);
+          })
+          .subscribe((status) => {
+            realtimeConnectedRef.current = status === 'SUBSCRIBED';
+            console.log('[CHAT_REALTIME_STATUS]', { status, connected: realtimeConnectedRef.current });
+            if (realtimeConnectedRef.current) {
+              lastRealtimeActivityAtRef.current = Date.now();
+              if (ENABLE_FULL_SYNC_ON_SUBSCRIBED) {
+                void loadFull('realtime_subscribed');
+              }
+            }
+          })
+      : null;
 
     return () => {
       try {
@@ -469,7 +642,7 @@ export default function ChatPage() {
       }
       pollingStartedRef.current = false;
       console.log('[POLLING_STOP]', { reason: 'effect_cleanup' });
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [supabase]);
 
@@ -541,6 +714,8 @@ if (!data?.message) {
 console.log('[SEND_RESPONSE_OK]', { message_id: data?.message?.id || null, ai_action: data?.message?.ai_action || null, ticket_id: data?.message?.ticket_id || null });
 setMessages((prev) => prev.map((m) => (m.id === optimisticId ? ({ ...m, ...data.message } as ChatMessage) : m)));
 clearInput();
+// TEMP (root-cause isolation): after send success, do a full reload once.
+await loadFull('send_success_full_reload');
     } catch (error: any) {
       console.error('[CHAT_SEND_CLIENT_ERROR]', {
         error: error?.message || String(error)
