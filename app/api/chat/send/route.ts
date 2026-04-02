@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { applyTranslationFallback, createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
 import { uploadImage } from '@/lib/services/upload';
 import { mapAiIssueTypeToKo, parseMessage } from '@/lib/aiParser';
@@ -295,16 +296,10 @@ export async function POST(req: NextRequest) {
     // 파일이 있으면 업로드 (단일 업로드 플로우)
     if (image instanceof File) {
       if (!image.type.startsWith('image/')) {
-        return NextResponse.json(
-          { error: '이미지 파일만 업로드할 수 있습니다.' },
-          { status: 400 }
-        );
+        return jsonErr('INVALID_IMAGE_TYPE', '이미지 파일만 업로드할 수 있습니다.', 400);
       }
       if (image.size > 10 * 1024 * 1024) {
-        return NextResponse.json(
-          { error: '10MB 이하만 가능합니다.' },
-          { status: 400 }
-        );
+        return jsonErr('FILE_TOO_LARGE', '10MB 이하만 가능합니다.', 400);
       }
 
       try {
@@ -329,10 +324,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user_id || (!message && !(image instanceof File))) {
-      return NextResponse.json(
-        { error: 'user_id, message or image required' },
-        { status: 400 }
-      );
+      return jsonErr('VALIDATION_ERROR', 'user_id와 메시지 또는 이미지가 필요합니다.', 400);
     }
 
     const insertStarted = Date.now();
@@ -443,15 +435,22 @@ export async function POST(req: NextRequest) {
       message_id: saved.id,
       api_total_ms: Date.now() - requestStarted
     });
-    return NextResponse.json({ message: saved });
+    const responsePayload = { ok: true as const, data: { message: saved } };
+    console.log('[CHAT_SEND_RESPONSE_BODY]', JSON.stringify(responsePayload, null, 2));
+    console.log('[CHAT_SEND_RESPONSE_SHAPE]', {
+      ok: responsePayload.ok,
+      hasData: responsePayload.data != null,
+      dataKeys: Object.keys(responsePayload.data),
+      nestedMessageId: saved?.id ?? null,
+      nestedMessageHasId: Boolean(saved?.id)
+    });
+    return jsonOk({ message: saved });
   } catch (error: any) {
     console.error('[CHAT_SEND_ERROR]', error);
     console.error('[CHAT_SEND_ERROR]', {
       error: error?.message || String(error)
     });
-    return NextResponse.json(
-      { error: error?.message || '메시지 저장 실패' },
-      { status: 500 }
-    );
+    const message = error?.message || '메시지 저장 실패';
+    return jsonErr('CHAT_SEND_FAILED', message, 500);
   }
 }

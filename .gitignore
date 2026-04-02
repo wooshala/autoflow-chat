@@ -11,3 +11,8 @@ supabase/.temp/
 
 # Windows
 desktop.ini
+node_modules/ 
+.next/ 
+.env 
+.env.local 
+.DS_Store 

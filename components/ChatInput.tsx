@@ -1,7 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import { fetchEnvelope } from "@/lib/api/envelope";
+import { unwrapChatSendEnvelopeData } from "@/lib/api/unwrapChatSendResponse";
+import { TIMEOUT_MS_CHAT_SEND } from "@/lib/api/timeouts";
 import { CHAT_SEND_URL } from "@/lib/chatApi";
+import type { ChatMessage } from "@/lib/types";
+import { safeParseJson } from "@/lib/utils/json";
+import { createTaggedLogger } from "@/lib/logger";
+
+const tlog = createTaggedLogger("[CHAT_INPUT]");
+
+function getOrCreateDeviceId(): string {
+  try {
+    const key = "autoflow_device_id";
+    const existing = typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+    if (existing) return existing;
+    const generated = `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    if (typeof window !== "undefined") window.localStorage.setItem(key, generated);
+    return generated;
+  } catch {
+    return "dev-fallback";
+  }
+}
 
 export default function ChatInput({
   ticketId,
@@ -15,54 +36,72 @@ export default function ChatInput({
   const [submitting, setSubmitting] = useState(false);
 
   async function sendMessage() {
-    console.log("[SEND_SUBMIT_START]", { source: "ChatInput", hasMessage: Boolean(message.trim()), hasFile: Boolean(file), submitting });
+    tlog.debug({
+      event: "send_submit_start",
+      hasMessage: Boolean(message.trim()),
+      hasFile: Boolean(file),
+      submitting,
+    });
     if (submitting) {
-      console.log("[SEND_SUBMIT_BLOCKED_ALREADY_SUBMITTING]", { source: "ChatInput" });
+      tlog.debug({ event: "send_submit_blocked", reason: "already_submitting" });
       return;
     }
     if (!message.trim() && !file) return;
     setSubmitting(true);
 
     try {
-const formData = new FormData();
+      const formData = new FormData();
 
-formData.append("ticket_id", ticketId);
-formData.append("room_no", roomNo);
-formData.append("message", message);
-const raw = typeof window !== "undefined" ? localStorage.getItem("autoflow_user") : null;
-const userId = raw ? (JSON.parse(raw)?.id as string | undefined) : undefined;
-formData.append("user_id", userId || "u-front");
+      formData.append("ticket_id", ticketId);
+      formData.append("room_no", roomNo);
+      formData.append("message", message);
+      const raw = typeof window !== "undefined" ? window.localStorage.getItem("autoflow_user") : null;
+      const parsed = safeParseJson(raw);
+      const userId =
+        parsed && typeof parsed === "object" && parsed !== null && "id" in parsed && typeof (parsed as { id?: unknown }).id === "string"
+          ? (parsed as { id: string }).id
+          : undefined;
+      formData.append("user_id", userId || "u-front");
 
-if (file) {
-  console.log("[CHAT_FILE_APPEND]", {
-    name: file.name,
-    size: file.size,
-    type: file.type
-  });
-  formData.append("image", file);
-}
+      const clientRequestId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).toString();
+      formData.append("client_request_id", clientRequestId);
+      formData.append("client_device_id", getOrCreateDeviceId());
 
-const res = await fetch(CHAT_SEND_URL, {
-  method: "POST",
-  body: formData,
-});
+      if (file) {
+        tlog.debug({
+          event: "chat_file_append",
+          name: file.name,
+          size: file.size,
+          type: file.type,
+        });
+        formData.append("image", file);
+      }
 
-if (!res.ok) {
-  const data = await res.json().catch(() => null);
-  console.error("[CHAT_SEND_CLIENT_ERROR]", data);
-  alert("전송 실패: " + (data?.error || res.status));
-  return;
-}
+      const result = await fetchEnvelope<{ message: ChatMessage }>(CHAT_SEND_URL, {
+        method: "POST",
+        body: formData,
+        timeoutMs: TIMEOUT_MS_CHAT_SEND,
+      });
 
-const data = await res.json().catch(() => null);
-console.log("[SEND_RESPONSE_OK]", { source: "ChatInput", message_id: data?.message?.id || null });
+      if (!result.ok) {
+        tlog.error({ event: "chat_send_client_error", error: result.error, message: result.message });
+        alert("전송 실패: " + result.message);
+        return;
+      }
 
-setMessage("");
-setFile(null);
-location.reload();
+      const saved = unwrapChatSendEnvelopeData(result.data);
+      if (!saved) {
+        tlog.error({ event: "chat_send_abnormal_response", data: result.data });
+        alert("채팅 응답이 비정상입니다.");
+        return;
+      }
+      tlog.info({ event: "send_response_ok", message_id: saved.id });
 
+      setMessage("");
+      setFile(null);
+      location.reload();
     } catch (e: any) {
-      console.error("[CHAT_SEND_CLIENT_ERROR]", e);
+      tlog.error({ event: "chat_send_client_error", error: e?.message || String(e) });
       alert("fetch error: " + e.message);
     } finally {
       setSubmitting(false);
@@ -71,41 +110,35 @@ location.reload();
 
   return (
     <div style={{ marginTop: 20 }}>
-<input
-  value={message}
-  onChange={(e) => setMessage(e.target.value)}
-  onKeyDown={(e) => {
-    if (e.key === "Enter") {
-      sendMessage();
-    }
-  }}
-  placeholder="메시지 입력..."
-  style={{
-    padding: 8,
-    width: 300,
-    border: "1px solid #ccc",
-    borderRadius: 4,
-  }}
-/>
-<input
-  type="file"
-  accept="image/*"
-  onChange={(e) => setFile(e.target.files?.[0] || null)}
-  style={{ marginLeft: 8 }}
-/>
+      <input
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            void sendMessage();
+          }
+        }}
+        placeholder="메시지 입력..."
+        style={{
+          padding: 8,
+          width: 300,
+          border: "1px solid #ccc",
+          borderRadius: 4,
+        }}
+      />
+      <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ marginLeft: 8 }} />
 
-{file && (
-  <span style={{ marginLeft: 8, fontSize: 12 }}>
-    {file.name}
-  </span>
-)}
-
+      {file && (
+        <span style={{ marginLeft: 8, fontSize: 12 }}>
+          {file.name}
+        </span>
+      )}
 
       <button
         type="button"
         onClick={() => {
-          console.log("[SEND_CLICK]", { source: "ChatInput", submitting });
-          sendMessage();
+          tlog.debug({ event: "send_click", submitting });
+          void sendMessage();
         }}
         disabled={submitting}
         style={{

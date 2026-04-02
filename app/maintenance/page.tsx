@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
+import { fetchEnvelope } from '@/lib/api/envelope';
+import { TIMEOUT_MS_DASHBOARD } from '@/lib/api/timeouts';
 import { MaintenanceTicket, STATUS_UI, TicketStatus, ISSUE_UI } from '@/lib/types';
 
 const tabs: Array<TicketStatus | 'all'> = ['all', 'open', 'progress', 'done'];
@@ -17,23 +19,17 @@ export default function MaintenancePage() {
 
     async function load() {
       try {
-        const res = await fetch(
-          `/api/maintenance/list${tab === 'all' ? '' : `?status=${tab}`}`
+        const r = await fetchEnvelope<{ tickets?: MaintenanceTicket[] }>(
+          `/api/maintenance/list${tab === 'all' ? '' : `?status=${tab}`}`,
+          { cache: 'no-store', envelope: false, timeoutMs: TIMEOUT_MS_DASHBOARD }
         );
 
-        if (!res.ok) {
+        if (!r.ok) {
           if (!cancelled) setTickets([]);
           return;
         }
 
-        const text = await res.text();
-        if (!text) {
-          if (!cancelled) setTickets([]);
-          return;
-        }
-
-        const data = JSON.parse(text);
-        if (!cancelled) setTickets(data?.tickets || []);
+        if (!cancelled) setTickets(Array.isArray(r.data?.tickets) ? r.data.tickets : []);
       } catch {
         if (!cancelled) setTickets([]);
       }

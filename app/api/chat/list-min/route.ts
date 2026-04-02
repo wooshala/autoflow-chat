@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { jsonErr, jsonOk } from '@/lib/api/envelope';
 import { getMinSupabaseAdmin } from '@/lib/supabaseMin';
 
 export async function GET(req: NextRequest) {
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
       .limit(limit);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return jsonErr('MIN_LIST_QUERY_FAILED', error.message, 500);
     }
 
     const rows = (data || []) as any[];
@@ -25,9 +26,8 @@ export async function GET(req: NextRequest) {
       ids: rows.map((r) => r?.id ?? null)
     });
 
-    return NextResponse.json({ messages: rows });
+    return jsonOk({ messages: rows });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
+    return jsonErr('MIN_LIST_FAILED', e?.message || String(e), 500);
   }
 }
-

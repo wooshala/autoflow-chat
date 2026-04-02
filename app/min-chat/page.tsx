@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { fetchEnvelope } from '@/lib/api/envelope';
+import { TIMEOUT_MS_CHAT_LIST_MIN, TIMEOUT_MS_CHAT_SEND_MIN } from '@/lib/api/timeouts';
 
 type Row = {
   id: string;
@@ -19,17 +21,14 @@ export default function MinChatPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/chat/list-min?limit=50', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      console.log('[LIST_RESPONSE]', data);
-      console.log('messages length:', (data as any)?.messages?.length);
-      console.log('raw data:', data);
-      if (!res.ok) {
-        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`);
+      const result = await fetchEnvelope<{ messages: Row[] }>('/api/chat/list-min?limit=50', {
+        cache: 'no-store'
+      });
+      console.log('[LIST_RESPONSE]', result);
+      if (!result.ok) {
+        throw new Error(result.message);
       }
-      const nextRows = Array.isArray((data as any)?.messages) ? ((data as any).messages as Row[]) : [];
-      console.log('[SET_ROWS_INPUT]', (data as any)?.messages);
-      console.log('[SET_ROWS_LENGTH]', Array.isArray((data as any)?.messages) ? (data as any).messages.length : 'not-array');
+      const nextRows = Array.isArray(result.data.messages) ? result.data.messages : [];
       console.log('[NEXT_ROWS]', nextRows);
       setRows(nextRows);
     } catch (e: any) {
@@ -49,18 +48,18 @@ export default function MinChatPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/chat/send-min', {
+      const sendResult = await fetchEnvelope<{ message: Row }>('/api/chat/send-min', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: msg,
           user_id: '00000000-0000-0000-0000-000000000001'
-        })
+        }),
+        timeoutMs: TIMEOUT_MS_CHAT_SEND_MIN
       });
-      const data = await res.json().catch(() => ({}));
-      console.log('[SEND_RESPONSE]', data);
-      if (!res.ok) {
-        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`);
+      console.log('[SEND_RESPONSE]', sendResult);
+      if (!sendResult.ok) {
+        throw new Error(sendResult.message);
       }
       setInput('');
       await load();

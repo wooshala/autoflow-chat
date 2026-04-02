@@ -34,31 +34,36 @@ async function run() {
   const ticketId = ticketParsed.json.ticket.id;
   console.log("PASS: ticket created", ticketId);
 
-  console.log("TEST 2: send chat message");
+  console.log("TEST 2: send chat message (multipart envelope)");
+
+  const fd = new FormData();
+  fd.append("user_id", "61622137-1e31-4e58-8c32-6c6ac8");
+  fd.append("message", "자동 테스트 메시지");
+  fd.append("ticket_id", ticketId);
 
   const chatRes = await fetch(`${BASE}/api/chat/send`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_id: "61622137-1e31-4e58-8c32-6c6ac8",
-      message: "자동 테스트 메시지",
-      message_type: "text",
-      ticket_id: ticketId
-    })
+    body: fd
   });
 
   const chatParsed = await safeJson(chatRes);
   console.log("TEST 2 status:", chatRes.status, chatRes.statusText);
   console.log("TEST 2 raw:", chatParsed.raw);
 
-  if (!chatRes.ok || !chatParsed.json) {
+  if (!chatRes.ok || !chatParsed.json?.ok) {
     console.log("FAIL: chat send");
     return;
   }
 
-  console.log("PASS: message saved");
+  const saved = chatParsed.json.data?.message;
+  if (!saved?.id) {
+    console.log("FAIL: envelope data.message missing");
+    return;
+  }
 
-  console.log("TEST 3: query ticket messages");
+  console.log("PASS: message saved", saved.id);
+
+  console.log("TEST 3: query ticket messages (envelope)");
 
   const listRes = await fetch(`${BASE}/api/chat/list?ticket_id=${encodeURIComponent(ticketId)}`);
   const listRaw = await listRes.text();
@@ -74,12 +79,13 @@ async function run() {
     return;
   }
 
-  if (!listRes.ok) {
+  if (!listRes.ok || !listJson?.ok) {
     console.log("FAIL: list query", listJson);
     return;
   }
 
-  if (!listJson || !listJson.messages || listJson.messages.length === 0) {
+  const messages = listJson.data?.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
     console.log("FAIL: no messages returned", listJson);
     return;
   }

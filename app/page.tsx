@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { fetchEnvelope } from '@/lib/api/envelope';
+import { TIMEOUT_MS_AUTH_LOGIN } from '@/lib/api/timeouts';
+import { safeParseJson } from '@/lib/utils/json';
 
 type LoginUser = { id: string; name: string; role: string; language: string; avatar: string; colors: string; pin: string };
 
@@ -29,13 +32,13 @@ export default function LoginPage() {
       console.log('[AUTH_USER]', { hasUser: false });
       return;
     }
-    try {
-      const parsed = JSON.parse(raw);
-      console.log('[AUTH_USER]', { hasUser: true, id: parsed?.id || null });
-    } catch {
+    const parsed = safeParseJson(raw);
+    if (!parsed || typeof parsed !== 'object') {
       localStorage.removeItem('autoflow_user');
       console.log('[AUTH_USER]', { hasUser: false, reason: 'invalid_json_removed' });
+      return;
     }
+    console.log('[AUTH_USER]', { hasUser: true, id: (parsed as { id?: string }).id || null });
   }, []);
 
   useEffect(() => {
@@ -61,17 +64,19 @@ export default function LoginPage() {
     if (nextPin.length === 4) {
       setLoading(true);
       try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pin: nextPin })
+        const r = await fetchEnvelope<{ user: LoginUser }>('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: nextPin }),
+          envelope: false,
+          timeoutMs: TIMEOUT_MS_AUTH_LOGIN
         });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || 'PIN 오류');
+        if (!r.ok) {
+          setError(r.message || 'PIN 오류');
           setPin('');
         } else {
-          localStorage.setItem('autoflow_user', JSON.stringify(data.user));
-          console.log('[LOGIN_REDIRECT]', { to: '/chat', userId: data?.user?.id || null });
+          localStorage.setItem('autoflow_user', JSON.stringify(r.data.user));
+          console.log('[LOGIN_REDIRECT]', { to: '/chat', userId: r.data?.user?.id || null });
           router.push('/chat');
         }
       } finally {

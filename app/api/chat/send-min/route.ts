@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { jsonErr, jsonOk } from '@/lib/api/envelope';
 import { getMinSupabaseAdmin } from '@/lib/supabaseMin';
 
 export async function POST(req: NextRequest) {
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return jsonErr('MIN_SEND_INSERT_FAILED', error.message, 500);
     }
 
     console.log('[MIN_SEND_INSERT_DONE]', {
@@ -38,9 +39,8 @@ export async function POST(req: NextRequest) {
       created_at: (data as any)?.created_at ?? null
     });
 
-    return NextResponse.json({ message: data });
+    return jsonOk({ message: data });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
+    return jsonErr('MIN_SEND_FAILED', e?.message || String(e), 500);
   }
 }
-

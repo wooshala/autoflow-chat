@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { listChatMessages, listChatMessagesByTicket, listChatMessagesSince } from '@/lib/services/chat';
 import { supabaseAdmin } from '@/lib/supabase';
 
@@ -88,8 +89,9 @@ export async function GET(req: NextRequest) {
     const probeRecent = Boolean(lastSent?.at_ms && Date.now() - Number(lastSent.at_ms) < 5 * 60 * 1000);
     let probeIncludedInRawList: boolean | null = null;
     if (probeId && probeRecent && supabaseAdmin) {
+      const sb = supabaseAdmin;
       const started = Date.now();
-      const { data, error } = await supabaseAdmin
+      const { data, error } = await sb
         .from('chat_messages')
         .select('id, created_at')
         .eq('id', probeId)
@@ -106,7 +108,7 @@ export async function GET(req: NextRequest) {
       // This is a yes/no diagnostic for: query shape (select/embed) vs consistency/routing.
       const fetchRawList = async () => {
         const listStarted = Date.now();
-        const { data: rawRows, error: rawErr } = await supabaseAdmin
+        const { data: rawRows, error: rawErr } = await sb
           .from('chat_messages')
           .select('id, created_at')
           .order('created_at', { ascending: false })
@@ -130,7 +132,7 @@ export async function GET(req: NextRequest) {
       // Compare with RPC execution (POST) from inside Postgres.
       // If RPC shows the id but raw list doesn't, the difference is outside SQL semantics.
       const rpcStarted = Date.now();
-      const { data: rpcRows, error: rpcErr } = await supabaseAdmin.rpc('diag_chat_list_top', {
+      const { data: rpcRows, error: rpcErr } = await sb.rpc('diag_chat_list_top', {
         p_limit: limit
       });
       const rpcIds = (rpcRows || []).map((r: any) => String(r?.id || '')).filter(Boolean);
@@ -296,11 +298,9 @@ export async function GET(req: NextRequest) {
       latest5
     });
 
-    return NextResponse.json({ messages });
+    return jsonOk({ messages });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || '채팅 목록 조회 실패' },
-      { status: 500 }
-    );
+    const message = error?.message || '채팅 목록 조회 실패';
+    return jsonErr('CHAT_LIST_FAILED', message, 500);
   }
 }
