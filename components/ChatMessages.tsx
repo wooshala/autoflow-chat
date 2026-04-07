@@ -147,6 +147,14 @@ export default function ChatMessages({
                     티켓 보기
                   </button>
                 )}
+                {!isDeleted && msg.ai_action === "ticket_linked_existing" && msg.ticket_id && (
+                  <button
+                    onClick={() => router.push(`/maintenance/${msg.ticket_id}`)}
+                    className={`mt-1 text-xs font-semibold underline ${isPc ? "text-white" : "text-indigo-700"}`}
+                  >
+                    연결된 티켓 보기
+                  </button>
+                )}
                 {!isDeleted && !msg.ticket_id && onCreateManualTicket && (
                   <button
                     onClick={() => onCreateManualTicket(msg)}
@@ -170,6 +178,14 @@ export default function ChatMessages({
                 )}
                 {!isDeleted && msg.ai_action === "skip_not_ticketable" && (
                   <div className={`mt-1 text-xs ${isPc ? "text-white/90" : "text-gray-600"}`}>티켓 대상 메시지가 아닙니다.</div>
+                )}
+                {!isDeleted && msg.ai_action === "note_saved" && (
+                  <div className={`mt-1 text-xs ${isPc ? "text-white/90" : "text-slate-600"}`}>메모로 저장되었습니다.</div>
+                )}
+                {!isDeleted && msg.ai_action === "skip_review_required" && (
+                  <div className={`mt-1 text-xs ${isPc ? "text-white/90" : "text-violet-700"}`}>
+                    민감/운영 이슈로 자동 티켓 생성이 보류되었습니다. (리뷰 필요)
+                  </div>
                 )}
                 {!isDeleted && msg.ai_action === "skip_no_room" && (
                   <div className={`mt-1 text-xs ${isPc ? "text-white/90" : "text-blue-700"}`}>객실번호를 확인할 수 없습니다.</div>

@@ -6,7 +6,7 @@ import { unwrapChatSendEnvelopeData } from "@/lib/api/unwrapChatSendResponse";
 import { TIMEOUT_MS_CHAT_SEND } from "@/lib/api/timeouts";
 import { CHAT_SEND_URL } from "@/lib/chatApi";
 import type { ChatMessage } from "@/lib/types";
-import { safeParseJson } from "@/lib/utils/json";
+import { loadUser, resolveChatSendUserId } from "@/lib/auth";
 import { createTaggedLogger } from "@/lib/logger";
 
 const tlog = createTaggedLogger("[CHAT_INPUT]");
@@ -47,6 +47,11 @@ export default function ChatInput({
       return;
     }
     if (!message.trim() && !file) return;
+    const userId = resolveChatSendUserId();
+    if (!userId) {
+      alert("전송에 실패했습니다. 관리자 설정이 필요합니다.");
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -55,13 +60,9 @@ export default function ChatInput({
       formData.append("ticket_id", ticketId);
       formData.append("room_no", roomNo);
       formData.append("message", message);
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem("autoflow_user") : null;
-      const parsed = safeParseJson(raw);
-      const userId =
-        parsed && typeof parsed === "object" && parsed !== null && "id" in parsed && typeof (parsed as { id?: unknown }).id === "string"
-          ? (parsed as { id: string }).id
-          : undefined;
-      formData.append("user_id", userId || "u-front");
+      formData.append("user_id", userId);
+      const actor = loadUser()?.name?.trim();
+      if (actor) formData.append("actor_name", actor);
 
       const clientRequestId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).toString();
       formData.append("client_request_id", clientRequestId);
@@ -85,7 +86,7 @@ export default function ChatInput({
 
       if (!result.ok) {
         tlog.error({ event: "chat_send_client_error", error: result.error, message: result.message });
-        alert("전송 실패: " + result.message);
+        alert("전송에 실패했습니다. 잠시 후 다시 시도해 주세요.");
         return;
       }
 
@@ -102,7 +103,7 @@ export default function ChatInput({
       location.reload();
     } catch (e: any) {
       tlog.error({ event: "chat_send_client_error", error: e?.message || String(e) });
-      alert("fetch error: " + e.message);
+      alert("전송에 실패했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setSubmitting(false);
     }

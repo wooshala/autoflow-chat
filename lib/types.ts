@@ -5,11 +5,37 @@ export type SenderSide = 'pc' | 'mobile';
 export type AiAction =
   | 'ticket_created'
   | 'ticket_created_manual'
+  | 'ticket_linked_existing'
+  | 'note_saved'
   | 'skip_duplicate'
   | 'skip_not_ticketable'
+  | 'skip_review_required'
   | 'skip_no_room'
   | 'skip_ai_error'
   | null;
+
+/** Chat → ticket automation (intent) */
+export type MessageIntentIssueType =
+  | 'housekeeping'
+  | 'maintenance'
+  | 'frontdesk'
+  | 'checkout'
+  | 'payment'
+  | 'ops_note';
+
+export interface MessageIntent {
+  id: string;
+  message_id: string;
+  room_no: string | null;
+  issue_type: MessageIntentIssueType;
+  summary: string | null;
+  is_ticketable: boolean;
+  is_new_issue: boolean;
+  matched_ticket_id: string | null;
+  confidence: number | null;
+  raw_ai_result: unknown | null;
+  created_at: string;
+}
 export type TicketStatus = 'open' | 'progress' | 'done';
 export type IssueType = '설비' | '전기' | '가전' | '침구' | '청소' | '기타';
 export type PhotoType = 'before' | 'after';

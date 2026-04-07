@@ -2,12 +2,18 @@ import { NextRequest } from 'next/server';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { applyTranslationFallback, createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
 import { uploadImage } from '@/lib/services/upload';
-import { mapAiIssueTypeToKo, parseMessage } from '@/lib/aiParser';
-import { createTicket, listTickets } from '@/lib/services/maintenance';
+import { mapIntentIssueTypeToKo, parseMessage } from '@/lib/aiParser';
+import { createTicket, findActiveTicketByRoomAndIssue } from '@/lib/services/maintenance';
 import { ChatMessage, IssueType } from '@/lib/types';
 import { supabaseAdmin } from '@/lib/supabase';
+import { createMessageIntent, updateMessageIntentById } from '@/lib/services/messageIntents';
 
 type AutoTicketSkipReason = 'duplicate' | 'not_ticketable' | 'no_room' | 'ai_error';
+
+function isUuid(v: string) {
+  // RFC4122-ish: 8-4-4-4-12 hex
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
 
 function urlHost(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -44,63 +50,12 @@ function extractRoom(message: string) {
   return match ? match[0] : null;
 }
 
-function isRepeatIssue(message: string) {
-  const keywords = ['또', '다시', '아직', '계속'];
-  return keywords.some((k) => message.includes(k));
-}
-
 function logAutoTicketSkip(messageId: string, reason: AutoTicketSkipReason, detail?: Record<string, unknown>) {
   console.log('[AUTO_TICKET_SKIP]', {
     message_id: messageId,
     reason,
     ...(detail || {})
   });
-}
-
-function normalizeText(value: string): string {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function hasRecurrenceKeyword(value: string): boolean {
-  const text = normalizeText(value);
-  return text.includes('또') || text.includes('아직') || text.includes('다시');
-}
-
-async function getRecentDuplicateSummary(roomNo: string): Promise<string | null> {
-  const recent = await listChatMessages(150);
-  const matched = recent
-    .filter((m) => m.room_no === roomNo && m.ticket_id && m.message_type === 'text')
-    .sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return matched[0]?.message || null;
-}
-
-async function recentMaintenanceTicketExists(input: {
-  roomNo: string;
-  issueType: IssueType;
-}): Promise<{ duplicated: boolean; ticket: { id: string; room_no: string; issue_type: IssueType; created_at: string } | null }> {
-  const now = Date.now();
-  const tickets = await listTickets();
-  const duplicates = tickets
-    .filter((ticket) => {
-    if (ticket.room_no !== input.roomNo) return false;
-    if (ticket.issue_type !== input.issueType) return false;
-    const createdAt = new Date(ticket.created_at).getTime();
-    if (!Number.isFinite(createdAt)) return false;
-    return now - createdAt <= 10 * 60 * 1000;
-    })
-    .sort((a, b) => b.created_at.localeCompare(a.created_at));
-
-  if (duplicates.length === 0) return { duplicated: false, ticket: null };
-  const latest = duplicates[0];
-  return {
-    duplicated: true,
-    ticket: {
-      id: latest.id,
-      room_no: latest.room_no,
-      issue_type: latest.issue_type,
-      created_at: latest.created_at
-    }
-  };
 }
 
 async function runAiPostProcess(input: {
@@ -134,115 +89,101 @@ async function runAiPostProcess(input: {
       step: 'ai_parse',
       duration_ms: Date.now() - parseStarted
     });
-    const mappedIssueType = aiResult ? mapAiIssueTypeToKo(aiResult.issue_type) : null;
+
     const fallbackRoom = extractRoom(message);
 
     if (!aiResult) {
-      const updateStarted = Date.now();
       await updateChatMessage({ messageId: saved.id, ai_action: 'skip_ai_error' });
-      console.log('[AI_ASYNC_STEP]', {
-        message_id: saved.id,
-        step: 'message_update',
-        duration_ms: Date.now() - updateStarted
-      });
       logAutoTicketSkip(saved.id, 'ai_error', { detail: 'no_result' });
-      return;
-    }
-    const ticketableIssueTypes = ['maintenance', 'cleaning'];
-    if (!ticketableIssueTypes.includes(aiResult.issue_type)) {
-      const updateStarted = Date.now();
-      await updateChatMessage({ messageId: saved.id, ai_action: 'skip_not_ticketable' });
-      console.log('[AI_ASYNC_STEP]', {
-        message_id: saved.id,
-        step: 'message_update',
-        duration_ms: Date.now() - updateStarted
-      });
-      logAutoTicketSkip(saved.id, 'not_ticketable', { issue_type: aiResult.issue_type });
       return;
     }
 
     const resolvedRoom = aiResult.room || fallbackRoom;
-    if (!resolvedRoom) {
-      const updateStarted = Date.now();
-      await updateChatMessage({ messageId: saved.id, ai_action: 'skip_no_room' });
-      console.log('[AI_ASYNC_STEP]', {
+    const summary = aiResult.summary || message.trim();
+    const confidence = aiResult.confidence ?? null;
+
+    const sensitiveReviewOnly =
+      aiResult.issue_type === 'frontdesk' || aiResult.issue_type === 'checkout' || aiResult.issue_type === 'payment';
+    const isMemoOnly = aiResult.issue_type === 'ops_note';
+    const autoTicketable = aiResult.issue_type === 'maintenance' || aiResult.issue_type === 'housekeeping';
+    const isTicketable = autoTicketable || sensitiveReviewOnly;
+
+    let intentId: string | null = null;
+    try {
+      const intent = await createMessageIntent({
         message_id: saved.id,
-        step: 'message_update',
-        duration_ms: Date.now() - updateStarted
+        room_no: resolvedRoom,
+        issue_type: aiResult.issue_type,
+        summary,
+        is_ticketable: isTicketable,
+        is_new_issue: Boolean(aiResult.is_new_issue),
+        matched_ticket_id: null,
+        confidence,
+        raw_ai_result: aiResult
       });
-      logAutoTicketSkip(saved.id, 'no_room');
+      intentId = intent?.id || null;
+    } catch (e: any) {
+      console.error('[MESSAGE_INTENT_SAVE_ERROR]', { message_id: saved.id, error: e?.message || String(e) });
+    }
+
+    if (!resolvedRoom) {
+      await updateChatMessage({ messageId: saved.id, ai_action: 'skip_no_room' });
       return;
     }
 
-    if (mappedIssueType === '설비' || mappedIssueType === '청소') {
-      const duplicateStarted = Date.now();
-      const duplicateInfo = await recentMaintenanceTicketExists({
-        roomNo: resolvedRoom,
-        issueType: mappedIssueType
+    if (sensitiveReviewOnly) {
+      await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'skip_review_required' });
+      return;
+    }
+
+    if (isMemoOnly) {
+      await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'note_saved' });
+      return;
+    }
+
+    if (!autoTicketable) {
+      await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'skip_not_ticketable' });
+      return;
+    }
+
+    const mappedIssueType = mapIntentIssueTypeToKo(aiResult.issue_type);
+    if (mappedIssueType !== '설비' && mappedIssueType !== '청소') {
+      await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'skip_not_ticketable' });
+      return;
+    }
+
+    const active = await findActiveTicketByRoomAndIssue({ room_no: resolvedRoom, issue_type: mappedIssueType as IssueType });
+    if (active?.id) {
+      await updateChatMessage({
+        messageId: saved.id,
+        room_no: resolvedRoom,
+        ticket_id: active.id,
+        ai_action: 'ticket_linked_existing'
       });
-      let duplicated = duplicateInfo.duplicated;
-      console.log('[AI_ASYNC_STEP]', {
-        message_id: saved.id,
-        step: 'duplicate_check',
-        duration_ms: Date.now() - duplicateStarted
-      });
-
-      if (duplicated) {
-        const summary = aiResult.summary || message.trim();
-        const recentSummary = await getRecentDuplicateSummary(resolvedRoom);
-        const repeatByKeyword = isRepeatIssue(message) || hasRecurrenceKeyword(summary);
-        const repeatBySummaryDelta =
-          Boolean(aiResult.is_new_issue) &&
-          Boolean(recentSummary) &&
-          normalizeText(recentSummary || '') !== normalizeText(summary);
-        if (repeatByKeyword || repeatBySummaryDelta) {
-          duplicated = false;
-        }
+      if (intentId) {
+        try {
+          await updateMessageIntentById(intentId, { matched_ticket_id: active.id });
+        } catch {}
       }
+      return;
+    }
 
-      if (!duplicated) {
-        const ticketStarted = Date.now();
-        const ticket = await createTicket({
-          room_no: resolvedRoom,
-          issue_type: mappedIssueType,
-          description: aiResult.summary || message.trim(),
-          created_by: user_id
-        });
-        console.log('[AI_ASYNC_STEP]', {
-          message_id: saved.id,
-          step: 'ticket_create',
-          duration_ms: Date.now() - ticketStarted
-        });
-
-        const updateStarted = Date.now();
-        await updateChatMessage({
-          messageId: saved.id,
-          ticket_id: ticket.id,
-          room_no: resolvedRoom,
-          ai_action: 'ticket_created'
-        });
-        console.log('[AI_ASYNC_STEP]', {
-          message_id: saved.id,
-          step: 'message_update',
-          duration_ms: Date.now() - updateStarted
-        });
-      } else {
-        const updateStarted = Date.now();
-        await updateChatMessage({
-          messageId: saved.id,
-          ai_action: 'skip_duplicate',
-          duplicate_ticket_id: duplicateInfo.ticket?.id || null
-        });
-        console.log('[AI_ASYNC_STEP]', {
-          message_id: saved.id,
-          step: 'message_update',
-          duration_ms: Date.now() - updateStarted
-        });
-        logAutoTicketSkip(saved.id, 'duplicate', {
-          room_no: resolvedRoom,
-          duplicate_ticket_id: duplicateInfo.ticket?.id || null
-        });
-      }
+    const ticket = await createTicket({
+      room_no: resolvedRoom,
+      issue_type: mappedIssueType as IssueType,
+      description: summary,
+      created_by: user_id
+    });
+    await updateChatMessage({
+      messageId: saved.id,
+      ticket_id: ticket.id,
+      room_no: resolvedRoom,
+      ai_action: 'ticket_created'
+    });
+    if (intentId) {
+      try {
+        await updateMessageIntentById(intentId, { matched_ticket_id: ticket.id });
+      } catch {}
     }
   } catch (error: any) {
     console.error('[AUTO_TICKET_ERROR]', {
@@ -280,8 +221,12 @@ export async function POST(req: NextRequest) {
     const room_no = String(formData.get('room_no') || '') || null;
     const message = String(formData.get('message') || '');
     const user_id = String(formData.get('user_id') || '');
+    const actor_name = String(formData.get('actor_name') || '').trim() || null;
     const sender_side_raw = String(formData.get('sender_side') || '').toLowerCase();
     const sender_side = sender_side_raw === 'mobile' ? 'mobile' : sender_side_raw === 'pc' ? 'pc' : null;
+    if (actor_name) {
+      console.log('[CHAT_SEND_ACTOR_NAME]', { actor_name, user_id: user_id || null });
+    }
     const image = formData.get('image');
     console.log('[CHAT_FILE_RECEIVED]', {
       exists: image instanceof File,
@@ -324,7 +269,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user_id || (!message && !(image instanceof File))) {
-      return jsonErr('VALIDATION_ERROR', 'user_id와 메시지 또는 이미지가 필요합니다.', 400);
+      return jsonErr('VALIDATION_ERROR', '전송에 실패했습니다. 관리자 설정이 필요합니다.', 400);
+    }
+    if (!isUuid(user_id)) {
+      console.log('[CHAT_SEND_INVALID_USER_ID]', { user_id });
+      return jsonErr('INVALID_USER_ID', '전송에 실패했습니다. 관리자 설정이 필요합니다.', 400);
     }
 
     const insertStarted = Date.now();

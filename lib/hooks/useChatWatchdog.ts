@@ -40,8 +40,16 @@ export function useChatWatchdog({
   const pollingStartedRef = useRef(false);
   const lastDisconnectedPollAtRef = useRef(0);
   const tabIdRef = useRef(`tab-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const loadFullRef = useRef(loadFull);
+  loadFullRef.current = loadFull;
+  const supabaseRef = useRef(supabase);
+  supabaseRef.current = supabase;
+  const pollingEffectMountCountRef = useRef(0);
+  const visibilityEffectMountCountRef = useRef(0);
 
   useEffect(() => {
+    visibilityEffectMountCountRef.current += 1;
+    console.log('[CHAT_WATCHDOG_VISIBILITY_MOUNT]', { mountCount: visibilityEffectMountCountRef.current });
     // Visibility / BFCache restore: perform a guarded full reload only when we likely missed updates.
     const FULL_RESTORE_THROTTLE_MS = 5000;
     const RESTORE_IF_INACTIVE_MS = 20000;
@@ -77,7 +85,7 @@ export function useChatWatchdog({
             tag,
             source
           });
-          void loadFull(`${source}_${tag}`);
+          void loadFullRef.current(`${source}_${tag}`);
         };
         const t1 = setTimeout(() => attempt('deferred_450ms'), DEFERRED_RETRY_MS_1);
         const t2 = setTimeout(() => attempt('deferred_1950ms'), DEFERRED_RETRY_MS_2);
@@ -90,7 +98,7 @@ export function useChatWatchdog({
         reason,
         ms_since_activity: msSinceActivity
       });
-      void loadFull(source);
+      void loadFullRef.current(source);
     };
 
     const onPageShow = (e: PageTransitionEvent) => {
@@ -141,17 +149,19 @@ export function useChatWatchdog({
         deferredRetryChainRef.current = null;
       }
     };
-    // loadFull은 부모에서 useCallback으로 안정화해야 매 렌더마다 이 effect가 cleanup/재구독되지 않음.
-    // messages·loading state는 ref로만 읽음 — deps에 넣지 않음.
-  }, [loadFull, isMountedRef, lastRealtimeActivityAtRef, lastRealtimeInsertPushAtRef, messagesRef, isLoadingRef]);
+    // loadFull은 loadFullRef로 최신 참조 — deps에 넣지 않아 가시성 리스너는 마운트당 1회만 구독.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ref 객체·loadFullRef는 안정, 콜백은 ref.current로 최신화
+  }, []);
 
   useEffect(() => {
+    pollingEffectMountCountRef.current += 1;
+    console.log('[CHAT_WATCHDOG_POLLING_MOUNT]', { mountCount: pollingEffectMountCountRef.current });
     log.debug('[CHAT_WATCHDOG_EFFECT_MOUNT]');
     // Watchdog polling effect (realtime stays in separate hook; this keeps polling/watchdog here).
     const ENABLE_POLLING_WATCHDOG_DELTA = true;
 
     log.debug('[CHAT_WATCHDOG_EFFECT_STATE]', {
-      hasSupabase: !!supabase,
+      hasSupabase: !!supabaseRef.current,
       enabled: ENABLE_POLLING_WATCHDOG_DELTA
     });
 
@@ -234,7 +244,7 @@ export function useChatWatchdog({
       const since = safeSinceRef.current;
       log.info('[CHAT_WATCHDOG_TICK]', { reason: 'realtime_stale', since: since || null });
       void (async () => {
-        const result = await loadFull('realtime_quiet_watchdog_full');
+        const result = await loadFullRef.current('realtime_quiet_watchdog_full');
         log.debug('[CHAT_WATCHDOG_RESULT]', { ok: Boolean(result?.ok), count: result?.count ?? 0 });
       })();
 
@@ -273,15 +283,8 @@ export function useChatWatchdog({
       pollingStartedRef.current = false;
       log.debug('[POLLING_STOP]', { reason: 'effect_cleanup' });
     };
-    // supabase는 보통 useMemo([])로 안정. loadFull 불안정 시 폴링 interval이 매 렌더마다 끊김.
-  }, [
-    supabase,
-    loadFull,
-    realtimeConnectedRef,
-    lastRealtimeActivityAtRef,
-    lastRealtimeInsertPushAtRef,
-    safeSinceRef,
-    isMountedRef
-  ]);
+    // loadFull·supabase는 ref로 최신화 — 폴링 interval은 마운트당 1회만 시작.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ref 기반; interval 재시작 방지
+  }, []);
 }
 

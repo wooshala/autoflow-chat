@@ -5,7 +5,7 @@ import { ISSUE_UI, STATUS_UI, TicketStatus } from '@/lib/types';
 import type { DashboardTicket } from '@/lib/dashboard';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { TIMEOUT_MS_DASHBOARD } from '@/lib/api/timeouts';
-import { safeParseJson } from '@/lib/utils/json';
+import { resolveChatSendUserId } from '@/lib/auth';
 import { createTaggedLogger } from '@/lib/logger';
 
 const tlog = createTaggedLogger('[TICKET_DETAIL]');
@@ -37,15 +37,8 @@ export function TicketDetailPanel({ ticket, onStatusUpdated }: TicketDetailPanel
   const statusAbortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
-    // localStorage / JSON.parse must never run during prerender on server.
     if (typeof window === 'undefined') return;
-    const raw = window.localStorage.getItem('autoflow_user');
-    const u = safeParseJson(raw);
-    const id =
-      u && typeof u === 'object' && u !== null && typeof (u as { id?: unknown }).id === 'string'
-        ? String((u as { id: string }).id)
-        : null;
-    setActorId(id);
+    setActorId(resolveChatSendUserId());
   }, []);
 
   React.useEffect(() => {

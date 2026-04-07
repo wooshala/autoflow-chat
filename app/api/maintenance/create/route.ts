@@ -3,6 +3,10 @@ import { createTicket } from '@/lib/services/maintenance';
 import { listChatMessages } from '@/lib/services/chat';
 import { uploadImage } from '@/lib/services/upload';
 
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -16,7 +20,14 @@ export async function POST(req: NextRequest) {
 
     if (!room_no || !description || !created_by) {
       return NextResponse.json(
-        { error: 'room_no, description, created_by required' },
+        { error: '전송에 실패했습니다. 관리자 설정이 필요합니다.' },
+        { status: 400 }
+      );
+    }
+    if (!isUuid(created_by)) {
+      console.log('[api/maintenance/create] invalid created_by', { created_by });
+      return NextResponse.json(
+        { error: '전송에 실패했습니다. 관리자 설정이 필요합니다.' },
         { status: 400 }
       );
     }
@@ -57,6 +68,7 @@ export async function POST(req: NextRequest) {
     const messages = await listChatMessages(1);
     return NextResponse.json({ ticket, chat_message: messages[messages.length - 1] || null });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || '유지보수 생성 실패' }, { status: 500 });
+    console.error('[api/maintenance/create] error', { error: error?.message || String(error) });
+    return NextResponse.json({ error: '전송에 실패했습니다. 잠시 후 다시 시도해 주세요.' }, { status: 500 });
   }
 }

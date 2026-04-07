@@ -1,29 +1,38 @@
 import { openai } from '@/lib/openai';
 
-export type AiIssueType = 'maintenance' | 'cleaning' | 'lost_found' | 'guest_request' | 'ops_note';
+export type IntentIssueType =
+  | 'housekeeping'
+  | 'maintenance'
+  | 'frontdesk'
+  | 'checkout'
+  | 'payment'
+  | 'ops_note';
 export type MappedIssueType = '설비' | '청소' | '분실물' | '요청' | '기타';
 
 export type AiParseResult = {
   room: string | null;
-  issue_type: AiIssueType;
+  issue_type: IntentIssueType;
   summary: string;
   is_new_issue: boolean;
+  confidence: number | null;
 };
 
-const ISSUE_MAP: Record<AiIssueType, MappedIssueType> = {
+const ISSUE_MAP: Record<IntentIssueType, MappedIssueType> = {
   maintenance: '설비',
-  cleaning: '청소',
-  lost_found: '분실물',
-  guest_request: '요청',
+  housekeeping: '청소',
+  frontdesk: '기타',
+  checkout: '기타',
+  payment: '기타',
   ops_note: '기타'
 };
 
-function asAiIssueType(value: unknown): AiIssueType | null {
+function asIntentIssueType(value: unknown): IntentIssueType | null {
   if (
     value === 'maintenance' ||
-    value === 'cleaning' ||
-    value === 'lost_found' ||
-    value === 'guest_request' ||
+    value === 'housekeeping' ||
+    value === 'frontdesk' ||
+    value === 'checkout' ||
+    value === 'payment' ||
     value === 'ops_note'
   ) {
     return value;
@@ -53,7 +62,7 @@ function unwrapJsonText(raw: string): string {
     .trim();
 }
 
-export function mapAiIssueTypeToKo(issueType: AiIssueType): MappedIssueType {
+export function mapIntentIssueTypeToKo(issueType: IntentIssueType): MappedIssueType {
   return ISSUE_MAP[issueType];
 }
 
@@ -76,9 +85,10 @@ ${message}
 JSON으로만 답변:
 {
   "room": string | null,
-  "issue_type": "maintenance" | "cleaning" | "lost_found" | "guest_request" | "ops_note",
+  "issue_type": "housekeeping" | "maintenance" | "frontdesk" | "checkout" | "payment" | "ops_note",
   "summary": string,
-  "is_new_issue": boolean
+  "is_new_issue": boolean,
+  "confidence": number (0~1, 확신이 낮으면 0.4 이하)
 }
 `;
 
@@ -97,7 +107,7 @@ JSON으로만 답변:
     });
 
     const parsed = JSON.parse(unwrapJsonText(res.output_text || '{}')) as Partial<AiParseResult>;
-    const issueType = asAiIssueType(parsed.issue_type);
+    const issueType = asIntentIssueType(parsed.issue_type);
     if (!issueType) {
       console.log('[AI_SKIP_INVALID_ISSUE_TYPE]', {
         issue_type: parsed.issue_type
@@ -105,11 +115,18 @@ JSON으로만 답변:
       return null;
     }
 
+    const confidenceRaw = (parsed as any).confidence;
+    const confidence =
+      typeof confidenceRaw === 'number' && Number.isFinite(confidenceRaw)
+        ? Math.max(0, Math.min(1, confidenceRaw))
+        : null;
+
     const finalResult: AiParseResult = {
       room: sanitizeRoom(parsed.room) || fallbackRoom,
       issue_type: issueType,
       summary: String(parsed.summary || '').trim() || message.trim(),
-      is_new_issue: Boolean(parsed.is_new_issue)
+      is_new_issue: Boolean(parsed.is_new_issue),
+      confidence
     };
     console.log('[AI_PARSED_RETURN]', finalResult);
     return finalResult;

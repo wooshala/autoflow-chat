@@ -73,6 +73,37 @@ export async function getTicket(id: string): Promise<MaintenanceTicket | null> {
   return data ? mapRowToTicket(data) : null;
 }
 
+export async function findActiveTicketByRoomAndIssue(input: {
+  room_no: string;
+  issue_type: IssueType;
+}): Promise<MaintenanceTicket | null> {
+  if (!input.room_no || !input.issue_type) return null;
+
+  if (IS_MOCK || !supabaseAdmin) {
+    const store = getMockStore();
+    const found = store.tickets.find(
+      (t) =>
+        String(t.room_no) === String(input.room_no) &&
+        t.issue_type === input.issue_type &&
+        (t.status === 'open' || t.status === 'progress')
+    );
+    return found ? hydrateTicket(found) : null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('tickets')
+    .select('*')
+    .eq('room_no', input.room_no)
+    .eq('issue_type', input.issue_type)
+    .in('status', ['OPEN', 'IN_PROGRESS'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? mapRowToTicket(data) : null;
+}
+
 export async function createTicket(input: {
   room_no: string;
   issue_type: IssueType;

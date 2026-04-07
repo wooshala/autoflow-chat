@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
-import { ChatMessage, ISSUE_TYPES, ISSUE_UI, IssueType, SenderSide, User } from '@/lib/types';
+import { ChatMessage, ISSUE_TYPES, ISSUE_UI, IssueType, SenderSide } from '@/lib/types';
+import { type AutoflowUser, loadUser, logoutAndGoLogin, resolveChatSendUserId, runSessionMigration } from '@/lib/auth';
 import ChatMessages from '@/components/ChatMessages';
 import RoomParticipantsPanel from '@/components/RoomParticipantsPanel';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
@@ -21,7 +22,6 @@ import {
   TIMEOUT_MS_MAINTENANCE_CREATE
 } from '@/lib/api/timeouts';
 import { log } from '@/lib/logger';
-import { safeParseJson } from '@/lib/utils/json';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -47,7 +47,8 @@ export default function ChatPage() {
   const messagesRef = useRef<ChatMessage[]>([]);
   const listRef = useRef<HTMLDivElement | null>(null);
   const wasNearBottomRef = useRef(true);
-  const [user, setUser] = useState<User | null>(null);
+  const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
+  const chatSendUserId = useMemo(() => resolveChatSendUserId(), []);
   const { messages, setMessages, loadFull: hookLoadFull, initialHydrationComplete } = useChatLoader({
     loadingRef: isLoadingRef
   });
@@ -88,32 +89,20 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    const raw = localStorage.getItem('autoflow_user');
-    if (!raw) {
+    runSessionMigration();
+    const u = loadUser();
+    if (!u) {
       log.info('[LOGIN_REDIRECT]', {
         from: '/chat',
-        to: '/',
-        reason: 'missing_autoflow_user',
+        to: '/login',
+        reason: 'missing_autoflow_user_v1',
         has_mounted: isMountedRef.current,
         last_load_source: lastLoadSourceRef.current
       });
-      router.push('/');
+      router.replace('/login');
       return;
     }
-    const parsed = safeParseJson(raw);
-    if (!parsed || typeof parsed !== 'object' || parsed === null || typeof (parsed as User).id !== 'string' || !(parsed as User).id) {
-      localStorage.removeItem('autoflow_user');
-      log.info('[LOGIN_REDIRECT]', {
-        from: '/chat',
-        to: '/',
-        reason: !parsed || typeof parsed !== 'object' ? 'invalid_json_removed' : 'missing_user_id',
-        has_mounted: isMountedRef.current,
-        last_load_source: lastLoadSourceRef.current
-      });
-      router.push('/');
-      return;
-    }
-    setUser(parsed as User);
+    setSessionUser(u);
   }, [router]);
 
   useEffect(() => {
@@ -123,7 +112,7 @@ export default function ChatPage() {
   const { toasts, onToastClick, removeToast, permission, requestBrowserPermission } = useChatNotifications({
     messages,
     initialHydrationComplete,
-    currentUserId: user?.id ?? null,
+    currentUserId: sessionUser && chatSendUserId ? chatSendUserId : null,
     roomNo,
     setRoomNo,
     router
@@ -195,19 +184,25 @@ export default function ChatPage() {
 
   // render helpers
   const canSend = useMemo(() => Boolean(text.trim() || photo), [text, photo]);
+  const canSendToServer = Boolean(sessionUser && chatSendUserId);
+  const missingSendEnvMsg = '전송에 실패했습니다. 관리자 설정이 필요합니다.';
 
   async function sendMessage() {
-    log.debug('[SEND_SUBMIT_START]', { hasUser: Boolean(user), canSend, submitting });
+    log.debug('[SEND_SUBMIT_START]', { hasUser: Boolean(sessionUser), canSend, submitting });
     if (submitting) {
       log.debug('[SEND_SUBMIT_BLOCKED_ALREADY_SUBMITTING]');
       return;
     }
-    if (!user || !canSend) return;
+    if (!sessionUser || !canSend) return;
+    if (!chatSendUserId) {
+      alert(missingSendEnvMsg);
+      return;
+    }
     setSubmitting(true);
     const optimisticId = `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const optimisticMessage: ChatMessage = {
       id: optimisticId,
-      user_id: user.id,
+      user_id: chatSendUserId,
       message: text.trim(),
       message_type: photo ? 'image' : 'text',
       sender_side: getDeviceSide(),
@@ -226,7 +221,8 @@ export default function ChatPage() {
       const clientRequestId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).toString();
       const deviceId = getOrCreateDeviceId();
       const fd = new FormData();
-      fd.append('user_id', user.id);
+      fd.append('user_id', chatSendUserId);
+      fd.append('actor_name', sessionUser.name);
       fd.append('message', text.trim());
       fd.append('client_request_id', clientRequestId);
       fd.append('client_device_id', deviceId);
@@ -261,7 +257,7 @@ export default function ChatPage() {
 
       if (!sendResult.ok) {
         log.error('[CHAT_SEND_CLIENT_ERROR]', sendResult);
-        alert(sendResult.message || '채팅 전송 실패');
+        alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         return;
       }
 
@@ -300,7 +296,11 @@ await loadFull('send_success_full_reload');
       log.debug('[MAINTENANCE_SUBMIT_BLOCKED]', { reason: 'already_submitting' });
       return;
     }
-    if (!user || !roomNo) return;
+    if (!sessionUser || !roomNo) return;
+    if (!chatSendUserId) {
+      alert(missingSendEnvMsg);
+      return;
+    }
     setSubmitting(true);
     try {
       const desc = text.trim() || `${issueType} 문제 발생`;
@@ -309,7 +309,7 @@ await loadFull('send_success_full_reload');
       fd.append('room_no', roomNo);
       fd.append('issue_type', issueType);
       fd.append('description', desc);
-      fd.append('created_by', user.id);
+      fd.append('created_by', chatSendUserId);
       if (photo) fd.append('image', photo);
 
       const mRes = await fetchEnvelope<{ ticket: unknown; chat_message: unknown }>('/api/maintenance/create', {
@@ -321,7 +321,7 @@ await loadFull('send_success_full_reload');
 
       if (!mRes.ok) {
         log.error('[MAINTENANCE_CREATE_CLIENT_ERROR]', mRes);
-        alert(mRes.message || '유지보수 등록 실패');
+        alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         return;
       }
 
@@ -336,7 +336,11 @@ await loadFull('send_success_full_reload');
   }
 
   async function createManualTicket(msg: ChatMessage) {
-    if (!user || !msg?.id) return;
+    if (!sessionUser || !msg?.id) return;
+    if (!chatSendUserId) {
+      alert(missingSendEnvMsg);
+      return;
+    }
     const roomInput = window.prompt('객실번호를 입력하세요 (예: 607)', msg.room_no || '');
     if (!roomInput) return;
     const roomNo = roomInput.replace(/[^\d]/g, '').slice(0, 4);
@@ -348,7 +352,7 @@ await loadFull('send_success_full_reload');
     fd.append('room_no', roomNo);
     fd.append('issue_type', issueType);
     fd.append('description', msg.message || `${roomNo}호 수동 티켓 생성`);
-    fd.append('created_by', user.id);
+    fd.append('created_by', chatSendUserId);
     const createdRes = await fetchEnvelope<{ ticket?: { id: string }; error?: string }>('/api/maintenance/create', {
       method: 'POST',
       body: fd,
@@ -357,7 +361,7 @@ await loadFull('send_success_full_reload');
     });
     if (!createdRes.ok) {
       log.error('[MANUAL_TICKET_CREATE_CLIENT_ERROR]', createdRes);
-      alert(createdRes.message || '수동 티켓 생성 실패');
+      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
       return;
     }
     const createdData = createdRes.data;
@@ -383,7 +387,7 @@ await loadFull('send_success_full_reload');
     });
     if (!linkResult.ok) {
       log.error('[MANUAL_TICKET_LINK_CLIENT_ERROR]', linkResult);
-      alert(linkResult.message || '메시지-티켓 연결 실패');
+      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
       return;
     }
     const linked = linkResult.data.message;
@@ -430,7 +434,11 @@ await loadFull('send_success_full_reload');
   };
 
   async function handleDeleteMessage(msg: ChatMessage) {
-    if (!user?.id || !msg?.id) return;
+    if (!sessionUser || !msg?.id) return;
+    if (!chatSendUserId) {
+      alert(missingSendEnvMsg);
+      return;
+    }
     if (msg.is_deleted) return;
     if (deletingMessageId) return;
     setDeletingMessageId(String(msg.id));
@@ -438,13 +446,13 @@ await loadFull('send_success_full_reload');
       const delResult = await fetchEnvelope<{ message: ChatMessage }>(CHAT_DELETE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message_id: msg.id, user_id: user.id }),
+        body: JSON.stringify({ message_id: msg.id, user_id: chatSendUserId }),
         timeoutMs: TIMEOUT_MS_CHAT_AUX
       });
       // [DEBUG] 추후 제거 가능
       logDeleteClientDebug('[CHAT_DELETE_CLIENT]', 'envelope', delResult);
       if (!delResult.ok) {
-        alert(delResult.message || `메시지 삭제에 실패했습니다. (${delResult.status})`);
+        alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         return;
       }
       const updated = delResult.data.message;
@@ -475,6 +483,14 @@ await loadFull('send_success_full_reload');
           <div>
             <div className="font-bold">AutoFlow 채팅</div>
             <div className="text-xs text-green-600">직원 협업 + 유지보수 등록</div>
+            {sessionUser ? (
+              <div className="mt-0.5 text-xs font-semibold text-gray-600">로그인: {sessionUser.name}</div>
+            ) : null}
+            {!canSendToServer ? (
+              <div className="mt-1 text-xs font-semibold text-rose-700">
+                전송/티켓 생성이 비활성화되었습니다. 관리자 설정이 필요합니다.
+              </div>
+            ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-600">
@@ -500,9 +516,8 @@ await loadFull('send_success_full_reload');
             </div>
             <button
               onClick={() => {
-                localStorage.removeItem('autoflow_user');
-                log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/', reason: 'manual_logout' });
-                router.push('/');
+                log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/login', reason: 'manual_logout' });
+                logoutAndGoLogin(router);
               }}
               className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600"
             >
@@ -519,7 +534,7 @@ await loadFull('send_success_full_reload');
       <section ref={listRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         <ChatMessages
           messages={messages}
-          currentUserId={user?.id || null}
+          currentUserId={sessionUser ? chatSendUserId : null}
           deletingMessageId={deletingMessageId}
           onDeleteMessage={handleDeleteMessage}
           onCreateManualTicket={createManualTicket}
