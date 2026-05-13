@@ -14,6 +14,7 @@ import { useChatLoader } from '@/lib/hooks/useChatLoader';
 import { useChatNotifications } from '@/lib/hooks/useChatNotifications';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
+import { ensureBrowserNotificationPermission, isBrowserNotificationSupported } from '@/lib/chat/browserNotifications';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
 import {
@@ -74,6 +75,12 @@ export default function ChatPage() {
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
+  const askedNotifyPermissionRef = useRef(false);
+  const [browserNotifyPermission, setBrowserNotifyPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >('default');
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'degraded' | 'reconnecting'>('reconnecting');
+  const [realtimeReconnectToken, setRealtimeReconnectToken] = useState(0);
 
   function getOrCreateDeviceId(): string {
     try {
@@ -87,6 +94,11 @@ export default function ChatPage() {
       return 'dev-fallback';
     }
   }
+
+  useEffect(() => {
+    const r = new URLSearchParams(window.location.search).get('room');
+    if (r) setRoomNo(r);
+  }, []);
 
   useEffect(() => {
     runSessionMigration();
@@ -109,7 +121,43 @@ export default function ChatPage() {
     messagesRef.current = messages;
   }, [messages]);
 
-  const { toasts, onToastClick, removeToast, permission, requestBrowserPermission } = useChatNotifications({
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isBrowserNotificationSupported()) {
+      setBrowserNotifyPermission('unsupported');
+      return;
+    }
+    setBrowserNotifyPermission(Notification.permission);
+  }, []);
+
+  // Ask Notification permission only once, after first user interaction (no aggressive auto prompt).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isBrowserNotificationSupported()) return;
+    if (askedNotifyPermissionRef.current) return;
+    if (Notification.permission !== 'default') return;
+
+    const onFirst = () => {
+      if (askedNotifyPermissionRef.current) return;
+      askedNotifyPermissionRef.current = true;
+      void ensureBrowserNotificationPermission().then((p) => {
+        setBrowserNotifyPermission(p);
+      });
+      window.removeEventListener('pointerdown', onFirst, true);
+      window.removeEventListener('keydown', onFirst, true);
+      window.removeEventListener('click', onFirst, true);
+    };
+    window.addEventListener('pointerdown', onFirst, true);
+    window.addEventListener('keydown', onFirst, true);
+    window.addEventListener('click', onFirst, true);
+    return () => {
+      window.removeEventListener('pointerdown', onFirst, true);
+      window.removeEventListener('keydown', onFirst, true);
+      window.removeEventListener('click', onFirst, true);
+    };
+  }, []);
+
+  const { toasts, onToastClick, removeToast } = useChatNotifications({
     messages,
     initialHydrationComplete,
     currentUserId: sessionUser && chatSendUserId ? chatSendUserId : null,
@@ -158,7 +206,8 @@ export default function ChatPage() {
     messagesRef,
     realtimeConnectedRef,
     lastRealtimeActivityAtRef,
-    lastRealtimeInsertPushAtRef
+    lastRealtimeInsertPushAtRef,
+    reconnectToken: realtimeReconnectToken
   });
 
   useChatWatchdog({
@@ -170,7 +219,13 @@ export default function ChatPage() {
     lastRealtimeInsertPushAtRef,
     safeSinceRef,
     isMountedRef,
-    isLoadingRef
+    isLoadingRef,
+    onConnectionStatus: setConnectionStatus,
+    onRequestResubscribe: () => {
+      setConnectionStatus('reconnecting');
+      setRealtimeReconnectToken((x) => x + 1);
+      return true;
+    }
   });
 
   useEffect(() => {
@@ -494,24 +549,34 @@ await loadFull('send_success_full_reload');
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-600">
-              {permission !== 'unsupported' && (
+              {browserNotifyPermission !== 'unsupported' && (
                 <button
                   type="button"
-                  onClick={() => void requestBrowserPermission()}
+                  onClick={() => {
+                    void ensureBrowserNotificationPermission().then((p) => setBrowserNotifyPermission(p));
+                  }}
                   className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 font-medium text-gray-700 hover:bg-gray-100"
                 >
-                  알림 허용
+                  브라우저 알림 켜기
                 </button>
               )}
               <span className="text-gray-500">
                 브라우저 알림:{' '}
-                {permission === 'granted'
+                {browserNotifyPermission === 'granted'
                   ? '허용됨'
-                  : permission === 'denied'
-                    ? '거부됨'
-                    : permission === 'unsupported'
+                  : browserNotifyPermission === 'denied'
+                    ? '차단됨'
+                    : browserNotifyPermission === 'unsupported'
                       ? '미지원'
                       : '미설정'}
+              </span>
+              <span className="text-gray-500">
+                연결 상태:{' '}
+                {connectionStatus === 'connected'
+                  ? 'connected'
+                  : connectionStatus === 'degraded'
+                    ? 'degraded'
+                    : 'reconnecting'}
               </span>
             </div>
             <button
