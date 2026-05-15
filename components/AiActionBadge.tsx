@@ -49,15 +49,15 @@ const AI_ACTION_META: Record<string, { label: string; className: string }> = {
 
 export default function AiActionBadge({ aiAction }: Props) {
   if (!aiAction) return null;
-  const meta = (aiAction && AI_ACTION_META[aiAction]) || AI_ACTION_META.unknown;
-  if (aiAction && !AI_ACTION_META[aiAction]) {
+  const meta = AI_ACTION_META[aiAction] ?? AI_ACTION_META.unknown;
+  if (!AI_ACTION_META[aiAction]) {
     console.warn("[UNKNOWN_AI_ACTION]", aiAction);
   }
   return (
     <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.className}`}
+      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta?.className ?? ''}`}
     >
-      {meta.label}
+      {meta?.label ?? aiAction}
     </span>
   );
 }
