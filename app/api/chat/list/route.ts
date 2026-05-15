@@ -3,6 +3,8 @@ import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { listChatMessages, listChatMessagesByTicket, listChatMessagesSince } from '@/lib/services/chat';
 import { supabaseAdmin } from '@/lib/supabase';
 
+const DEBUG_VERBOSE = process.env.CHAT_DEBUG_VERBOSE === '1';
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -45,6 +47,15 @@ export async function GET(req: NextRequest) {
     const limit = Number(searchParams.get('limit') || '50');
     const ticketId = searchParams.get('ticket_id');
     const since = searchParams.get('since')?.trim() || null;
+    if (DEBUG_VERBOSE) {
+      console.log('[CHAT_LIST_REQUEST]', {
+        limit,
+        since: since || null,
+        before: searchParams.get('before') || null,
+        ticket_id: ticketId || null,
+        query: searchParams.toString()
+      });
+    }
 
     // DB time probe (diagnostic only)
     try {
@@ -243,6 +254,41 @@ export async function GET(req: NextRequest) {
 
     const rows = messages || [];
     const scope = ticketId ? 'ticket' : since ? 'since_delta' : 'full_table';
+    if (DEBUG_VERBOSE) {
+      const first = rows[0]
+        ? {
+            id: rows[0]?.id ?? null,
+            created_at: rows[0]?.created_at ?? null,
+            text: String(rows[0]?.message ?? '').slice(0, 40),
+            room_no: (rows[0] as any)?.room_no ?? null
+          }
+        : null;
+      const last = rows.length
+        ? {
+            id: rows[rows.length - 1]?.id ?? null,
+            created_at: rows[rows.length - 1]?.created_at ?? null,
+            text: String(rows[rows.length - 1]?.message ?? '').slice(0, 40),
+            room_no: (rows[rows.length - 1] as any)?.room_no ?? null
+          }
+        : null;
+      console.log('[CHAT_LIST_RESULT_SUMMARY]', {
+        scope,
+        count: rows.length,
+        first,
+        last,
+        last5: rows.slice(-5).map((m: any) => ({
+          id: m?.id ?? null,
+          created_at: m?.created_at ?? null,
+          text: String(m?.message ?? '').slice(0, 40),
+          room_no: m?.room_no ?? null
+        }))
+      });
+      console.log('[CHAT_LIST_ORDER_CHECK]', {
+        scope,
+        first_created_at: rows[0]?.created_at ?? null,
+        last_created_at: rows[rows.length - 1]?.created_at ?? null
+      });
+    }
     if (probeId && probeRecent) {
       const included = rows.some((m: any) => String(m?.id || '') === probeId);
       console.log('[CHAT_LIST_CONTAINS_PROBE_ID]', {

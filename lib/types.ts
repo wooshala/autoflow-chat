@@ -129,6 +129,35 @@ export interface MaintenanceTicket {
   photos?: MaintenancePhoto[];
 }
 
+// ── Rooms ────────────────────────────────────────────────────────────────────
+
+export type RoomStatus = 'vacant' | 'occupied' | 'cleaning';
+
+export interface Room {
+  id: string;
+  room_no: string;
+  floor: string | null;
+  status: RoomStatus;
+  notes: string | null;
+  created_at: string;
+}
+
+// ── Room timeline (composed read view) ───────────────────────────────────────
+
+export type TimelineSourceType = 'intent' | 'ticket' | 'queue';
+export type TimelineSeverity = 'urgent' | 'high' | 'normal';
+
+export interface TimelineEvent {
+  room_no: string;
+  occurred_at: string;
+  source_type: TimelineSourceType;
+  event_type: string;
+  summary: string;
+  severity: TimelineSeverity;
+  reference_id: string;
+  meta: Record<string, unknown> | null;
+}
+
 export const ISSUE_TYPES: IssueType[] = ['설비', '전기', '가전', '침구', '청소', '기타'];
 
 export const ISSUE_UI: Record<IssueType, { emoji: string; badge: string }> = {

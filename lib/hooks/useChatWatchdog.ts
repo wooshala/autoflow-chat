@@ -19,7 +19,9 @@ export function useChatWatchdog({
   lastRealtimeInsertPushAtRef,
   safeSinceRef,
   isMountedRef,
-  isLoadingRef
+  isLoadingRef,
+  onConnectionStatus,
+  onRequestResubscribe
 }: {
   supabase: any;
   loadFull: (source: string) => Promise<any>;
@@ -30,6 +32,8 @@ export function useChatWatchdog({
   safeSinceRef: React.MutableRefObject<string | null>;
   isMountedRef: React.MutableRefObject<boolean>;
   isLoadingRef: React.MutableRefObject<boolean>;
+  onConnectionStatus?: (s: 'connected' | 'degraded' | 'reconnecting') => void;
+  onRequestResubscribe?: () => Promise<boolean> | boolean;
 }) {
   const lastRestoreFullLoadAtRef = useRef(0);
   const deferredRetryChainRef = useRef<{
@@ -46,6 +50,10 @@ export function useChatWatchdog({
   supabaseRef.current = supabase;
   const pollingEffectMountCountRef = useRef(0);
   const visibilityEffectMountCountRef = useRef(0);
+  const notConnectedStreakRef = useRef(0);
+  const lastRecoverAtRef = useRef(0);
+
+  const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
   useEffect(() => {
     visibilityEffectMountCountRef.current += 1;
@@ -228,8 +236,51 @@ export function useChatWatchdog({
       const stale = connected && Date.now() - lastRealtimeActivityAtRef.current > silenceLimitMs;
 
       if (!connected) {
+        notConnectedStreakRef.current += 1;
+        if (DEBUG_VERBOSE) {
+          log.info('[CHAT_CONNECTION_STATE]', {
+            connected,
+            not_connected_streak: notConnectedStreakRef.current,
+            ms_since_activity: Date.now() - lastRealtimeActivityAtRef.current
+          });
+        }
+        onConnectionStatus?.(notConnectedStreakRef.current >= 3 ? 'degraded' : 'reconnecting');
+
+        // Auto-recover: if not_connected persists, force a full reload fetch.
+        const now = Date.now();
+        const RECOVER_MIN_INTERVAL_MS = 30_000;
+        if (notConnectedStreakRef.current >= 3 && now - lastRecoverAtRef.current > RECOVER_MIN_INTERVAL_MS) {
+          lastRecoverAtRef.current = now;
+          log.warn('[CHAT_CONNECTION_DEGRADED]', {
+            reason: 'not_connected_streak',
+            streak: notConnectedStreakRef.current,
+            ms_since_activity: Date.now() - lastRealtimeActivityAtRef.current
+          });
+          log.info('[CHAT_CONNECTION_RECOVER_START]', { source: 'not_connected_full_reload' });
+          void (async () => {
+            const result = await loadFullRef.current('not_connected_recover_full');
+            log.info('[CHAT_CONNECTION_RECOVER_FULL_DONE]', { ok: Boolean(result?.ok), count: result?.count ?? 0 });
+
+            if (onRequestResubscribe) {
+              log.info('[CHAT_CONNECTION_RESUBSCRIBE_START]', { reason: 'post_full_recover' });
+              try {
+                const ok = await onRequestResubscribe();
+                log.info('[CHAT_CONNECTION_RESUBSCRIBE_DONE]', { ok: Boolean(ok) });
+              } catch (e) {
+                log.warn('[CHAT_CONNECTION_RESUBSCRIBE_FAILED]', { error: String(e) });
+              }
+            }
+          })();
+        }
+
         log.debug('[CHAT_WATCHDOG_SKIP]', { reason: 'not_connected' });
         return;
+      } else {
+        if (notConnectedStreakRef.current > 0 && DEBUG_VERBOSE) {
+          log.info('[CHAT_CONNECTION_STATE]', { connected, not_connected_streak: 0 });
+        }
+        notConnectedStreakRef.current = 0;
+        onConnectionStatus?.('connected');
       }
       if (!stale) {
         log.debug('[CHAT_WATCHDOG_SKIP]', {

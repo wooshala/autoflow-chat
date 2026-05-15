@@ -10,6 +10,8 @@ import { createMessageIntent, updateMessageIntentById } from '@/lib/services/mes
 
 type AutoTicketSkipReason = 'duplicate' | 'not_ticketable' | 'no_room' | 'ai_error';
 
+const DEBUG_VERBOSE = process.env.CHAT_DEBUG_VERBOSE === '1';
+
 function isUuid(v: string) {
   // RFC4122-ish: 8-4-4-4-12 hex
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
@@ -287,6 +289,17 @@ export async function POST(req: NextRequest) {
       image_url: image_url || null,
       image_storage_path: image_storage_path || null
     });
+    if (DEBUG_VERBOSE) {
+      console.log('[CHAT_MESSAGE_INSERTED]', {
+        id: saved.id,
+        created_at: saved.created_at,
+        room_no: (saved as any)?.room_no ?? null,
+        ticket_id: (saved as any)?.ticket_id ?? null,
+        sender_side: (saved as any)?.sender_side ?? null,
+        message_type: (saved as any)?.message_type ?? null,
+        text: String((saved as any)?.message ?? '').slice(0, 60)
+      });
+    }
 
     // DB time probe (diagnostic only)
     try {

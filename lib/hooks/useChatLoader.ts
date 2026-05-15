@@ -5,6 +5,8 @@ import { CHAT_LIST_URL } from '@/lib/chatApi';
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
 
+const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
+
 /** GET /api/chat/list 의 `data` 페이로드 */
 export type ChatListData = { messages: ChatMessage[] };
 
@@ -89,6 +91,18 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         }
 
         const nextMessages = Array.isArray(result.data.messages) ? result.data.messages : null;
+        if (DEBUG_VERBOSE && nextMessages) {
+          const last5 = nextMessages.slice(-5).map((m: any) => ({
+            id: m?.id ?? null,
+            created_at: m?.created_at ?? null,
+            text: String(m?.message ?? '').slice(0, 40)
+          }));
+          log.debug('[CHAT_LOADER_INCOMING_LAST5]', {
+            source,
+            incoming_count: nextMessages.length,
+            last5
+          });
+        }
 
         if (source === 'initial' || source === 'initial_retry') {
           log.debug('[CHAT_SET_MESSAGES_COUNT]', nextMessages?.length ?? 0);
@@ -99,14 +113,24 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
           if (nextMessages) {
             setMessages((prev) => {
               const byId = new Map<string, ChatMessage>();
+              const prevIds = new Set<string>();
               prev.forEach((m) => {
                 if (!m?.id) return;
                 byId.set(String(m.id), m);
+                prevIds.add(String(m.id));
               });
+              const added: ChatMessage[] = [];
+              let skippedExisting = 0;
               nextMessages.forEach((m) => {
                 if (!m?.id) return;
+                const mid = String(m.id);
                 const prevRow = byId.get(String(m.id));
                 byId.set(String(m.id), prevRow ? { ...prevRow, ...m } : m);
+                if (!prevIds.has(mid)) {
+                  added.push(m);
+                } else {
+                  skippedExisting += 1;
+                }
               });
               const merged = sortMessagesAsc(Array.from(byId.values()));
               log.debug('[SET_MESSAGES_MERGED_LAST_IDS]', {
@@ -116,6 +140,21 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
                 merged_count: merged.length,
                 merged_last5_ids: merged.slice(-5).map((m) => m?.id).filter(Boolean)
               });
+              if (DEBUG_VERBOSE) {
+                log.info('[CHAT_LOADER_MERGE_DIFF]', {
+                  source,
+                  before_count: prev.length,
+                  incoming_count: nextMessages.length,
+                  merged_count: merged.length,
+                  added_count: added.length,
+                  skipped_existing_count: skippedExisting,
+                  added_last5: added.slice(-5).map((m: any) => ({
+                    id: m?.id ?? null,
+                    created_at: m?.created_at ?? null,
+                    text: String(m?.message ?? '').slice(0, 40)
+                  }))
+                });
+              }
               return merged;
             });
           } else {

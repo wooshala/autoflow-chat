@@ -12,7 +12,8 @@ export function useChatRealtime({
   messagesRef,
   realtimeConnectedRef,
   lastRealtimeActivityAtRef,
-  lastRealtimeInsertPushAtRef
+  lastRealtimeInsertPushAtRef,
+  reconnectToken
 }: {
   supabase: any;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -20,6 +21,7 @@ export function useChatRealtime({
   realtimeConnectedRef: React.MutableRefObject<boolean>;
   lastRealtimeActivityAtRef: React.MutableRefObject<number>;
   lastRealtimeInsertPushAtRef: React.MutableRefObject<number | null>;
+  reconnectToken?: number;
 }) {
   useEffect(() => {
     if (!supabase) return;
@@ -78,7 +80,8 @@ export function useChatRealtime({
 
     log.info('[CHAT_REALTIME_SUBSCRIBE_START]', {
       channel: 'chat_messages_realtime',
-      postgres_changes: [PG_INSERT_FILTER, PG_UPDATE_FILTER]
+      postgres_changes: [PG_INSERT_FILTER, PG_UPDATE_FILTER],
+      reconnectToken: reconnectToken ?? 0
     });
 
     const channel = supabase
@@ -113,6 +116,14 @@ export function useChatRealtime({
         /* ignore */
       }
     };
-  }, [supabase, setMessages, messagesRef, realtimeConnectedRef, lastRealtimeActivityAtRef, lastRealtimeInsertPushAtRef]);
+  }, [
+    supabase,
+    setMessages,
+    messagesRef,
+    realtimeConnectedRef,
+    lastRealtimeActivityAtRef,
+    lastRealtimeInsertPushAtRef,
+    reconnectToken
+  ]);
 }
 
