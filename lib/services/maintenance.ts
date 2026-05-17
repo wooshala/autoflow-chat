@@ -56,7 +56,7 @@ export async function listTickets(status?: string): Promise<MaintenanceTicket[]>
     .from('tickets')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(100);
+    .limit(500);
 
   console.log('[MAINTENANCE_LIST_RESULT]', {
     count: data?.length ?? 0,

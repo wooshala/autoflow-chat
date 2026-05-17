@@ -49,6 +49,14 @@ export default function MaintenancePage() {
           return;
         }
 
+        const rawDataTickets = (r as any).data?.tickets;
+        const typedDataTickets = r.data?.tickets;
+        console.log('[MAINTENANCE_PRE_NEXT_TICKETS]', {
+          rawLen: Array.isArray(rawDataTickets) ? rawDataTickets.length : String(typeof rawDataTickets),
+          typedLen: Array.isArray(typedDataTickets) ? typedDataTickets.length : String(typeof typedDataTickets),
+          sameRef: rawDataTickets === typedDataTickets,
+        });
+
         const nextTickets = Array.isArray(r.data?.tickets) ? r.data.tickets : [];
 
         console.log('[MAINTENANCE_SET_TICKETS]', {
