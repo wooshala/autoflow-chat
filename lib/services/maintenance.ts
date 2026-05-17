@@ -29,8 +29,7 @@ function mapRowToTicket(row: any): MaintenanceTicket {
     id: String(row.id),
     room_no: String(row.room_no || ''),
     issue_type: row.issue_type as IssueType,
-    // real tickets 테이블에 description 컬럼이 없으므로 안전하게 빈 문자열로 유지
-    description: '',
+    description: String(row.description || ''),
     status: toAppStatus(row.status),
     created_by: String(row.created_by || ''),
     created_at: String(row.created_at || new Date().toISOString()),
@@ -39,21 +38,46 @@ function mapRowToTicket(row: any): MaintenanceTicket {
 }
 
 export async function listTickets(status?: string): Promise<MaintenanceTicket[]> {
+  console.log('[MAINTENANCE_LIST_QUERY_START]', {
+    is_mock: IS_MOCK,
+    has_supabase_admin: !!supabaseAdmin,
+    status_filter: status || null,
+  });
+
   if (IS_MOCK || !supabaseAdmin) {
     const store = getMockStore();
     let tickets = store.tickets;
     if (status && status !== 'all') tickets = tickets.filter(t => t.status === status);
+    console.log('[MAINTENANCE_LIST_MOCK]', { count: tickets.length });
     return tickets.map(hydrateTicket);
   }
 
   const { data, error } = await supabaseAdmin
     .from('tickets')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  console.log('[MAINTENANCE_LIST_RESULT]', {
+    count: data?.length ?? 0,
+    error: error ? { message: error.message, code: (error as any).code, hint: (error as any).hint } : null,
+    ids: data?.slice(0, 10).map((r: any) => r.id) ?? [],
+    room_nos: data?.slice(0, 10).map((r: any) => r.room_no) ?? [],
+    statuses: data?.slice(0, 10).map((r: any) => r.status) ?? [],
+  });
+
   if (error) throw error;
 
   let tickets = (data || []).map(mapRowToTicket);
   if (status && status !== 'all') tickets = tickets.filter(t => t.status === status);
+
+  console.log('[MAINTENANCE_LIST_SERVICE_RESULT_JSON]', JSON.stringify({
+    count: tickets.length,
+    room_nos: tickets.slice(0, 20).map(r => r.room_no),
+    ids: tickets.slice(0, 20).map(r => r.id),
+    statuses: tickets.slice(0, 20).map(r => r.status),
+  }, null, 2));
+
   return tickets;
 }
 
@@ -145,6 +169,7 @@ export async function createTicket(input: {
     .insert({
       room_no: input.room_no,
       issue_type: input.issue_type,
+      description: input.description || null,
       status: toDbStatus('open'),
       created_by: input.created_by,
       created_at: now
