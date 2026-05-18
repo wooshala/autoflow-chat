@@ -298,6 +298,7 @@ export default function ChatPage() {
         timeoutMs: TIMEOUT_MS_CHAT_SEND
       });
 
+      console.log('[CHAT_AUTO_TICKET_RESPONSE]', sendResult);
       log.debug('[CHAT_SEND_CLIENT_ENVELOPE]', {
         ok: sendResult.ok,
         status: sendResult.status,
@@ -311,6 +312,7 @@ export default function ChatPage() {
       });
 
       if (!sendResult.ok) {
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
         log.error('[CHAT_SEND_CLIENT_ERROR]', sendResult);
         alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         return;
@@ -318,6 +320,7 @@ export default function ChatPage() {
 
       const saved = unwrapChatSendEnvelopeData(sendResult.data);
       if (!saved) {
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
         log.error('[CHAT_SEND_ABNORMAL_RESPONSE]', {
           data: sendResult.data,
           hint: 'data.message가 plain object가 아니거나 id 없음, 또는 평면 data에 user_id/id 없음 (본문 .message 문자열로 판별 안 함)'

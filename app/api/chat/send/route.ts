@@ -70,9 +70,8 @@ async function runAiPostProcess(input: {
   const { saved, user_id, ticket_id, message } = input;
   if (ticket_id || !message.trim()) return;
 
-  console.log('[AI_ASYNC_PROCESS_START]', {
-    message_id: saved.id
-  });
+  console.log('[AI_ASYNC_PROCESS_START]', { message_id: saved.id });
+  console.log('[OPENAI_KEY_EXISTS]', !!process.env.OPENAI_API_KEY);
 
   try {
     const listStarted = Date.now();
@@ -84,8 +83,25 @@ async function runAiPostProcess(input: {
     });
     const recentMessages = recent.map((m) => m.message).filter(Boolean);
 
+    console.log('[AUTO_TICKET_AI_START]', {
+      messageId: saved.id,
+      text: message,
+    });
     const parseStarted = Date.now();
-    const aiResult = await parseMessage(message, recentMessages);
+    let aiResult: Awaited<ReturnType<typeof parseMessage>>;
+    try {
+      aiResult = await parseMessage(message, recentMessages);
+    } catch (err: any) {
+      console.error('[AI_PARSE_FATAL]', {
+        message_id: saved.id,
+        message: err?.message ?? null,
+        stack: err?.stack ?? null,
+        status: err?.status ?? null,
+        code: err?.code ?? null,
+        type: err?.type ?? null,
+      });
+      throw err;
+    }
     console.log('[AI_ASYNC_STEP]', {
       message_id: saved.id,
       step: 'ai_parse',
@@ -93,6 +109,36 @@ async function runAiPostProcess(input: {
     });
 
     const fallbackRoom = extractRoom(message);
+
+    const autoTicketable = aiResult
+      ? aiResult.issue_type === 'maintenance' || aiResult.issue_type === 'housekeeping'
+      : false;
+    const sensitiveReviewOnly = aiResult
+      ? aiResult.issue_type === 'frontdesk' || aiResult.issue_type === 'checkout' || aiResult.issue_type === 'payment'
+      : false;
+    const isMemoOnly = aiResult ? aiResult.issue_type === 'ops_note' : false;
+    const isTicketable = autoTicketable || sensitiveReviewOnly;
+
+    console.log('[AI_PARSE_RESULT]', {
+      message_id: saved.id,
+      ok: !!aiResult,
+      room: aiResult?.room ?? null,
+      fallback_room: fallbackRoom,
+      issue_type: aiResult?.issue_type ?? null,
+      summary: aiResult?.summary?.slice(0, 80) ?? null,
+      is_new_issue: aiResult?.is_new_issue ?? null,
+      confidence: aiResult?.confidence ?? null,
+      autoTicketable,
+      sensitiveReviewOnly,
+      isMemoOnly,
+      isTicketable,
+    });
+    console.log('[AUTO_TICKET_AI_RESULT]', {
+      parsed: aiResult,
+      should_create: autoTicketable,
+      room_no: aiResult?.room ?? fallbackRoom ?? null,
+      category: aiResult?.issue_type ?? null,
+    });
 
     if (!aiResult) {
       await updateChatMessage({ messageId: saved.id, ai_action: 'skip_ai_error' });
@@ -103,12 +149,6 @@ async function runAiPostProcess(input: {
     const resolvedRoom = aiResult.room || fallbackRoom;
     const summary = aiResult.summary || message.trim();
     const confidence = aiResult.confidence ?? null;
-
-    const sensitiveReviewOnly =
-      aiResult.issue_type === 'frontdesk' || aiResult.issue_type === 'checkout' || aiResult.issue_type === 'payment';
-    const isMemoOnly = aiResult.issue_type === 'ops_note';
-    const autoTicketable = aiResult.issue_type === 'maintenance' || aiResult.issue_type === 'housekeeping';
-    const isTicketable = autoTicketable || sensitiveReviewOnly;
 
     let intentId: string | null = null;
     try {
@@ -149,12 +189,26 @@ async function runAiPostProcess(input: {
     }
 
     const mappedIssueType = mapIntentIssueTypeToKo(aiResult.issue_type);
+    console.log('[TICKET_ISSUE_TYPE_MAPPED]', {
+      message_id: saved.id,
+      raw_issue_type: aiResult.issue_type,
+      mapped: mappedIssueType,
+      passes_filter: mappedIssueType === '설비' || mappedIssueType === '청소',
+    });
+
     if (mappedIssueType !== '설비' && mappedIssueType !== '청소') {
       await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'skip_not_ticketable' });
       return;
     }
 
     const active = await findActiveTicketByRoomAndIssue({ room_no: resolvedRoom, issue_type: mappedIssueType as IssueType });
+    console.log('[TICKET_DEDUP_CHECK]', {
+      message_id: saved.id,
+      room_no: resolvedRoom,
+      issue_type: mappedIssueType,
+      existing_ticket_id: active?.id ?? null,
+    });
+
     if (active?.id) {
       await updateChatMessage({
         messageId: saved.id,
@@ -170,12 +224,48 @@ async function runAiPostProcess(input: {
       return;
     }
 
-    const ticket = await createTicket({
-      room_no: resolvedRoom,
-      issue_type: mappedIssueType as IssueType,
-      description: summary,
-      created_by: user_id
+    console.log('[AUTO_TICKET_INSERT_START]', {
+      payload: {
+        room_no: resolvedRoom,
+        issue_type: mappedIssueType,
+        description: summary.slice(0, 80),
+        created_by: user_id,
+      },
     });
+
+    let ticket;
+    try {
+      ticket = await createTicket({
+        room_no: resolvedRoom,
+        issue_type: mappedIssueType as IssueType,
+        description: summary,
+        created_by: user_id
+      });
+      console.log('[AUTO_TICKET_INSERT_RESULT]', {
+        data: ticket,
+        error: null,
+      });
+    } catch (err: any) {
+      console.log('[AUTO_TICKET_INSERT_RESULT]', {
+        data: null,
+        error: { message: err?.message ?? String(err), code: err?.code ?? null, hint: err?.hint ?? null },
+      });
+      console.error('[CREATE_TICKET_FATAL]', {
+        message_id: saved.id,
+        error: err?.message || String(err),
+        code: err?.code ?? null,
+        details: err?.details ?? null,
+        hint: err?.hint ?? null,
+      });
+      throw err;
+    }
+
+    console.log('[CREATE_TICKET_RESULT]', {
+      message_id: saved.id,
+      ok: !!ticket,
+      ticket_id: ticket?.id ?? null,
+    });
+
     await updateChatMessage({
       messageId: saved.id,
       ticket_id: ticket.id,
@@ -187,10 +277,23 @@ async function runAiPostProcess(input: {
         await updateMessageIntentById(intentId, { matched_ticket_id: ticket.id });
       } catch {}
     }
+    console.log('[AUTO_TICKET_FINAL]', {
+      ok: true,
+      created_ticket_id: ticket.id,
+      skipped: false,
+      reason: null,
+    });
   } catch (error: any) {
     console.error('[AUTO_TICKET_ERROR]', {
       message_id: saved.id,
-      error: error?.message || String(error)
+      error: error?.message || String(error),
+      code: (error as any)?.code ?? null,
+    });
+    console.log('[AUTO_TICKET_FINAL]', {
+      ok: false,
+      created_ticket_id: null,
+      skipped: true,
+      reason: error?.message ?? 'error',
     });
     try {
       const updateStarted = Date.now();
@@ -269,6 +372,21 @@ export async function POST(req: NextRequest) {
         throw uploadError;
       }
     }
+
+    console.log('[CHAT_ROUTE_START]', {
+      room_no: room_no || null,
+      message: message.slice(0, 80) || null,
+      user_id: user_id || null,
+    });
+
+    console.log('[CHAT_SEND_INPUT]', {
+      user_id: user_id || null,
+      user_id_valid: isUuid(user_id),
+      room_no: room_no || null,
+      message_preview: message.slice(0, 60) || null,
+      has_image: image instanceof File,
+      ticket_id: ticket_id || null,
+    });
 
     if (!user_id || (!message && !(image instanceof File))) {
       return jsonErr('VALIDATION_ERROR', '전송에 실패했습니다. 관리자 설정이 필요합니다.', 400);
