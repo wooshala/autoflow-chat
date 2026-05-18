@@ -68,10 +68,24 @@ async function runAiPostProcess(input: {
 }) {
   const started = Date.now();
   const { saved, user_id, ticket_id, message } = input;
-  if (ticket_id || !message.trim()) return;
+  console.log('[AUTO_TICKET_PIPELINE_START]', {
+    enabled: Boolean(process.env.OPENAI_API_KEY),
+    has_openai_key: Boolean(process.env.OPENAI_API_KEY),
+    app_mode: process.env.NEXT_PUBLIC_APP_MODE ?? null,
+    messageId: saved.id,
+  });
+  if (ticket_id || !message.trim()) {
+    console.log('[AUTO_TICKET_SKIPPED]', { reason: 'empty_message', has_ticket_id: Boolean(ticket_id) });
+    return;
+  }
 
   console.log('[AI_ASYNC_PROCESS_START]', { message_id: saved.id });
   console.log('[OPENAI_KEY_EXISTS]', !!process.env.OPENAI_API_KEY);
+  if (!process.env.OPENAI_API_KEY) {
+    console.log('[AUTO_TICKET_SKIPPED]', { reason: 'missing_openai_key' });
+    try { await updateChatMessage({ messageId: saved.id, ai_action: 'skip_ai_error' }); } catch {}
+    return;
+  }
 
   try {
     const listStarted = Date.now();
@@ -87,11 +101,18 @@ async function runAiPostProcess(input: {
       messageId: saved.id,
       text: message,
     });
+    console.log('[AUTO_TICKET_FETCH_START]', {
+      route: 'openai/responses.create',
+      payload: { model: 'gpt-4.1-mini', text_preview: message.slice(0, 80) },
+    });
     const parseStarted = Date.now();
     let aiResult: Awaited<ReturnType<typeof parseMessage>>;
     try {
       aiResult = await parseMessage(message, recentMessages);
     } catch (err: any) {
+      console.log('[AUTO_TICKET_FETCH_ERROR]', {
+        error: err?.message ?? String(err),
+      });
       console.error('[AI_PARSE_FATAL]', {
         message_id: saved.id,
         message: err?.message ?? null,
@@ -102,6 +123,7 @@ async function runAiPostProcess(input: {
       });
       throw err;
     }
+    console.log('[AUTO_TICKET_FETCH_RESULT]', aiResult);
     console.log('[AI_ASYNC_STEP]', {
       message_id: saved.id,
       step: 'ai_parse',
@@ -141,6 +163,7 @@ async function runAiPostProcess(input: {
     });
 
     if (!aiResult) {
+      console.log('[AUTO_TICKET_SKIPPED]', { reason: 'ai_unavailable' });
       await updateChatMessage({ messageId: saved.id, ai_action: 'skip_ai_error' });
       logAutoTicketSkip(saved.id, 'ai_error', { detail: 'no_result' });
       return;
@@ -169,21 +192,25 @@ async function runAiPostProcess(input: {
     }
 
     if (!resolvedRoom) {
+      console.log('[AUTO_TICKET_SKIPPED]', { reason: 'invalid_room_format', raw_room: aiResult.room, fallback: fallbackRoom });
       await updateChatMessage({ messageId: saved.id, ai_action: 'skip_no_room' });
       return;
     }
 
     if (sensitiveReviewOnly) {
+      console.log('[AUTO_TICKET_SKIPPED]', { reason: 'sensitive_review_only', issue_type: aiResult.issue_type });
       await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'skip_review_required' });
       return;
     }
 
     if (isMemoOnly) {
+      console.log('[AUTO_TICKET_SKIPPED]', { reason: 'memo_only' });
       await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'note_saved' });
       return;
     }
 
     if (!autoTicketable) {
+      console.log('[AUTO_TICKET_SKIPPED]', { reason: 'not_ticketable', issue_type: aiResult.issue_type });
       await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'skip_not_ticketable' });
       return;
     }
@@ -197,6 +224,7 @@ async function runAiPostProcess(input: {
     });
 
     if (mappedIssueType !== '설비' && mappedIssueType !== '청소') {
+      console.log('[AUTO_TICKET_SKIPPED]', { reason: 'not_ticketable', mapped: mappedIssueType });
       await updateChatMessage({ messageId: saved.id, room_no: resolvedRoom, ai_action: 'skip_not_ticketable' });
       return;
     }
@@ -210,6 +238,7 @@ async function runAiPostProcess(input: {
     });
 
     if (active?.id) {
+      console.log('[AUTO_TICKET_SKIPPED]', { reason: 'duplicate', existing_ticket_id: active.id });
       await updateChatMessage({
         messageId: saved.id,
         room_no: resolvedRoom,
@@ -495,6 +524,10 @@ export async function POST(req: NextRequest) {
       has_message: Boolean(message.trim())
     });
 
+    console.log('[CHAT_AFTER_SEND]', {
+      messageId: saved.id,
+      text: message,
+    });
     void runAiPostProcess({
       saved,
       user_id,
