@@ -33,12 +33,13 @@ import {
 import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
-import { isStaffTtsUnlocked, speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
+import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 
 type Lang = 'ko' | 'vi' | 'ru';
 
 const STORAGE_CURRENT_ROOM = 'autoflow_staff_current_room_v1';
+const STORAGE_SOUND_ENABLED = 'autoflow_staff_sound_enabled_v1';
 /** OS notification body cap (Browser Notification API, not Web Push). */
 const OS_NOTIFY_BODY_MAX = 100;
 
@@ -97,6 +98,23 @@ function saveStoredRoom(roomNo: string) {
   }
 }
 
+function loadSoundEnabled(): boolean {
+  try {
+    const v = localStorage.getItem(STORAGE_SOUND_ENABLED);
+    return v === '1' || v === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveSoundEnabled(enabled: boolean) {
+  try {
+    localStorage.setItem(STORAGE_SOUND_ENABLED, enabled ? '1' : '0');
+  } catch {
+    // ignore
+  }
+}
+
 const I18N: Record<Lang, Record<string, string>> = {
   ko: {
     title: '청소팀 보고',
@@ -114,7 +132,8 @@ const I18N: Record<Lang, Record<string, string>> = {
     noUserId: 'user_id 미설정 — .env.local에 STAFF_USER UUID 필요',
     photoSoon: '사진 전송은 v0.3에서 연결됩니다',
     voiceSoon: '음성(워키토키)은 v0.3 예정입니다',
-    soundOn: '소리 켜기',
+    soundOn: '소리 켜짐',
+    soundOff: '소리 꺼짐',
     readAloud: '읽기',
     notifyEnable: '알림 켜기',
     notifyGranted: '알림 허용됨',
@@ -137,6 +156,8 @@ const I18N: Record<Lang, Record<string, string>> = {
     noUserId: 'Thiếu user_id',
     photoSoon: 'Ảnh sẽ có ở v0.3',
     voiceSoon: 'Giọng nói sẽ có ở v0.3',
+    soundOn: 'Âm thanh bật',
+    soundOff: 'Âm thanh tắt',
     notifyEnable: 'Bật thông báo',
     notifyGranted: 'Thông báo đã bật',
     notifyDenied: 'Thông báo bị chặn',
@@ -158,6 +179,8 @@ const I18N: Record<Lang, Record<string, string>> = {
     noUserId: 'Нет user_id',
     photoSoon: 'Фото в v0.3',
     voiceSoon: 'Голос в v0.3',
+    soundOn: 'Звук вкл',
+    soundOff: 'Звук выкл',
     notifyEnable: 'Включить уведомления',
     notifyGranted: 'Уведомления разрешены',
     notifyDenied: 'Уведомления заблокированы',
@@ -196,7 +219,9 @@ function StaffChatPageInner() {
       viewerLang: lang === 'ru' ? 'ru' : 'ko'
     });
   }, [lang]);
-  const [ttsReady, setTtsReady] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() =>
+    typeof window !== 'undefined' ? loadSoundEnabled() : false
+  );
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const [sessionSource, setSessionSource] = useState<SessionSource>('none');
   const [roomNo, setRoomNo] = useState('');
@@ -384,16 +409,6 @@ function StaffChatPageInner() {
     setBrowserNotifyPermission(Notification.permission);
   }, []);
 
-  useEffect(() => {
-    const onFirst = () => {
-      unlockNotificationAudio();
-      unlockStaffTts();
-      setTtsReady(true);
-    };
-    window.addEventListener('pointerdown', onFirst, true);
-    return () => window.removeEventListener('pointerdown', onFirst, true);
-  }, []);
-
   useChatRealtime({
     supabase,
     setMessages,
@@ -439,14 +454,16 @@ function StaffChatPageInner() {
       knownNotifyIdsRef.current.add(id);
       const isOwn = String(m.user_id) === String(chatSendUserId);
       if (!isOwn) {
-        void playNotificationTone('info');
         const viewerLang: ChatLang = lang === 'ru' ? 'ru' : 'ko';
         const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
           logContext: 'staff',
           selectedLang: lang
         });
-        const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
-        if (toSpeak) speakStaffRussian(toSpeak);
+        if (soundEnabled) {
+          void playNotificationTone('info');
+          const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
+          if (toSpeak) speakStaffRussian(toSpeak);
+        }
         setToast({ kind: 'ok', msg: `📩 ${String(primary || m.message || '').slice(0, 40)}` });
 
         // staff-chat OS alerts: Browser Notification API while tab/session is alive (not Web Push).
@@ -471,7 +488,7 @@ function StaffChatPageInner() {
         }
       }
     }
-  }, [messages, initialHydrationComplete, chatSendUserId, lang, staffKey]);
+  }, [messages, initialHydrationComplete, chatSendUserId, lang, staffKey, soundEnabled]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -621,6 +638,18 @@ function StaffChatPageInner() {
     setRoomPickerOpen(false);
   }
 
+  function toggleSound() {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      saveSoundEnabled(next);
+      if (next) {
+        unlockNotificationAudio();
+        unlockStaffTts();
+      }
+      return next;
+    });
+  }
+
   function handleComposerSend() {
     staffChatLog('STAFF_CHAT_SEND_CLICK', {
       canComposerSend,
@@ -707,18 +736,17 @@ function StaffChatPageInner() {
                 </span>
               )}
             </div>
-            {!ttsReady && !isStaffTtsUnlocked() ? (
-              <button
-                type="button"
-                onClick={() => {
-                  unlockStaffTts();
-                  setTtsReady(true);
-                }}
-                className="rounded-lg border border-blue-300 bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-800"
-              >
-                🔊 {t(lang, 'soundOn')}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={toggleSound}
+              className={`rounded-lg border px-2 py-0.5 text-[11px] font-bold ${
+                soundEnabled
+                  ? 'border-blue-300 bg-blue-50 text-blue-800'
+                  : 'border-gray-300 bg-gray-50 text-gray-600'
+              }`}
+            >
+              🔊 {t(lang, soundEnabled ? 'soundOn' : 'soundOff')}
+            </button>
             <div className="flex gap-1">
             {langButtons.map((b) => (
               <button
@@ -817,7 +845,7 @@ function StaffChatPageInner() {
                       <span>
                         {m.room_no ? `${m.room_no}호` : '—'} · {m.sender_side || '?'}
                       </span>
-                      {!mine && ttsText ? (
+                      {!mine && ttsText && soundEnabled ? (
                         <button
                           type="button"
                           onClick={() => speakStaffRussian(ttsText)}
