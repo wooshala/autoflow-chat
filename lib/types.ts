@@ -87,11 +87,14 @@ export interface TranslatedText {
   en?: string;
 }
 
+export type MessagePriority = 'normal' | 'urgent';
+
 export interface ChatMessage {
   id: string;
   user_id: string;
   message: string;
   message_type: MessageType;
+  priority?: MessagePriority | null;
   room_no: string | null;
   image_url: string | null;
   image_storage_path: string | null;

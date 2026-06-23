@@ -87,6 +87,7 @@ export default function ChatPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [issueType, setIssueType] = useState<IssueType>('설비');
   const [submitting, setSubmitting] = useState(false);
+  const [urgentMode, setUrgentMode] = useState(false);
   /** soft delete 진행 중 message id — 중복 요청 방지 */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -306,6 +307,7 @@ export default function ChatPage() {
       message: text.trim(),
       message_type: photo ? 'image' : 'text',
       sender_side: getDeviceSide(),
+      priority: urgentMode ? 'urgent' : 'normal',
       room_no: roomNo || null,
       image_url: photo ? preview || null : null,
       image_storage_path: null,
@@ -329,6 +331,7 @@ export default function ChatPage() {
       fd.append('client_nonce', clientNonce);
       fd.append('client_device_id', deviceId);
       fd.append('sender_side', getDeviceSide());
+      fd.append('priority', urgentMode ? 'urgent' : 'normal');
       if (roomNo) fd.append('room_no', roomNo);
       if (photo) {
         log.debug('[CHAT_FILE_APPEND]', {
@@ -385,6 +388,7 @@ export default function ChatPage() {
       logSendApiResponded(clientNonce, String(saved.id), saved.created_at);
       setMessages((prev) => prev.map((m) => (m.id === optimisticId ? ({ ...m, ...saved } as ChatMessage) : m)));
       clearInput();
+      setUrgentMode(false);
     } catch (error: any) {
       log.error('[CHAT_SEND_CLIENT_ERROR]', {
         error: error?.message || String(error)
@@ -516,6 +520,7 @@ export default function ChatPage() {
 
   function clearInput() {
     setText('');
+    setUrgentMode(false);
     try {
       if (preview) URL.revokeObjectURL(preview);
     } catch {}
@@ -722,6 +727,19 @@ export default function ChatPage() {
             className={`h-11 w-11 shrink-0 rounded-full text-xl ${showEmojiPicker ? 'bg-yellow-400' : 'bg-gray-700'}`}
           >
             😊
+          </button>
+          <button
+            type="button"
+            onClick={() => setUrgentMode((v) => !v)}
+            className={`h-11 shrink-0 rounded-lg border px-2 text-xs font-bold ${
+              urgentMode
+                ? 'border-orange-400 bg-orange-500 text-white'
+                : 'border-gray-600 bg-gray-800 text-gray-300'
+            }`}
+            aria-pressed={urgentMode}
+            title="긴급 메시지"
+          >
+            긴급 {urgentMode ? 'ON' : 'OFF'}
           </button>
           {/* 입력창: 다크 스타일 */}
           <textarea

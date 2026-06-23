@@ -1,7 +1,7 @@
 import { getMockStore } from '@/lib/mock';
 import { supabaseAdmin } from '@/lib/supabase';
 import { IS_MOCK } from '@/lib/env';
-import { AiAction, ChatMessage, MessageType, SenderSide } from '@/lib/types';
+import { AiAction, ChatMessage, MessagePriority, MessageType, SenderSide } from '@/lib/types';
 import { detectAndTranslate } from '@/lib/services/translation';
 
 function withUser(msg: ChatMessage) {
@@ -92,6 +92,7 @@ export async function createChatMessage(input: {
   user_id: string;
   message: string;
   message_type?: MessageType;
+  priority?: MessagePriority;
   sender_side?: SenderSide | null;
   room_no?: string | null;
   image_url?: string | null;
@@ -107,6 +108,7 @@ export async function createChatMessage(input: {
     user_id: input.user_id,
     message: input.message,
     message_type: input.message_type || 'text',
+    priority: (input.priority === 'urgent' ? 'urgent' : 'normal') as MessagePriority,
     sender_side: input.sender_side || null,
     room_no: input.room_no || null,
     image_url: input.image_url || null,
@@ -123,6 +125,7 @@ export async function createChatMessage(input: {
     user_id: insertPayload.user_id,
     message: insertPayload.message,
     message_type: insertPayload.message_type,
+    priority: insertPayload.priority,
     sender_side: insertPayload.sender_side,
     room_no: insertPayload.room_no,
     image_url: insertPayload.image_url,
@@ -169,6 +172,15 @@ export async function createChatMessage(input: {
   if (error && String(error?.message || '').includes('back_translated_text')) {
     const { back_translated_text: _ignored, ...fallbackPayload } = insertPayload as any;
     console.log('[CHAT_INSERT_SUPABASE_PAYLOAD_FALLBACK_NO_BACK_TRANSLATED]', fallbackPayload);
+    ({ data, error } = await supabaseAdmin
+      .from('chat_messages')
+      .insert(fallbackPayload)
+      .select('id, created_at')
+      .single());
+  }
+  if (error && String(error?.message || '').includes('priority')) {
+    const { priority: _ignored, ...fallbackPayload } = insertPayload as any;
+    console.log('[CHAT_INSERT_SUPABASE_PAYLOAD_FALLBACK_NO_PRIORITY]', fallbackPayload);
     ({ data, error } = await supabaseAdmin
       .from('chat_messages')
       .insert(fallbackPayload)

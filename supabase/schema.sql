@@ -38,6 +38,9 @@ alter table if exists chat_messages
 alter table if exists chat_messages
   add column if not exists deleted_at timestamptz;
 
+alter table if exists chat_messages
+  add column if not exists priority text default 'normal';
+
 create table if not exists chat_rooms (
   id uuid primary key default gen_random_uuid(),
   name text not null default '기본 대화방',

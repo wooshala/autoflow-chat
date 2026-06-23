@@ -31,6 +31,7 @@ import {
 } from '@/lib/chat/browserNotifications';
 import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
+import { isUrgentMessage } from '@/lib/chat/messagePriority';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
@@ -189,7 +190,7 @@ function StaffChatPageInner() {
   const [sending, setSending] = useState(false);
   const [composerHeight, setComposerHeight] = useState(72);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
-  const [toast, setToast] = useState<{ kind: 'ok' | 'error'; msg: string } | null>(null);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'error'; msg: string; urgent?: boolean } | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'degraded' | 'reconnecting'>('reconnecting');
   const [browserNotifyPermission, setBrowserNotifyPermission] = useState<
     NotificationPermission | 'unsupported'
@@ -431,13 +432,19 @@ function StaffChatPageInner() {
         logContext: 'staff',
         selectedLang: lang
       });
+      const urgent = isUrgentMessage(m);
+      const preview = String(primary || m.message || '').trim();
       if (soundEnabled) {
-        console.log('[STAFF_CHAT_SOUND_PLAY]', { messageId: id, soundEnabled: true });
-        void playNotificationTone('info');
+        console.log('[STAFF_CHAT_SOUND_PLAY]', { messageId: id, soundEnabled: true, urgent });
+        void playNotificationTone(urgent ? 'urgent' : 'info');
         const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
         if (toSpeak) speakStaffRussian(toSpeak);
       }
-      setToast({ kind: 'ok', msg: `📩 ${String(primary || m.message || '').slice(0, 40)}` });
+      setToast({
+        kind: 'ok',
+        urgent,
+        msg: urgent ? `🚨 긴급 메시지\n${preview.slice(0, 80)}` : `📩 ${preview.slice(0, 40)}`
+      });
 
       // staff-chat OS alerts: Browser Notification API while tab/session is alive (not Web Push).
       // Mobile browsers may suppress notifications when the screen is off or the tab is suspended.
@@ -453,9 +460,10 @@ function StaffChatPageInner() {
         const body = String(ruPrimary || m.message || '').trim().slice(0, OS_NOTIFY_BODY_MAX);
         if (body) {
           void showBrowserNotification({
-            title: staffKeyLabel(staffKey) || 'AutoFlow Chat',
+            title: urgent ? '🚨 긴급 메시지' : staffKeyLabel(staffKey) || 'AutoFlow Chat',
             body,
-            tag: id
+            tag: id,
+            requireInteraction: urgent
           });
         }
       }
@@ -793,10 +801,12 @@ function StaffChatPageInner() {
 
       {toast && (
         <div
-          className={`mx-4 mt-2 shrink-0 rounded-xl border px-3 py-2 text-center text-sm font-bold ${
-            toast.kind === 'ok'
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-              : 'border-rose-300 bg-rose-50 text-rose-900'
+          className={`mx-4 mt-2 shrink-0 rounded-xl border px-3 py-2 text-center text-sm font-bold whitespace-pre-line ${
+            toast.urgent
+              ? 'border-orange-400 bg-orange-50 text-orange-950 ring-2 ring-orange-200'
+              : toast.kind === 'ok'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                : 'border-rose-300 bg-rose-50 text-rose-900'
           }`}
         >
           {toast.msg}
@@ -834,6 +844,7 @@ function StaffChatPageInner() {
           <div className="space-y-2 pb-2">
             {recentMessages.map((m) => {
               const mine = chatSendUserId && String(m.user_id) === String(chatSendUserId);
+              const urgent = isUrgentMessage(m);
               const viewerLang: ChatLang = lang === 'ru' ? 'ru' : 'ko';
               const { primary, secondary, ttsText } = getMessageDisplayParts(m, viewerLang, {
                 logContext: 'staff',
@@ -843,10 +854,23 @@ function StaffChatPageInner() {
                 <div key={String(m.id)} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
                     className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-                      mine ? 'bg-blue-600 text-white' : 'bg-white text-gray-900'
+                      urgent && !mine
+                        ? 'border-2 border-orange-400 bg-orange-50 text-gray-900'
+                        : mine
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-900'
                     }`}
                   >
-                    <div className={`flex items-center justify-between gap-2 text-[10px] ${mine ? 'text-blue-100' : 'text-gray-400'}`}>
+                    {urgent && !mine ? (
+                      <div className="mb-1 inline-block rounded bg-orange-500 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-white">
+                        긴급
+                      </div>
+                    ) : null}
+                    <div
+                      className={`flex items-center justify-between gap-2 text-[10px] ${
+                        urgent && !mine ? 'text-orange-700' : mine ? 'text-blue-100' : 'text-gray-400'
+                      }`}
+                    >
                       <span>
                         {m.room_no ? `${m.room_no}호` : '—'} · {m.sender_side || '?'}
                       </span>
@@ -868,10 +892,24 @@ function StaffChatPageInner() {
                       />
                     ) : null}
                     {primary ? (
-                      <div className={`mt-0.5 font-medium ${mine ? '' : 'text-base'}`}>{primary}</div>
+                      <div
+                        className={`mt-0.5 ${
+                          urgent && !mine ? 'text-base font-bold' : 'font-medium'
+                        } ${mine ? '' : urgent ? '' : 'text-base'}`}
+                      >
+                        {primary}
+                      </div>
                     ) : null}
                     {secondary ? (
-                      <div className={`mt-1 text-[11px] ${mine ? 'text-blue-100/80' : 'text-gray-500'}`}>
+                      <div
+                        className={`mt-1 text-[11px] ${
+                          urgent && !mine
+                            ? 'font-semibold text-orange-800/80'
+                            : mine
+                              ? 'text-blue-100/80'
+                              : 'text-gray-500'
+                        }`}
+                      >
                         {secondary}
                       </div>
                     ) : null}

@@ -6,6 +6,7 @@ import AiActionBadge from "@/components/AiActionBadge";
 import { AiAction, ChatMessage } from "@/lib/types";
 import { formatKSTTime } from "@/lib/formatKST";
 import { getMessageDisplayParts } from "@/lib/chat/displayMessageText";
+import { isUrgentMessage } from "@/lib/chat/messagePriority";
 
 type Props = {
   messages: ChatMessage[];
@@ -51,6 +52,7 @@ export default function ChatMessages({
           logContext: 'pc'
         });
         const isDeleted = Boolean(msg.is_deleted);
+        const urgent = isUrgentMessage(msg);
         const isImageOnly = !isDeleted && Boolean(msg.image_url) && !String(msgText || "").trim();
         const isSystemEvent = isMaintenanceSystemMessage(msg, msgText);
 
@@ -119,11 +121,23 @@ export default function ChatMessages({
                   className={`group relative rounded-2xl px-3 pb-2 shadow-sm ${
                     isDeleted
                       ? "border border-gray-100/80 bg-gray-50/90 pt-2"
+                      : urgent && !isPc
+                        ? "border-2 border-orange-400 bg-orange-50 text-gray-900 pt-2"
                       : isPc
                         ? "bg-[#FEE500] text-gray-900 pt-2"  // 내 메시지: 카카오 노랑
                         : "bg-white text-gray-900 pt-2"       // 상대 메시지: 흰색
                   }`}
                 >
+                  {urgent && !isPc && !isDeleted && (
+                    <div className="mb-1 inline-block rounded bg-orange-500 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                      긴급
+                    </div>
+                  )}
+                  {urgent && isPc && !isDeleted && (
+                    <div className="mb-1 inline-block rounded bg-orange-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                      긴급
+                    </div>
+                  )}
                   {showDeleteBtn && (
                     <div className="-mt-0.5 mb-1 flex min-h-[22px] justify-end">
                       <button
@@ -163,9 +177,9 @@ export default function ChatMessages({
                   ) : (
                     <div>
                       <div
-                        className={`whitespace-pre-wrap break-words font-medium ${
-                          isPc ? 'text-sm' : 'text-base'
-                        }`}
+                        className={`whitespace-pre-wrap break-words ${
+                          urgent ? 'font-bold' : 'font-medium'
+                        } ${isPc ? 'text-sm' : 'text-base'}`}
                       >
                         {displayPrimary}
                       </div>

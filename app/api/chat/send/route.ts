@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { buildChatTranslations } from '@/lib/chat/translateMessageForChat';
+import { parseSendPriority } from '@/lib/chat/messagePriority';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
 import { uploadImage } from '@/lib/services/upload';
@@ -372,6 +373,7 @@ export async function POST(req: NextRequest) {
     const actor_name = String(formData.get('actor_name') || '').trim() || null;
     const sender_side_raw = String(formData.get('sender_side') || '').toLowerCase();
     const sender_side = sender_side_raw === 'mobile' ? 'mobile' : sender_side_raw === 'pc' ? 'pc' : null;
+    const priority = parseSendPriority(formData.get('priority'));
     if (actor_name) {
       console.log('[CHAT_SEND_ACTOR_NAME]', { actor_name, user_id: user_id || null });
     }
@@ -427,6 +429,7 @@ export async function POST(req: NextRequest) {
       user_id_valid: isUuid(user_id),
       room_no: room_no || null,
       message_preview: message.slice(0, 60) || null,
+      priority,
       has_image: image instanceof File,
       ticket_id: ticket_id || null,
     });
@@ -452,6 +455,7 @@ export async function POST(req: NextRequest) {
       message: message || '',
       user_id,
       sender_side,
+      priority,
       message_type: image instanceof File ? 'image' : 'text',
       image_url: image_url || null,
       image_storage_path: image_storage_path || null,
