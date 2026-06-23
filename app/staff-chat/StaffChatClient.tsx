@@ -35,68 +35,18 @@ import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
+import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
+import {
+  loadStaffStoredRoom,
+  saveStaffStoredRoom,
+  STAFF_VALID_ROOM_SET
+} from '@/lib/chat/staffRoomOptions';
 
 type Lang = 'ko' | 'vi' | 'ru';
 
-const STORAGE_CURRENT_ROOM = 'autoflow_staff_current_room_v1';
 const STORAGE_SOUND_ENABLED = 'autoflow_staff_sound_enabled_v1';
 /** OS notification body cap (Browser Notification API, not Web Push). */
 const OS_NOTIFY_BODY_MAX = 100;
-
-/** 운영 객실만 */
-const ROOM_OPTIONS = [
-  '201', '202', '203', '205', '206', '207', '208', '209',
-  '301', '302', '303', '305', '306', '307', '308', '309',
-  '501', '502', '503', '505', '506', '507', '508',
-  '601', '602', '603', '605', '606', '607', '608',
-  '701', '702', '703', '705', '706', '707', '708',
-  '801', '802'
-] as const;
-
-const VALID_ROOM_SET = new Set<string>(ROOM_OPTIONS);
-
-function groupRoomOptions(): { floor: string; rooms: string[] }[] {
-  const groups: { floor: string; rooms: string[] }[] = [];
-  let floor = '';
-  let rooms: string[] = [];
-  for (const room of ROOM_OPTIONS) {
-    const f = room.charAt(0);
-    if (f !== floor) {
-      if (rooms.length) groups.push({ floor, rooms });
-      floor = f;
-      rooms = [room];
-    } else {
-      rooms.push(room);
-    }
-  }
-  if (rooms.length) groups.push({ floor, rooms });
-  return groups;
-}
-
-const ROOM_GROUPS = groupRoomOptions();
-
-function roomButtonClass(selected: boolean): string {
-  return selected
-    ? 'border-blue-600 bg-blue-50 text-blue-900 ring-2 ring-blue-200'
-    : 'border-gray-200 bg-white text-gray-900';
-}
-
-function loadStoredRoom(): string {
-  try {
-    const r = String(localStorage.getItem(STORAGE_CURRENT_ROOM) || '').trim();
-    return VALID_ROOM_SET.has(r) ? r : '';
-  } catch {
-    return '';
-  }
-}
-
-function saveStoredRoom(roomNo: string) {
-  try {
-    localStorage.setItem(STORAGE_CURRENT_ROOM, roomNo);
-  } catch {
-    // ignore
-  }
-}
 
 function loadSoundEnabled(): boolean {
   try {
@@ -235,7 +185,6 @@ function StaffChatPageInner() {
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const [sessionSource, setSessionSource] = useState<SessionSource>('none');
   const [roomNo, setRoomNo] = useState('');
-  const [roomPickerOpen, setRoomPickerOpen] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [composerHeight, setComposerHeight] = useState(72);
@@ -330,7 +279,7 @@ function StaffChatPageInner() {
   useEffect(() => {
     if (roomBootstrappedRef.current) return;
     roomBootstrappedRef.current = true;
-    const saved = loadStoredRoom();
+    const saved = loadStaffStoredRoom();
     if (saved) {
       setRoomNo(saved);
     }
@@ -653,12 +602,11 @@ function StaffChatPageInner() {
     [actorName, chatSendUserId, lang, roomNo, sessionSource, setMessages, staffKey]
   );
 
-  function selectRoom(next: string) {
+  function handleRoomSelect(next: string) {
     const r = String(next || '').trim();
-    if (!r || !VALID_ROOM_SET.has(r)) return;
+    if (!r || !STAFF_VALID_ROOM_SET.has(r)) return;
     setRoomNo(r);
-    saveStoredRoom(r);
-    setRoomPickerOpen(false);
+    saveStaffStoredRoom(r);
   }
 
   function toggleSound() {
@@ -721,7 +669,9 @@ function StaffChatPageInner() {
   }
 
   function handleQuickPhraseInsert(label: string) {
-    setText(label);
+    const r = roomNo.trim();
+    const next = r ? `${r} ${label}` : label;
+    setText(next);
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }
 
@@ -780,91 +730,66 @@ function StaffChatPageInner() {
 
   return (
     <main className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#eceff1]">
-      {/* 상단 헤더 */}
-      <header className="shrink-0 border-b border-gray-200 bg-white px-4 py-2.5 shadow-sm">
-        <div className="mx-auto flex max-w-md items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-base font-extrabold text-gray-900">{t(lang, 'title')}</div>
-            <div className="text-[11px] text-gray-500">
-              {staffKeyLabel(staffKey)} · {connectionStatus}
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <div className="flex max-w-[11rem] flex-col items-end gap-0.5 text-[10px] text-gray-500">
-              {browserNotifyPermission === 'unsupported' ? (
-                <>
-                  <span className="font-semibold text-amber-700">{t(lang, 'notifyUnsupported')}</span>
-                  <span className="text-right leading-tight text-amber-600">{t(lang, 'notifyUnsupportedHelp')}</span>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleNotificationEnableClick}
-                  className={`rounded-lg border px-2 py-0.5 font-semibold ${
-                    browserNotifyPermission === 'granted'
-                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                      : browserNotifyPermission === 'denied'
-                        ? 'border-rose-300 bg-rose-50 text-rose-800'
-                        : 'border-gray-300 bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  {browserNotifyPermission === 'default'
-                    ? t(lang, 'notifyEnable')
-                    : browserNotifyPermission === 'granted'
-                      ? t(lang, 'notifyGranted')
-                      : t(lang, 'notifyDenied')}
-                </button>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={toggleSound}
-              className={`rounded-lg border px-2 py-0.5 text-[11px] font-bold ${
-                soundEnabled
-                  ? 'border-blue-300 bg-blue-50 text-blue-800'
-                  : 'border-gray-300 bg-gray-50 text-gray-600'
-              }`}
-            >
-              🔊 {t(lang, soundEnabled ? 'soundOn' : 'soundOff')}
-            </button>
-            <div className="flex gap-1">
+      {/* 상단: 언어 · 소리 · 알림 */}
+      <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+        <div className="mx-auto flex max-w-md items-center justify-end gap-1.5">
+          <div className="flex gap-0.5">
             {langButtons.map((b) => (
               <button
                 key={b.code}
                 type="button"
                 onClick={() => setLang(b.code)}
-                className={`h-9 w-10 rounded-lg border text-lg ${
+                className={`flex h-8 w-9 items-center justify-center rounded-lg border text-base ${
                   lang === b.code ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-gray-50'
                 }`}
+                aria-label={b.code}
               >
                 {b.flag}
               </button>
             ))}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* 현재 객실 바 */}
-      <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-2.5">
-        <div className="mx-auto flex max-w-md items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-              {t(lang, 'currentRoom')}
-            </div>
-            <div className="text-xl font-extrabold text-gray-900">
-              {roomNo ? `${roomNo}${t(lang, 'room')}` : t(lang, 'noRoom')}
-            </div>
           </div>
           <button
             type="button"
-            onClick={() => setRoomPickerOpen(true)}
-            className="shrink-0 rounded-xl border-2 border-blue-600 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-800 active:bg-blue-100"
+            onClick={toggleSound}
+            className={`rounded-lg border px-2 py-1 text-[11px] font-bold ${
+              soundEnabled
+                ? 'border-blue-300 bg-blue-50 text-blue-800'
+                : 'border-gray-300 bg-gray-50 text-gray-600'
+            }`}
           >
-            {t(lang, 'changeRoom')}
+            🔊 {soundEnabled ? 'ON' : 'OFF'}
           </button>
+          {browserNotifyPermission === 'unsupported' ? (
+            <button
+              type="button"
+              onClick={() => window.alert(t(lang, 'notifyUnsupportedHelp'))}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800"
+              title={t(lang, 'notifyUnsupportedHelp')}
+            >
+              🔔 {t(lang, 'notifyUnsupported')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleNotificationEnableClick}
+              className={`rounded-lg border px-2 py-1 text-[11px] font-bold ${
+                browserNotifyPermission === 'granted'
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  : browserNotifyPermission === 'denied'
+                    ? 'border-rose-300 bg-rose-50 text-rose-800'
+                    : 'border-gray-300 bg-gray-50 text-gray-700'
+              }`}
+            >
+              🔔{' '}
+              {browserNotifyPermission === 'default'
+                ? t(lang, 'notifyEnable')
+                : browserNotifyPermission === 'granted'
+                  ? t(lang, 'notifyGranted')
+                  : t(lang, 'notifyDenied')}
+            </button>
+          )}
         </div>
-      </div>
+      </header>
 
       {toast && (
         <div
@@ -967,6 +892,11 @@ function StaffChatPageInner() {
           paddingBottom: 'max(env(safe-area-inset-bottom), 0px)'
         }}
       >
+        <RoomSelectorBar
+          selectedRoom={roomNo}
+          onSelect={handleRoomSelect}
+          disabled={sending || !canSendMessages}
+        />
         <QuickPhraseBar onInsert={handleQuickPhraseInsert} disabled={sending || !canSendMessages} />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
           <input
@@ -1025,40 +955,6 @@ function StaffChatPageInner() {
           </button>
         </div>
       </div>
-
-      {/* 객실 선택 전체 화면 */}
-      {roomPickerOpen ? (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-white">
-          <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3">
-            <h2 className="text-lg font-extrabold text-gray-900">{t(lang, 'pickRoomTitle')}</h2>
-            <button
-              type="button"
-              onClick={() => setRoomPickerOpen(false)}
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700"
-            >
-              {t(lang, 'close')}
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-            <div className="mx-auto max-w-md space-y-3">
-              {ROOM_GROUPS.map((g) => (
-                <div key={g.floor} className="grid grid-cols-4 gap-2">
-                  {g.rooms.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => selectRoom(r)}
-                      className={`h-12 rounded-xl border-2 text-base font-extrabold active:scale-[0.98] ${roomButtonClass(roomNo === r)}`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }

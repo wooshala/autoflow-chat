@@ -94,7 +94,7 @@ export default function QuickPhraseBar({ onInsert, disabled = false }: Props) {
   return (
     <div className="border-b border-gray-100 bg-white px-2 py-1.5">
       <div className="mx-auto flex max-w-md items-center gap-1.5">
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">Quick</span>
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">상태</span>
         <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
           <div className="flex w-max items-center gap-1.5 pr-1">
             {phrases.map((phrase) => (
