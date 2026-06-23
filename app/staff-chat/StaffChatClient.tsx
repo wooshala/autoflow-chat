@@ -34,6 +34,7 @@ import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
+import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
 
 type Lang = 'ko' | 'vi' | 'ru';
 
@@ -719,6 +720,11 @@ function StaffChatPageInner() {
     });
   }
 
+  function handleQuickPhraseInsert(label: string) {
+    setText(label);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
   function handleComposerSend() {
     staffChatLog('STAFF_CHAT_SEND_CLICK', {
       canComposerSend,
@@ -961,6 +967,7 @@ function StaffChatPageInner() {
           paddingBottom: 'max(env(safe-area-inset-bottom), 0px)'
         }}
       >
+        <QuickPhraseBar onInsert={handleQuickPhraseInsert} disabled={sending || !canSendMessages} />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
           <input
             ref={photoInputRef}
