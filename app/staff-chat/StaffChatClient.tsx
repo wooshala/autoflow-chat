@@ -26,7 +26,6 @@ import {
 } from '@/lib/chat/sendTrace';
 import {
   canShowBrowserNotification,
-  ensureBrowserNotificationPermission,
   isBrowserNotificationSupported,
   showBrowserNotification
 } from '@/lib/chat/browserNotifications';
@@ -138,7 +137,11 @@ const I18N: Record<Lang, Record<string, string>> = {
     notifyEnable: '알림 켜기',
     notifyGranted: '알림 허용됨',
     notifyDenied: '알림 차단됨',
-    notifyUnsupported: '알림 미지원'
+    notifyUnsupported: '알림 미지원',
+    notifyUnsupportedHelp: 'Chrome에서 열어 주세요. iPhone은 홈 화면에 추가가 필요합니다.',
+    notifyDeniedHelp:
+      '브라우저에서 알림이 차단되어 있습니다. 주소창 왼쪽 사이트 설정에서 알림을 허용해 주세요.',
+    notifyTestBody: '알림이 정상적으로 작동합니다.'
   },
   vi: {
     title: 'Báo cáo dọn phòng',
@@ -161,7 +164,11 @@ const I18N: Record<Lang, Record<string, string>> = {
     notifyEnable: 'Bật thông báo',
     notifyGranted: 'Thông báo đã bật',
     notifyDenied: 'Thông báo bị chặn',
-    notifyUnsupported: 'Không hỗ trợ thông báo'
+    notifyUnsupported: 'Không hỗ trợ thông báo',
+    notifyUnsupportedHelp: 'Mở bằng Chrome. iPhone cần thêm vào Màn hình chính.',
+    notifyDeniedHelp:
+      'Thông báo bị chặn. Vui lòng bật thông báo trong cài đặt trang web (bên trái thanh địa chỉ).',
+    notifyTestBody: 'Thông báo hoạt động bình thường.'
   },
   ru: {
     title: 'Отчёт уборки',
@@ -184,7 +191,11 @@ const I18N: Record<Lang, Record<string, string>> = {
     notifyEnable: 'Включить уведомления',
     notifyGranted: 'Уведомления разрешены',
     notifyDenied: 'Уведомления заблокированы',
-    notifyUnsupported: 'Уведомления недоступны'
+    notifyUnsupported: 'Уведомления недоступны',
+    notifyUnsupportedHelp: 'Откройте в Chrome. На iPhone добавьте на главный экран.',
+    notifyDeniedHelp:
+      'Уведомления заблокированы. Разрешите их в настройках сайта (слева от адресной строки).',
+    notifyTestBody: 'Уведомления работают.'
   }
 };
 
@@ -219,9 +230,7 @@ function StaffChatPageInner() {
       viewerLang: lang === 'ru' ? 'ru' : 'ko'
     });
   }, [lang]);
-  const [soundEnabled, setSoundEnabled] = useState(() =>
-    typeof window !== 'undefined' ? loadSoundEnabled() : false
-  );
+  const [soundEnabled, setSoundEnabled] = useState(false);
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const [sessionSource, setSessionSource] = useState<SessionSource>('none');
   const [roomNo, setRoomNo] = useState('');
@@ -402,6 +411,12 @@ function StaffChatPageInner() {
   }, []);
 
   useEffect(() => {
+    const stored = loadSoundEnabled();
+    setSoundEnabled(stored);
+    console.log('[STAFF_CHAT_SOUND_TOGGLE]', { event: 'hydrate_from_storage', soundEnabled: stored });
+  }, []);
+
+  useEffect(() => {
     if (!isBrowserNotificationSupported()) {
       setBrowserNotifyPermission('unsupported');
       return;
@@ -453,38 +468,45 @@ function StaffChatPageInner() {
       if (!id || id.startsWith('tmp-') || knownNotifyIdsRef.current.has(id)) continue;
       knownNotifyIdsRef.current.add(id);
       const isOwn = String(m.user_id) === String(chatSendUserId);
-      if (!isOwn) {
-        const viewerLang: ChatLang = lang === 'ru' ? 'ru' : 'ko';
-        const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
-          logContext: 'staff',
-          selectedLang: lang
+      if (isOwn) {
+        console.log('[STAFF_CHAT_SOUND_SKIPPED_SELF]', {
+          messageId: id,
+          chatSendUserId: chatSendUserId || null
         });
-        if (soundEnabled) {
-          void playNotificationTone('info');
-          const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
-          if (toSpeak) speakStaffRussian(toSpeak);
-        }
-        setToast({ kind: 'ok', msg: `📩 ${String(primary || m.message || '').slice(0, 40)}` });
+        continue;
+      }
 
-        // staff-chat OS alerts: Browser Notification API while tab/session is alive (not Web Push).
-        // Mobile browsers may suppress notifications when the screen is off or the tab is suspended.
-        const { primary: ruPrimary } = getMessageDisplayParts(m, 'ru', {
-          logContext: 'staff',
-          selectedLang: lang
-        });
-        const isBackgroundLike =
-          typeof document !== 'undefined' &&
-          (document.hidden ||
-            (typeof document.hasFocus === 'function' && !document.hasFocus()));
-        if (isBackgroundLike && canShowBrowserNotification()) {
-          const body = String(ruPrimary || m.message || '').trim().slice(0, OS_NOTIFY_BODY_MAX);
-          if (body) {
-            void showBrowserNotification({
-              title: staffKeyLabel(staffKey) || 'AutoFlow Chat',
-              body,
-              tag: id
-            });
-          }
+      const viewerLang: ChatLang = lang === 'ru' ? 'ru' : 'ko';
+      const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
+        logContext: 'staff',
+        selectedLang: lang
+      });
+      if (soundEnabled) {
+        console.log('[STAFF_CHAT_SOUND_PLAY]', { messageId: id, soundEnabled: true });
+        void playNotificationTone('info');
+        const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
+        if (toSpeak) speakStaffRussian(toSpeak);
+      }
+      setToast({ kind: 'ok', msg: `📩 ${String(primary || m.message || '').slice(0, 40)}` });
+
+      // staff-chat OS alerts: Browser Notification API while tab/session is alive (not Web Push).
+      // Mobile browsers may suppress notifications when the screen is off or the tab is suspended.
+      const { primary: ruPrimary } = getMessageDisplayParts(m, 'ru', {
+        logContext: 'staff',
+        selectedLang: lang
+      });
+      const isBackgroundLike =
+        typeof document !== 'undefined' &&
+        (document.hidden ||
+          (typeof document.hasFocus === 'function' && !document.hasFocus()));
+      if (isBackgroundLike && canShowBrowserNotification()) {
+        const body = String(ruPrimary || m.message || '').trim().slice(0, OS_NOTIFY_BODY_MAX);
+        if (body) {
+          void showBrowserNotification({
+            title: staffKeyLabel(staffKey) || 'AutoFlow Chat',
+            body,
+            tag: id
+          });
         }
       }
     }
@@ -642,11 +664,58 @@ function StaffChatPageInner() {
     setSoundEnabled((prev) => {
       const next = !prev;
       saveSoundEnabled(next);
+      console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
+        prev,
+        next,
+        stored: loadSoundEnabled()
+      });
       if (next) {
         unlockNotificationAudio();
         unlockStaffTts();
       }
       return next;
+    });
+  }
+
+  function showStaffTestNotification() {
+    void showBrowserNotification({
+      title: staffKeyLabel(staffKey) || 'AutoFlow Chat',
+      body: t(lang, 'notifyTestBody'),
+      tag: 'staff-chat-notify-test'
+    });
+  }
+
+  function handleNotificationEnableClick() {
+    const supported = isBrowserNotificationSupported();
+    const permissionNow = supported ? Notification.permission : 'unsupported';
+    console.log('[STAFF_CHAT_NOTIFICATION_CLICK]', {
+      supported,
+      permission: permissionNow,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    });
+
+    if (!supported) {
+      setBrowserNotifyPermission('unsupported');
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      setBrowserNotifyPermission('denied');
+      window.alert(t(lang, 'notifyDeniedHelp'));
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      setBrowserNotifyPermission('granted');
+      showStaffTestNotification();
+      return;
+    }
+
+    Notification.requestPermission().then((p) => {
+      setBrowserNotifyPermission(p);
+      if (p === 'granted') {
+        showStaffTestNotification();
+      }
     });
   }
 
@@ -715,25 +784,30 @@ function StaffChatPageInner() {
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
-            <div className="flex flex-wrap items-center justify-end gap-1.5 text-[10px] text-gray-500">
+            <div className="flex max-w-[11rem] flex-col items-end gap-0.5 text-[10px] text-gray-500">
               {browserNotifyPermission === 'unsupported' ? (
-                <span>{t(lang, 'notifyUnsupported')}</span>
-              ) : browserNotifyPermission === 'default' ? (
+                <>
+                  <span className="font-semibold text-amber-700">{t(lang, 'notifyUnsupported')}</span>
+                  <span className="text-right leading-tight text-amber-600">{t(lang, 'notifyUnsupportedHelp')}</span>
+                </>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => {
-                    void ensureBrowserNotificationPermission().then((p) => setBrowserNotifyPermission(p));
-                  }}
-                  className="rounded-lg border border-gray-300 bg-gray-50 px-2 py-0.5 font-semibold text-gray-700"
+                  onClick={handleNotificationEnableClick}
+                  className={`rounded-lg border px-2 py-0.5 font-semibold ${
+                    browserNotifyPermission === 'granted'
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                      : browserNotifyPermission === 'denied'
+                        ? 'border-rose-300 bg-rose-50 text-rose-800'
+                        : 'border-gray-300 bg-gray-50 text-gray-700'
+                  }`}
                 >
-                  {t(lang, 'notifyEnable')}
+                  {browserNotifyPermission === 'default'
+                    ? t(lang, 'notifyEnable')
+                    : browserNotifyPermission === 'granted'
+                      ? t(lang, 'notifyGranted')
+                      : t(lang, 'notifyDenied')}
                 </button>
-              ) : (
-                <span>
-                  {browserNotifyPermission === 'granted'
-                    ? t(lang, 'notifyGranted')
-                    : t(lang, 'notifyDenied')}
-                </span>
               )}
             </div>
             <button

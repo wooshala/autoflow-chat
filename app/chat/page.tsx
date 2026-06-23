@@ -178,7 +178,6 @@ export default function ChatPage() {
 
     if (Notification.permission === 'granted') {
       setBrowserNotifyPermission('granted');
-      showChatTestNotification();
       return;
     }
 
@@ -190,12 +189,13 @@ export default function ChatPage() {
     });
   }, [showChatTestNotification]);
 
-  const notificationButtonLabel =
-    browserNotifyPermission === 'granted'
-      ? '브라우저 알림 테스트'
-      : browserNotifyPermission === 'denied'
-        ? '브라우저 알림 차단됨'
-        : '브라우저 알림 켜기';
+  const handleTestNotificationClick = useCallback(() => {
+    console.log('[CHAT_NOTIFICATION_TEST]', {
+      permission: typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported',
+      pathname: typeof window !== 'undefined' ? window.location.pathname : ''
+    });
+    showChatTestNotification();
+  }, [showChatTestNotification]);
 
   const { toasts, onToastClick, removeToast } = useChatNotifications({
     messages,
@@ -603,13 +603,22 @@ export default function ChatPage() {
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400">
-              {browserNotifyPermission !== 'unsupported' && (
+              {browserNotifyPermission !== 'unsupported' && browserNotifyPermission !== 'granted' && (
                 <button
                   type="button"
                   onClick={handleNotificationClick}
                   className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
                 >
-                  {notificationButtonLabel}
+                  {browserNotifyPermission === 'denied' ? '브라우저 알림 차단됨' : '브라우저 알림 켜기'}
+                </button>
+              )}
+              {browserNotifyPermission === 'granted' && (
+                <button
+                  type="button"
+                  onClick={handleTestNotificationClick}
+                  className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
+                >
+                  테스트 알림
                 </button>
               )}
               <span className="text-gray-400">
