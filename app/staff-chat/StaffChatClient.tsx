@@ -275,8 +275,6 @@ function StaffChatPageInner() {
     const saved = loadStoredRoom();
     if (saved) {
       setRoomNo(saved);
-    } else {
-      setRoomPickerOpen(true);
     }
   }, []);
 
