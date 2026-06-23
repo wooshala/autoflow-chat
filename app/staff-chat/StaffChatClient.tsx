@@ -24,6 +24,12 @@ import {
   logSendClick,
   registerMessageIdForNonce
 } from '@/lib/chat/sendTrace';
+import {
+  canShowBrowserNotification,
+  ensureBrowserNotificationPermission,
+  isBrowserNotificationSupported,
+  showBrowserNotification
+} from '@/lib/chat/browserNotifications';
 import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
@@ -33,6 +39,8 @@ import { staffChatLog } from '@/lib/chat/staffChatLog';
 type Lang = 'ko' | 'vi' | 'ru';
 
 const STORAGE_CURRENT_ROOM = 'autoflow_staff_current_room_v1';
+/** OS notification body cap (Browser Notification API, not Web Push). */
+const OS_NOTIFY_BODY_MAX = 100;
 
 /** 운영 객실만 */
 const ROOM_OPTIONS = [
@@ -107,7 +115,11 @@ const I18N: Record<Lang, Record<string, string>> = {
     photoSoon: '사진 전송은 v0.3에서 연결됩니다',
     voiceSoon: '음성(워키토키)은 v0.3 예정입니다',
     soundOn: '소리 켜기',
-    readAloud: '읽기'
+    readAloud: '읽기',
+    notifyEnable: '알림 켜기',
+    notifyGranted: '알림 허용됨',
+    notifyDenied: '알림 차단됨',
+    notifyUnsupported: '알림 미지원'
   },
   vi: {
     title: 'Báo cáo dọn phòng',
@@ -124,7 +136,11 @@ const I18N: Record<Lang, Record<string, string>> = {
     connection: 'Kết nối',
     noUserId: 'Thiếu user_id',
     photoSoon: 'Ảnh sẽ có ở v0.3',
-    voiceSoon: 'Giọng nói sẽ có ở v0.3'
+    voiceSoon: 'Giọng nói sẽ có ở v0.3',
+    notifyEnable: 'Bật thông báo',
+    notifyGranted: 'Thông báo đã bật',
+    notifyDenied: 'Thông báo bị chặn',
+    notifyUnsupported: 'Không hỗ trợ thông báo'
   },
   ru: {
     title: 'Отчёт уборки',
@@ -141,7 +157,11 @@ const I18N: Record<Lang, Record<string, string>> = {
     connection: 'Связь',
     noUserId: 'Нет user_id',
     photoSoon: 'Фото в v0.3',
-    voiceSoon: 'Голос в v0.3'
+    voiceSoon: 'Голос в v0.3',
+    notifyEnable: 'Включить уведомления',
+    notifyGranted: 'Уведомления разрешены',
+    notifyDenied: 'Уведомления заблокированы',
+    notifyUnsupported: 'Уведомления недоступны'
   }
 };
 
@@ -187,6 +207,9 @@ function StaffChatPageInner() {
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [toast, setToast] = useState<{ kind: 'ok' | 'error'; msg: string } | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'degraded' | 'reconnecting'>('reconnecting');
+  const [browserNotifyPermission, setBrowserNotifyPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >('default');
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
@@ -354,6 +377,14 @@ function StaffChatPageInner() {
   }, []);
 
   useEffect(() => {
+    if (!isBrowserNotificationSupported()) {
+      setBrowserNotifyPermission('unsupported');
+      return;
+    }
+    setBrowserNotifyPermission(Notification.permission);
+  }, []);
+
+  useEffect(() => {
     const onFirst = () => {
       unlockNotificationAudio();
       unlockStaffTts();
@@ -409,14 +440,38 @@ function StaffChatPageInner() {
       const isOwn = String(m.user_id) === String(chatSendUserId);
       if (!isOwn) {
         void playNotificationTone('info');
-        const viewerLang = lang === 'ru' ? 'ru' : 'ko';
-        const { primary, ttsText } = getMessageDisplayParts(m, viewerLang);
+        const viewerLang: ChatLang = lang === 'ru' ? 'ru' : 'ko';
+        const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
+          logContext: 'staff',
+          selectedLang: lang
+        });
         const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
         if (toSpeak) speakStaffRussian(toSpeak);
         setToast({ kind: 'ok', msg: `📩 ${String(primary || m.message || '').slice(0, 40)}` });
+
+        // staff-chat OS alerts: Browser Notification API while tab/session is alive (not Web Push).
+        // Mobile browsers may suppress notifications when the screen is off or the tab is suspended.
+        const { primary: ruPrimary } = getMessageDisplayParts(m, 'ru', {
+          logContext: 'staff',
+          selectedLang: lang
+        });
+        const isBackgroundLike =
+          typeof document !== 'undefined' &&
+          (document.hidden ||
+            (typeof document.hasFocus === 'function' && !document.hasFocus()));
+        if (isBackgroundLike && canShowBrowserNotification()) {
+          const body = String(ruPrimary || m.message || '').trim().slice(0, OS_NOTIFY_BODY_MAX);
+          if (body) {
+            void showBrowserNotification({
+              title: staffKeyLabel(staffKey) || 'AutoFlow Chat',
+              body,
+              tag: id
+            });
+          }
+        }
       }
     }
-  }, [messages, initialHydrationComplete, chatSendUserId, lang]);
+  }, [messages, initialHydrationComplete, chatSendUserId, lang, staffKey]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -631,6 +686,27 @@ function StaffChatPageInner() {
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 text-[10px] text-gray-500">
+              {browserNotifyPermission === 'unsupported' ? (
+                <span>{t(lang, 'notifyUnsupported')}</span>
+              ) : browserNotifyPermission === 'default' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void ensureBrowserNotificationPermission().then((p) => setBrowserNotifyPermission(p));
+                  }}
+                  className="rounded-lg border border-gray-300 bg-gray-50 px-2 py-0.5 font-semibold text-gray-700"
+                >
+                  {t(lang, 'notifyEnable')}
+                </button>
+              ) : (
+                <span>
+                  {browserNotifyPermission === 'granted'
+                    ? t(lang, 'notifyGranted')
+                    : t(lang, 'notifyDenied')}
+                </span>
+              )}
+            </div>
             {!ttsReady && !isStaffTtsUnlocked() ? (
               <button
                 type="button"
