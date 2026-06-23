@@ -85,7 +85,9 @@ export function getMessageDisplayParts(
     secondary = null;
   }
 
-  if (opts?.logContext === 'staff' && typeof console !== 'undefined') {
+  const debugDisplayText = process.env.NODE_ENV !== 'production';
+
+  if (debugDisplayText && opts?.logContext === 'staff' && typeof console !== 'undefined') {
     console.log('[STAFF_CHAT_DISPLAY_TEXT]', {
       message_id: msg.id ?? null,
       selected_lang: opts.selectedLang ?? viewerLang,
@@ -96,7 +98,7 @@ export function getMessageDisplayParts(
     });
   }
 
-  if (opts?.logContext === 'pc' && typeof console !== 'undefined') {
+  if (debugDisplayText && opts?.logContext === 'pc' && typeof console !== 'undefined') {
     console.log('[CHAT_DISPLAY_TEXT]', {
       message_id: msg.id ?? null,
       selected_lang: 'ko',

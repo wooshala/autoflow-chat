@@ -347,6 +347,20 @@ export function useChatNotifications({
         continue;
       }
 
+      const msgSideObserved = safeId((msg as any)?.sender_side) as 'pc' | 'mobile' | '';
+      const msgUserIdObserved = safeId((msg as any)?.user_id);
+      const isOwnUserObserved = Boolean(uid) && msgUserIdObserved && String(msgUserIdObserved) === String(uid);
+      const isOwnObserved = isOwnUserObserved && msgSideObserved !== 'mobile';
+      console.log('[CHAT_MESSAGE_OBSERVED]', {
+        messageId: id,
+        senderId: msgUserIdObserved,
+        currentUserId: uid,
+        isOwn: isOwnObserved,
+        soundEnabled: true,
+        visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+        pathname: typeof window !== 'undefined' ? window.location.pathname : null
+      });
+
       // Exclusions
       if ((msg as any)?.is_deleted) {
         notified.add(id);
@@ -380,6 +394,11 @@ export function useChatNotifications({
       const isOwnUser = Boolean(uid) && msgUserId && String(msgUserId) === String(uid);
       const shouldTreatAsOwnMessageSkip = isOwnUser && msgSide !== 'mobile';
       if (shouldTreatAsOwnMessageSkip) {
+        console.log('[CHAT_SOUND_SKIPPED_SELF]', {
+          messageId: id,
+          senderId: msgUserId,
+          currentUserId: uid
+        });
         notified.add(id);
         if (DEBUG_NOTIFY) {
           log.info('[CHAT_NOTIFY_SKIP]', {
@@ -531,8 +550,20 @@ export function useChatNotifications({
         });
       }
       if (willPlaySound) {
+        console.log('[CHAT_SOUND_PLAY]', {
+          messageId: id,
+          soundEnabled: channels.playInAppSound
+        });
         void playNotificationTone(tone).then((ok) => {
           if (DEBUG_VERBOSE) log.info('[CHAT_SOUND_RESULT]', { id, ok, tone });
+          if (!ok) {
+            console.warn('[CHAT_SOUND_PLAY_FAILED]', { messageId: id, reason: 'play_returned_false' });
+          }
+        });
+      } else if (!channels.playInAppSound) {
+        console.log('[CHAT_SOUND_SKIPPED_DISABLED]', {
+          messageId: id,
+          soundEnabled: false
         });
       } else if (DEBUG_VERBOSE) {
         let reason: string = 'unknown';

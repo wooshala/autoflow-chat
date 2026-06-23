@@ -95,8 +95,8 @@ export async function playNotificationTone(tone: NotificationTone): Promise<bool
       }
     }, 300);
     return true;
-  } catch {
-    // no-op: fail quietly
+  } catch (error) {
+    console.warn('[CHAT_SOUND_PLAY_FAILED]', error);
     return false;
   }
 }

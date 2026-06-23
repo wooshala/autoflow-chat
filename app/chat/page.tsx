@@ -15,7 +15,7 @@ import { useChatLoader } from '@/lib/hooks/useChatLoader';
 import { useChatNotifications } from '@/lib/hooks/useChatNotifications';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
-import { ensureBrowserNotificationPermission, isBrowserNotificationSupported } from '@/lib/chat/browserNotifications';
+import { isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
 import {
   createClientNonce,
   logSendApiResponded,
@@ -91,7 +91,6 @@ export default function ChatPage() {
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
-  const askedNotifyPermissionRef = useRef(false);
   const [browserNotifyPermission, setBrowserNotifyPermission] = useState<
     NotificationPermission | 'unsupported'
   >('default');
@@ -146,32 +145,57 @@ export default function ChatPage() {
     setBrowserNotifyPermission(Notification.permission);
   }, []);
 
-  // Ask Notification permission only once, after first user interaction (no aggressive auto prompt).
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!isBrowserNotificationSupported()) return;
-    if (askedNotifyPermissionRef.current) return;
-    if (Notification.permission !== 'default') return;
-
-    const onFirst = () => {
-      if (askedNotifyPermissionRef.current) return;
-      askedNotifyPermissionRef.current = true;
-      void ensureBrowserNotificationPermission().then((p) => {
-        setBrowserNotifyPermission(p);
-      });
-      window.removeEventListener('pointerdown', onFirst, true);
-      window.removeEventListener('keydown', onFirst, true);
-      window.removeEventListener('click', onFirst, true);
-    };
-    window.addEventListener('pointerdown', onFirst, true);
-    window.addEventListener('keydown', onFirst, true);
-    window.addEventListener('click', onFirst, true);
-    return () => {
-      window.removeEventListener('pointerdown', onFirst, true);
-      window.removeEventListener('keydown', onFirst, true);
-      window.removeEventListener('click', onFirst, true);
-    };
+  const showChatTestNotification = useCallback(() => {
+    void showBrowserNotification({
+      title: 'AutoFlow 채팅',
+      body: '알림이 정상적으로 작동합니다.',
+      tag: 'chat-notify-test'
+    });
   }, []);
+
+  const handleNotificationClick = useCallback(() => {
+    const supported = isBrowserNotificationSupported();
+    const permissionNow = supported ? Notification.permission : 'unsupported';
+    console.log('[CHAT_NOTIFICATION_CLICK]', {
+      supported,
+      permission: permissionNow,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      pathname: typeof window !== 'undefined' ? window.location.pathname : ''
+    });
+
+    if (!supported) {
+      setBrowserNotifyPermission('unsupported');
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      setBrowserNotifyPermission('denied');
+      window.alert(
+        '브라우저에서 알림이 차단되어 있습니다. 주소창 왼쪽 자물쇠 아이콘에서 알림을 허용해 주세요.'
+      );
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      setBrowserNotifyPermission('granted');
+      showChatTestNotification();
+      return;
+    }
+
+    Notification.requestPermission().then((p) => {
+      setBrowserNotifyPermission(p);
+      if (p === 'granted') {
+        showChatTestNotification();
+      }
+    });
+  }, [showChatTestNotification]);
+
+  const notificationButtonLabel =
+    browserNotifyPermission === 'granted'
+      ? '브라우저 알림 테스트'
+      : browserNotifyPermission === 'denied'
+        ? '브라우저 알림 차단됨'
+        : '브라우저 알림 켜기';
 
   const { toasts, onToastClick, removeToast } = useChatNotifications({
     messages,
@@ -582,12 +606,10 @@ export default function ChatPage() {
               {browserNotifyPermission !== 'unsupported' && (
                 <button
                   type="button"
-                  onClick={() => {
-                    void ensureBrowserNotificationPermission().then((p) => setBrowserNotifyPermission(p));
-                  }}
+                  onClick={handleNotificationClick}
                   className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
                 >
-                  브라우저 알림 켜기
+                  {notificationButtonLabel}
                 </button>
               )}
               <span className="text-gray-400">
