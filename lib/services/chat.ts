@@ -99,6 +99,9 @@ export async function createChatMessage(input: {
   ticket_id?: string | null;
   duplicate_ticket_id?: string | null;
   ai_action?: AiAction;
+  original_lang?: string;
+  translated_text?: ChatMessage['translated_text'];
+  back_translated_text?: ChatMessage['back_translated_text'];
 }): Promise<ChatMessage> {
   const insertPayload = {
     user_id: input.user_id,
@@ -108,8 +111,9 @@ export async function createChatMessage(input: {
     room_no: input.room_no || null,
     image_url: input.image_url || null,
     image_storage_path: input.image_storage_path || null,
-    original_lang: '',
-    translated_text: null,
+    original_lang: input.original_lang ?? '',
+    translated_text: input.translated_text ?? null,
+    back_translated_text: input.back_translated_text ?? null,
     ticket_id: input.ticket_id || null,
     duplicate_ticket_id: input.duplicate_ticket_id || null,
     ai_action: input.ai_action || null
@@ -125,6 +129,7 @@ export async function createChatMessage(input: {
     image_storage_path: insertPayload.image_storage_path,
     original_lang: insertPayload.original_lang,
     translated_text: insertPayload.translated_text,
+    back_translated_text: insertPayload.back_translated_text,
     ticket_id: insertPayload.ticket_id,
     duplicate_ticket_id: insertPayload.duplicate_ticket_id,
     ai_action: insertPayload.ai_action,
@@ -161,6 +166,23 @@ export async function createChatMessage(input: {
       .select('id, created_at')
       .single());
   }
+  if (error && String(error?.message || '').includes('back_translated_text')) {
+    const { back_translated_text: _ignored, ...fallbackPayload } = insertPayload as any;
+    console.log('[CHAT_INSERT_SUPABASE_PAYLOAD_FALLBACK_NO_BACK_TRANSLATED]', fallbackPayload);
+    ({ data, error } = await supabaseAdmin
+      .from('chat_messages')
+      .insert(fallbackPayload)
+      .select('id, created_at')
+      .single());
+  }
+  console.log('[CHAT_INSERT_RESULT]', {
+    ok: !error,
+    data_id: data?.id ?? null,
+    error_code: (error as any)?.code ?? null,
+    error_message: (error as any)?.message ?? null,
+    error_details: (error as any)?.details ?? null,
+    error_hint: (error as any)?.hint ?? null,
+  });
   if (error) throw error;
   console.log('[CHAT_INSERT_DONE]', {
     message_id: data.id,

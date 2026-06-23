@@ -40,7 +40,7 @@ select
   t.created_at                                       as occurred_at,
   'ticket'::text                                     as source_type,
   t.issue_type::text                                 as event_type,
-  t.issue_type::text                                 as summary,
+  coalesce(t.description, t.issue_type::text)        as summary,
   case when t.status = 'OPEN' then 'high' else 'normal' end as severity,
   t.id::text                                         as reference_id,
   jsonb_build_object('status', t.status)             as meta

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import EmojiPicker, { type EmojiClickData } from 'emoji-picker-react';
 import Navigation from '@/components/Navigation';
 import { ChatMessage, ISSUE_TYPES, ISSUE_UI, IssueType, SenderSide } from '@/lib/types';
 import { type AutoflowUser, loadUser, logoutAndGoLogin, resolveChatSendUserId, runSessionMigration } from '@/lib/auth';
@@ -15,6 +16,13 @@ import { useChatNotifications } from '@/lib/hooks/useChatNotifications';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
 import { ensureBrowserNotificationPermission, isBrowserNotificationSupported } from '@/lib/chat/browserNotifications';
+import {
+  createClientNonce,
+  logSendApiResponded,
+  logSendClick,
+  registerMessageIdForNonce
+} from '@/lib/chat/sendTrace';
+import { useChatRenderTrace } from '@/lib/hooks/useChatRenderTrace';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
 import {
@@ -50,6 +58,13 @@ export default function ChatPage() {
   const wasNearBottomRef = useRef(true);
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const chatSendUserId = useMemo(() => resolveChatSendUserId(), []);
+
+  useEffect(() => {
+    console.log('[CHAT_SEND_USER_RESOLVED]', {
+      userId: chatSendUserId,
+      hasUserId: Boolean(chatSendUserId)
+    });
+  }, [chatSendUserId]);
   const { messages, setMessages, loadFull: hookLoadFull, initialHydrationComplete } = useChatLoader({
     loadingRef: isLoadingRef
   });
@@ -69,6 +84,7 @@ export default function ChatPage() {
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [issueType, setIssueType] = useState<IssueType>('설비');
   const [submitting, setSubmitting] = useState(false);
   /** soft delete 진행 중 message id — 중복 요청 방지 */
@@ -166,6 +182,8 @@ export default function ChatPage() {
     router
   });
 
+  useChatRenderTrace(messages, initialHydrationComplete);
+
   const isNearBottom = () => {
     const el = listRef.current;
     if (!el) return false;
@@ -207,7 +225,8 @@ export default function ChatPage() {
     realtimeConnectedRef,
     lastRealtimeActivityAtRef,
     lastRealtimeInsertPushAtRef,
-    reconnectToken: realtimeReconnectToken
+    reconnectToken: realtimeReconnectToken,
+    onConnectionStatus: setConnectionStatus
   });
 
   useChatWatchdog({
@@ -255,6 +274,8 @@ export default function ChatPage() {
     }
     setSubmitting(true);
     const optimisticId = `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const clientNonce = createClientNonce();
+    logSendClick(clientNonce);
     const optimisticMessage: ChatMessage = {
       id: optimisticId,
       user_id: chatSendUserId,
@@ -266,6 +287,7 @@ export default function ChatPage() {
       image_storage_path: null,
       original_lang: '',
       translated_text: null,
+      back_translated_text: null,
       ticket_id: null,
       duplicate_ticket_id: null,
       ai_action: null,
@@ -273,13 +295,14 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, optimisticMessage]);
     try {
-      const clientRequestId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).toString();
+      const clientRequestId = clientNonce;
       const deviceId = getOrCreateDeviceId();
       const fd = new FormData();
       fd.append('user_id', chatSendUserId);
       fd.append('actor_name', sessionUser.name);
       fd.append('message', text.trim());
       fd.append('client_request_id', clientRequestId);
+      fd.append('client_nonce', clientNonce);
       fd.append('client_device_id', deviceId);
       fd.append('sender_side', getDeviceSide());
       if (roomNo) fd.append('room_no', roomNo);
@@ -334,10 +357,10 @@ export default function ChatPage() {
         ai_action: saved.ai_action || null,
         ticket_id: saved.ticket_id || null
       });
+      registerMessageIdForNonce(clientNonce, String(saved.id));
+      logSendApiResponded(clientNonce, String(saved.id), saved.created_at);
       setMessages((prev) => prev.map((m) => (m.id === optimisticId ? ({ ...m, ...saved } as ChatMessage) : m)));
-clearInput();
-// TEMP (root-cause isolation): after send success, do a full reload once.
-await loadFull('send_success_full_reload');
+      clearInput();
     } catch (error: any) {
       log.error('[CHAT_SEND_CLIENT_ERROR]', {
         error: error?.message || String(error)
@@ -535,35 +558,39 @@ await loadFull('send_success_full_reload');
   }
 
   return (
-    <main className="flex h-screen flex-col bg-gray-100">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 shrink-0">
+    // 채팅 배경: 카카오 연파랑
+    <main className="flex h-screen flex-col bg-[#B2C7D9]">
+
+      {/* 헤더: 다크 그레이 테마 */}
+      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 shrink-0">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="font-bold">AutoFlow 채팅</div>
-            <div className="text-xs text-green-600">직원 협업 + 유지보수 등록</div>
+            <div className="font-bold text-white">AutoFlow 채팅</div>
+            {/* 서브타이틀: 카카오 포인트 노랑 */}
+            <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
             {sessionUser ? (
-              <div className="mt-0.5 text-xs font-semibold text-gray-600">로그인: {sessionUser.name}</div>
+              <div className="mt-0.5 text-xs font-semibold text-gray-400">로그인: {sessionUser.name}</div>
             ) : null}
             {!canSendToServer ? (
-              <div className="mt-1 text-xs font-semibold text-rose-700">
+              <div className="mt-1 text-xs font-semibold text-red-400">
                 전송/티켓 생성이 비활성화되었습니다. 관리자 설정이 필요합니다.
               </div>
             ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-600">
+            <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400">
               {browserNotifyPermission !== 'unsupported' && (
                 <button
                   type="button"
                   onClick={() => {
                     void ensureBrowserNotificationPermission().then((p) => setBrowserNotifyPermission(p));
                   }}
-                  className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 font-medium text-gray-700 hover:bg-gray-100"
+                  className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
                 >
                   브라우저 알림 켜기
                 </button>
               )}
-              <span className="text-gray-500">
+              <span className="text-gray-400">
                 브라우저 알림:{' '}
                 {browserNotifyPermission === 'granted'
                   ? '허용됨'
@@ -573,7 +600,7 @@ await loadFull('send_success_full_reload');
                       ? '미지원'
                       : '미설정'}
               </span>
-              <span className="text-gray-500">
+              <span className="text-gray-400">
                 연결 상태:{' '}
                 {connectionStatus === 'connected'
                   ? 'connected'
@@ -587,7 +614,7 @@ await loadFull('send_success_full_reload');
                 log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/login', reason: 'manual_logout' });
                 logoutAndGoLogin(router);
               }}
-              className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600"
+              className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:bg-gray-700"
             >
               로그아웃
             </button>
@@ -599,6 +626,7 @@ await loadFull('send_success_full_reload');
 
       <RoomParticipantsPanel roomId={process.env.NEXT_PUBLIC_DEFAULT_CHAT_ROOM_ID || ''} />
 
+      {/* 메시지 목록 — 배경 main에서 상속 */}
       <section ref={listRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         <ChatMessages
           messages={messages}
@@ -609,35 +637,62 @@ await loadFull('send_success_full_reload');
         />
       </section>
 
+      {/* 유지보수 패널: 다크 테마 */}
       {showMaintenance && (
-        <div className="border-t border-gray-200 bg-white px-3 pt-3 pb-2">
-          <div className="mb-2 text-xs font-bold text-gray-500">문제 유형</div>
+        <div className="border-t border-gray-700 bg-gray-800 px-3 pt-3 pb-2">
+          <div className="mb-2 text-xs font-bold text-gray-300">문제 유형</div>
           <div className="grid grid-cols-5 gap-2 mb-3">
             {ISSUE_TYPES.map((type) => (
-              <button key={type} onClick={() => setIssueType(type)} className={`rounded-xl p-2 text-xs font-bold ${issueType === type ? ISSUE_UI[type].badge + ' ring-2 ring-blue-300' : 'bg-gray-100 text-gray-700'}`}>
+              <button key={type} onClick={() => setIssueType(type)} className={`rounded-xl p-2 text-xs font-bold ${issueType === type ? ISSUE_UI[type].badge + ' ring-2 ring-yellow-400' : 'bg-gray-700 text-gray-300'}`}>
                 <div>{ISSUE_UI[type].emoji}</div>
                 <div>{type}</div>
               </button>
             ))}
           </div>
-          <button type="button" disabled={submitting} onClick={() => void submitMaintenance()} className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">유지보수 등록</button>
+          {/* 유지보수 등록: 카카오 노랑 버튼 */}
+          <button type="button" disabled={submitting} onClick={() => void submitMaintenance()} className="w-full rounded-xl bg-[#FEE500] text-gray-900 px-4 py-3 text-sm font-bold disabled:opacity-50">유지보수 등록</button>
         </div>
       )}
 
-      <div className="bg-white border-t border-gray-200 px-3 py-3 shrink-0">
+      {/* 입력 영역: 다크 테마 */}
+      <div className="bg-gray-800 border-t border-gray-700 px-3 py-3 shrink-0">
+        {/* 이모지 피커 팝업 */}
+        {showEmojiPicker && (
+          <div className="absolute bottom-36 left-2 z-50">
+            <EmojiPicker
+              onEmojiClick={(e: EmojiClickData) => {
+                setText((prev) => prev + e.emoji);
+                setShowEmojiPicker(false);
+              }}
+              height={380}
+              width={320}
+            />
+          </div>
+        )}
         <div className="mb-2 flex items-center gap-2">
-          <button onClick={() => setKeypadOpen(true)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${roomNo ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-gray-100 text-gray-500 border border-dashed border-gray-300'}`}>
+          {/* 객실 선택: 선택 시 노랑 강조 */}
+          <button onClick={() => setKeypadOpen(true)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${roomNo ? 'bg-[#FEE500] text-gray-900 border border-yellow-400' : 'bg-gray-700 text-gray-400 border border-dashed border-gray-600'}`}>
             {roomNo ? `🏠 ${roomNo}호` : '🏠 객실 선택'}
           </button>
           {roomNo && <button onClick={() => setRoomNo('')} className="text-xs text-gray-400">초기화</button>}
-          {photo && <span className="text-xs rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">사진 선택됨</span>}
-          {!showMaintenance && (roomNo || photo) && <button onClick={() => setShowMaintenance(true)} className="ml-auto rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">🔧 유지보수</button>}
+          {photo && <span className="text-xs rounded-full bg-emerald-900/40 px-2 py-1 text-emerald-400">사진 선택됨</span>}
+          {!showMaintenance && (roomNo || photo) && <button onClick={() => setShowMaintenance(true)} className="ml-auto rounded-full bg-[#FEE500] text-gray-900 px-3 py-1.5 text-xs font-bold">🔧 유지보수</button>}
         </div>
         {preview && <img src={preview} alt="preview" className="mb-2 h-20 w-20 rounded-xl object-cover" />}
         <div className="flex items-end gap-2">
-          <button type="button" onClick={() => fileRef.current?.click()} className="h-11 w-11 shrink-0 rounded-full bg-gray-100 text-xl">
+          {/* 카메라 버튼 */}
+          <button type="button" onClick={() => fileRef.current?.click()} className="h-11 w-11 shrink-0 rounded-full bg-gray-700 text-xl">
             📷
           </button>
+          {/* 이모지 버튼 */}
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker((v) => !v)}
+            className={`h-11 w-11 shrink-0 rounded-full text-xl ${showEmojiPicker ? 'bg-yellow-400' : 'bg-gray-700'}`}
+          >
+            😊
+          </button>
+          {/* 입력창: 다크 스타일 */}
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -651,16 +706,17 @@ await loadFull('send_success_full_reload');
             enterKeyHint="send"
             placeholder="메시지를 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈)"
             rows={1}
-            className="input min-h-[44px] max-h-24 flex-1 resize-none"
+            className="min-h-[44px] max-h-24 flex-1 resize-none rounded-2xl border border-gray-600 bg-gray-700 text-white placeholder-gray-400 px-4 py-3 outline-none focus:border-yellow-400 text-sm"
           />
           <button
             type="button"
             disabled={!canSend || submitting}
             onClick={() => clearInput()}
-            className="h-11 shrink-0 rounded-lg border border-gray-200 px-2 text-xs text-gray-600 disabled:opacity-40 disabled:pointer-events-none"
+            className="h-11 shrink-0 rounded-lg border border-gray-600 px-2 text-xs text-gray-400 disabled:opacity-40 disabled:pointer-events-none hover:bg-gray-700"
           >
             취소
           </button>
+          {/* 전송 버튼: 카카오 노랑 */}
           <button
             type="button"
             disabled={!canSend || submitting}
@@ -668,9 +724,9 @@ await loadFull('send_success_full_reload');
               log.debug('[SEND_CLICK]', { canSend, submitting });
               void sendMessage();
             }}
-            className="h-11 w-11 shrink-0 rounded-full bg-blue-600 text-white disabled:opacity-40"
+            className="h-11 w-11 shrink-0 rounded-full bg-[#FEE500] text-gray-900 font-bold text-lg disabled:opacity-40"
           >
-            {submitting ? '전송 중...' : '보내기'}
+            {submitting ? '…' : '▶'}
           </button>
           <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
             const file = e.target.files?.[0];
@@ -681,24 +737,26 @@ await loadFull('send_success_full_reload');
         </div>
       </div>
 
+      {/* 객실 키패드 오버레이 — 흰색 유지 (모달이라 독립적) */}
       {keypadOpen && (
         <div className="absolute inset-0 bg-black/40 flex items-end">
           <div className="w-full rounded-t-3xl bg-white p-4">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-300" />
             <div className="mb-3 text-sm font-bold">객실 번호 입력</div>
-            <div className="mb-3 rounded-2xl bg-gray-100 px-4 py-3 text-3xl font-extrabold text-blue-700">{keypadNum || '-'}</div>
+            <div className="mb-3 rounded-2xl bg-gray-100 px-4 py-3 text-3xl font-extrabold text-gray-900">{keypadNum || '-'}</div>
             <div className="grid grid-cols-3 gap-3">
               {['1','2','3','4','5','6','7','8','9'].map((n) => <button key={n} onClick={() => setKeypadNum((p) => (p + n).slice(0, 4))} className="h-14 rounded-2xl bg-gray-100 text-2xl font-semibold">{n}</button>)}
               <button onClick={() => setKeypadOpen(false)} className="h-14 rounded-2xl text-sm font-semibold text-gray-500">닫기</button>
               <button onClick={() => setKeypadNum((p) => (p + '0').slice(0, 4))} className="h-14 rounded-2xl bg-gray-100 text-2xl font-semibold">0</button>
               <button onClick={() => setKeypadNum((p) => p.slice(0, -1))} className="h-14 rounded-2xl text-xl">⌫</button>
             </div>
-            <button onClick={() => { setRoomNo(keypadNum); setKeypadOpen(false); }} className="mt-3 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">확인</button>
+            {/* 확인: 카카오 노랑 */}
+            <button onClick={() => { setRoomNo(keypadNum); setKeypadOpen(false); }} className="mt-3 w-full rounded-2xl bg-[#FEE500] text-gray-900 px-4 py-3 font-bold">확인</button>
           </div>
         </div>
       )}
 
-      <div className="px-3 pb-1 text-right text-[10px] text-gray-400">build: {buildTag}</div>
+      <div className="px-3 pb-1 text-right text-[10px] text-gray-500">build: {buildTag}</div>
       <Navigation active="chat" />
     </main>
   );

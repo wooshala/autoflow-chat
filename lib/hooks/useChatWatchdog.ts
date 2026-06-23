@@ -52,6 +52,7 @@ export function useChatWatchdog({
   const visibilityEffectMountCountRef = useRef(0);
   const notConnectedStreakRef = useRef(0);
   const lastRecoverAtRef = useRef(0);
+  const lastHiddenPollAtRef = useRef(0);
 
   const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
@@ -209,6 +210,7 @@ export function useChatWatchdog({
     const REALTIME_SILENCE_MS_NO_PUSH = 15000;
     const REALTIME_SILENCE_MS_AFTER_PUSH = 90000;
     const DISCONNECTED_POLL_MIN_MS = 30000;
+    const HIDDEN_POLL_MIN_MS = 30000;
 
     const tick = () => {
       log.debug('[CHAT_WATCHDOG_INTERVAL_ENTER]');
@@ -220,9 +222,20 @@ export function useChatWatchdog({
         log.debug('[CHAT_WATCHDOG_SKIP]', { reason: 'not_mounted' });
         return;
       }
-      if (document.hidden) {
-        log.debug('[CHAT_WATCHDOG_SKIP]', { reason: 'hidden_tab' });
-        return;
+
+      const hidden = document.hidden;
+
+      // Core v0.1: hidden tab also polls at least every 30s to catch missed messages.
+      if (hidden) {
+        const nowHidden = Date.now();
+        if (nowHidden - lastHiddenPollAtRef.current >= HIDDEN_POLL_MIN_MS) {
+          lastHiddenPollAtRef.current = nowHidden;
+          log.info('[CHAT_WATCHDOG_HIDDEN_POLL]', { reason: 'hidden_tab_fallback' });
+          void (async () => {
+            const result = await loadFullRef.current('hidden_tab_poll');
+            log.debug('[CHAT_WATCHDOG_HIDDEN_POLL_DONE]', { ok: Boolean(result?.ok), count: result?.count ?? 0 });
+          })();
+        }
       }
 
       // (Leader election retained to avoid behavior drift, though we currently only use "stale" path.)
@@ -246,10 +259,10 @@ export function useChatWatchdog({
         }
         onConnectionStatus?.(notConnectedStreakRef.current >= 3 ? 'degraded' : 'reconnecting');
 
-        // Auto-recover: if not_connected persists, force a full reload fetch.
+        // Auto-recover: if not_connected persists, force a full reload fetch (visible or hidden).
         const now = Date.now();
         const RECOVER_MIN_INTERVAL_MS = 30_000;
-        if (notConnectedStreakRef.current >= 3 && now - lastRecoverAtRef.current > RECOVER_MIN_INTERVAL_MS) {
+        if (notConnectedStreakRef.current >= 2 && now - lastRecoverAtRef.current > RECOVER_MIN_INTERVAL_MS) {
           lastRecoverAtRef.current = now;
           log.warn('[CHAT_CONNECTION_DEGRADED]', {
             reason: 'not_connected_streak',

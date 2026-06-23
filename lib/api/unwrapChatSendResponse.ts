@@ -1,4 +1,5 @@
 import type { ChatMessage } from '@/lib/types';
+import { normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
 
 /**
  * ChatMessage 행 판별은 **`id` 필드만** 사용합니다.
@@ -29,11 +30,11 @@ export function unwrapChatSendEnvelopeData(data: unknown): ChatMessage | null {
   if (isPlainObject(msgCandidate)) {
     const id = readNonEmptyId(msgCandidate);
     if (!id) return null;
-    return { ...(msgCandidate as object), id } as ChatMessage;
+    return normalizeChatMessageFields({ ...(msgCandidate as object), id } as ChatMessage);
   }
 
   const id = readNonEmptyId(data);
   if (!id) return null;
   if (typeof data.user_id !== 'string') return null;
-  return { ...(data as object), id } as ChatMessage;
+  return normalizeChatMessageFields({ ...(data as object), id } as ChatMessage);
 }

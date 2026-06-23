@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
+import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
+import { logRealtimeReceived } from '@/lib/chat/sendTrace';
 
 function sortMessagesAsc(items: ChatMessage[]): ChatMessage[] {
   return [...items].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
@@ -13,7 +15,8 @@ export function useChatRealtime({
   realtimeConnectedRef,
   lastRealtimeActivityAtRef,
   lastRealtimeInsertPushAtRef,
-  reconnectToken
+  reconnectToken,
+  onConnectionStatus
 }: {
   supabase: any;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -22,6 +25,7 @@ export function useChatRealtime({
   lastRealtimeActivityAtRef: React.MutableRefObject<number>;
   lastRealtimeInsertPushAtRef: React.MutableRefObject<number | null>;
   reconnectToken?: number;
+  onConnectionStatus?: (s: 'connected' | 'degraded' | 'reconnecting') => void;
 }) {
   useEffect(() => {
     if (!supabase) return;
@@ -52,7 +56,7 @@ export function useChatRealtime({
           merge_index: idx === -1 ? null : idx
         });
         if (idx === -1) {
-          const next = sortMessagesAsc([...prev, { ...row, id } as ChatMessage]);
+          const next = sortMessagesAsc([...prev, mergeChatMessageRow(undefined, { ...row, id })]);
           log.debug('[SET_MESSAGES_COUNT]', {
             source: 'realtime_upsert_insert',
             prev_count: prev.length,
@@ -61,7 +65,7 @@ export function useChatRealtime({
           return next;
         }
         const next = [...prev];
-        next[idx] = { ...next[idx], ...row, id } as ChatMessage;
+        next[idx] = mergeChatMessageRow(next[idx], { ...row, id });
         log.debug('[REALTIME_DEDUPE_HIT]', {
           message_id: id,
           index: idx
@@ -83,6 +87,9 @@ export function useChatRealtime({
       postgres_changes: [PG_INSERT_FILTER, PG_UPDATE_FILTER],
       reconnectToken: reconnectToken ?? 0
     });
+    if (reconnectToken && reconnectToken > 0) {
+      log.info('[CHAT_REALTIME_RECONNECT]', { reconnectToken });
+    }
 
     const channel = supabase
       .channel('chat_messages_realtime')
@@ -91,21 +98,39 @@ export function useChatRealtime({
         if (!row?.id) return;
         lastRealtimeActivityAtRef.current = Date.now();
         lastRealtimeInsertPushAtRef.current = Date.now();
-        log.info('[CHAT_REALTIME_EVENT]', { type: 'INSERT', messageId: row.id });
-        upsertMessageRow(row);
+        log.info('[CHAT_REALTIME_EVENT]', {
+          type: 'INSERT',
+          messageId: row.id,
+          room: row.room_no ?? null,
+          sender: row.sender_side ?? null,
+          has_translated_ko: Boolean((row as any)?.translated_text?.ko),
+          has_translated_ru: Boolean((row as any)?.translated_text?.ru)
+        });
+        logRealtimeReceived(String(row.id), row.room_no ?? null, row.sender_side ?? null);
+        upsertMessageRow(normalizeChatMessageFields(row));
       })
       .on('postgres_changes', PG_UPDATE_FILTER, (payload: any) => {
         const row = payload?.new as ChatMessage | undefined;
         if (!row?.id) return;
         lastRealtimeActivityAtRef.current = Date.now();
         log.info('[CHAT_REALTIME_EVENT]', { type: 'UPDATE', messageId: row.id });
-        upsertMessageRow(row);
+        upsertMessageRow(normalizeChatMessageFields(row));
       })
-      .subscribe((status: string) => {
+      .subscribe((status: string, err?: Error) => {
+        if (err) {
+          log.warn('[CHAT_REALTIME_ERROR]', {
+            status,
+            error: err.message,
+            reconnectToken: reconnectToken ?? 0
+          });
+        }
         realtimeConnectedRef.current = status === 'SUBSCRIBED';
         log.info('[CHAT_REALTIME_STATUS]', { status, connected: realtimeConnectedRef.current });
         if (realtimeConnectedRef.current) {
           lastRealtimeActivityAtRef.current = Date.now();
+          onConnectionStatus?.('connected');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          onConnectionStatus?.('reconnecting');
         }
       });
 
@@ -123,7 +148,8 @@ export function useChatRealtime({
     realtimeConnectedRef,
     lastRealtimeActivityAtRef,
     lastRealtimeInsertPushAtRef,
-    reconnectToken
+    reconnectToken,
+    onConnectionStatus
   ]);
 }
 

@@ -4,6 +4,7 @@ import { TIMEOUT_MS_CHAT_LIST } from '@/lib/api/timeouts';
 import { CHAT_LIST_URL } from '@/lib/chatApi';
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
+import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
 
 const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
@@ -29,11 +30,14 @@ function maxCreatedAt(msgs: ChatMessage[]): string | null {
 export type UseChatLoaderOptions = {
   /** 페이지/워치독과 공유: in-flight 로딩 여부 (시퀀스 기준으로만 해제) */
   loadingRef?: MutableRefObject<boolean>;
+  /** Override default list fetch timeout (ms). Staff-chat uses shorter value. */
+  listTimeoutMs?: number;
 };
 
 export function useChatLoader(options?: UseChatLoaderOptions) {
   const internalLoadingRef = useRef(false);
   const loadingRef = options?.loadingRef ?? internalLoadingRef;
+  const listTimeoutMs = options?.listTimeoutMs ?? TIMEOUT_MS_CHAT_LIST;
 
   const isMountedRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -47,6 +51,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [initialHydrationComplete, setInitialHydrationComplete] = useState(false);
+  const [initialLoadStatus, setInitialLoadStatus] = useState<'loading' | 'ok' | 'error'>('loading');
 
   const load = useCallback(
     async (
@@ -83,7 +88,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         const result = await fetchEnvelope<ChatListData>(listUrl, {
           cache: 'no-store',
           signal: controller.signal,
-          timeoutMs: TIMEOUT_MS_CHAT_LIST
+          timeoutMs: listTimeoutMs
         });
 
         if (!result.ok) {
@@ -124,10 +129,11 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
               nextMessages.forEach((m) => {
                 if (!m?.id) return;
                 const mid = String(m.id);
-                const prevRow = byId.get(String(m.id));
-                byId.set(String(m.id), prevRow ? { ...prevRow, ...m } : m);
+                const prevRow = byId.get(mid);
+                const normalized = normalizeChatMessageFields(m);
+                byId.set(mid, prevRow ? mergeChatMessageRow(prevRow, normalized) : normalized);
                 if (!prevIds.has(mid)) {
-                  added.push(m);
+                  added.push(normalized);
                 } else {
                   skippedExisting += 1;
                 }
@@ -192,6 +198,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         ) {
           initialHydrationDoneRef.current = true;
           setInitialHydrationComplete(true);
+          setInitialLoadStatus('ok');
         }
 
         return {
@@ -240,7 +247,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         }
       }
     },
-    [loadingRef]
+    [loadingRef, listTimeoutMs]
   );
 
   const loadFull = useCallback(async (source: string) => load(source, { mode: 'full' }), [load]);
@@ -260,7 +267,10 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
       const attemptId = initialAttemptIdRef.current;
       const first = await loadFull('initial');
       if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
-      if (first?.ok) return;
+      if (first?.ok) {
+        setInitialLoadStatus('ok');
+        return;
+      }
 
       if (initialRetryCountRef.current >= 1) return;
       initialRetryCountRef.current = 1;
@@ -278,7 +288,14 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
       loadingRef.current = false;
       await new Promise((r) => setTimeout(r, 200));
       if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
-      await loadFull('initial_retry');
+      const second = await loadFull('initial_retry');
+      if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
+      // Allow UI to proceed even when list failed (empty chat + error UI elsewhere).
+      if (!initialHydrationDoneRef.current) {
+        initialHydrationDoneRef.current = true;
+        setInitialHydrationComplete(true);
+        setInitialLoadStatus(second?.ok ? 'ok' : 'error');
+      }
     })();
 
     return () => {
@@ -302,6 +319,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
     messages,
     loadFull,
     setMessages,
-    initialHydrationComplete
+    initialHydrationComplete,
+    initialLoadStatus
   };
 }

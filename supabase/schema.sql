@@ -17,6 +17,7 @@ create table if not exists chat_messages (
   image_storage_path text,
   original_lang text,
   translated_text jsonb,
+  back_translated_text jsonb,
   ticket_id uuid,
   ai_action text,
   created_at timestamptz not null default now()

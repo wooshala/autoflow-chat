@@ -1,3 +1,5 @@
+import { resolveChatPageUserId } from '@/lib/auth/staffUsers';
+
 export const STORAGE_USER = 'autoflow_user_v1';
 
 export type AutoflowUser = {
@@ -56,13 +58,18 @@ export function runSessionMigration(): void {
   localStorage.removeItem('autoflow_staff_user');
 }
 
-/** 채팅/유지보수 API용 DB user id (이름 전용 세션과 분리) */
+export {
+  normalizeStaffUserKey,
+  resolveChatPageUserId,
+  resolveStaffChatUserId,
+  resolveUserIdForStaffKey,
+  staffKeyLabel,
+  type StaffUserKey
+} from '@/lib/auth/staffUsers';
+
+/** 채팅/유지보수 API용 DB user id — PC /chat (manager). 하위호환 alias. */
 export function resolveChatSendUserId(): string | null {
-  const v =
-    typeof process !== 'undefined' && process.env.NEXT_PUBLIC_CHAT_SEND_USER_ID
-      ? String(process.env.NEXT_PUBLIC_CHAT_SEND_USER_ID).trim()
-      : '';
-  return v || null;
+  return resolveChatPageUserId();
 }
 
 export function logoutAndGoLogin(router: { replace: (href: string) => void }) {

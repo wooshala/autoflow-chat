@@ -5,8 +5,8 @@
 /** GET /api/chat/list — 진단·지연 대비 (30~60초 권장 구간) */
 export const TIMEOUT_MS_CHAT_LIST = 45_000;
 
-/** POST /api/chat/send — 멀티파트 포함 (10~20초 권장 구간) */
-export const TIMEOUT_MS_CHAT_SEND = 15_000;
+/** POST /api/chat/send — OpenAI forward + back-translate (2× ~12s) */
+export const TIMEOUT_MS_CHAT_SEND = 35_000;
 
 /** GET /api/chat/rooms/:id/participants */
 export const TIMEOUT_MS_PARTICIPANTS = 10_000;

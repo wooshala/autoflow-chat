@@ -2,18 +2,9 @@
 
 import type { ChatOpsQueueItem, QueueItemStatus } from '@/lib/chat/chatOpsQueue';
 import { getCategoryBadgeClassName, getCategoryLabel } from '@/lib/chat/classifyMessageCategory';
+import { formatKSTTime } from '@/lib/formatKST';
 
-function formatTimeKST(dateString: string) {
-  try {
-    return new Date(dateString).toLocaleTimeString('ko-KR', {
-      timeZone: 'Asia/Seoul',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return '';
-  }
-}
+const formatTimeKST = formatKSTTime;
 
 function FlagBadge({ label, className }: { label: string; className: string }) {
   return (

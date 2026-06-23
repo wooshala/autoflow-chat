@@ -97,6 +97,7 @@ export interface ChatMessage {
   image_storage_path: string | null;
   original_lang: string;
   translated_text: TranslatedText | null;
+  back_translated_text?: TranslatedText | null;
   ticket_id: string | null;
   duplicate_ticket_id?: string | null;
   ai_action?: AiAction;

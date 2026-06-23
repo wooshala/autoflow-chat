@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
+import { buildChatTranslations } from '@/lib/chat/translateMessageForChat';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
-import { applyTranslationFallback, createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
+import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
 import { uploadImage } from '@/lib/services/upload';
 import { mapIntentIssueTypeToKo, parseMessage } from '@/lib/aiParser';
 import { createTicket, findActiveTicketByRoomAndIssue } from '@/lib/services/maintenance';
@@ -11,6 +12,8 @@ import { createMessageIntent, updateMessageIntentById } from '@/lib/services/mes
 type AutoTicketSkipReason = 'duplicate' | 'not_ticketable' | 'no_room' | 'ai_error';
 
 const DEBUG_VERBOSE = process.env.CHAT_DEBUG_VERBOSE === '1';
+/** Core v0.1: AI/번역 후처리는 기본 OFF. 명시적으로 1일 때만 실행. */
+const ENABLE_AI_POSTPROCESS = process.env.CHAT_ENABLE_AI_POSTPROCESS === '1';
 
 function isUuid(v: string) {
   // RFC4122-ish: 8-4-4-4-12 hex
@@ -121,6 +124,7 @@ async function runAiPostProcess(input: {
         code: err?.code ?? null,
         type: err?.type ?? null,
       });
+      console.log('[AUTO_TICKET_FETCH_RESULT]', null);
       throw err;
     }
     console.log('[AUTO_TICKET_FETCH_RESULT]', aiResult);
@@ -313,6 +317,10 @@ async function runAiPostProcess(input: {
       reason: null,
     });
   } catch (error: any) {
+    console.log('[AUTO_TICKET_PIPELINE_FATAL]', {
+      error: String(error),
+      stack: error instanceof Error ? error.stack : null,
+    });
     console.error('[AUTO_TICKET_ERROR]', {
       message_id: saved.id,
       error: error?.message || String(error),
@@ -346,10 +354,16 @@ async function runAiPostProcess(input: {
 
 export async function POST(req: NextRequest) {
   const requestStarted = Date.now();
+  const apiReceivedAt = requestStarted;
   console.log('[CHAT_SEND_START]');
   logSupabaseEnvCtx('[DIAG_SUPABASE_CTX_SEND]');
   try {
     const formData = await req.formData();
+
+    const client_nonce = String(formData.get('client_nonce') || formData.get('client_request_id') || '').trim() || null;
+    if (client_nonce) {
+      console.log('[CHAT_SEND_API_RECEIVED]', { nonce: client_nonce, ts: apiReceivedAt });
+    }
 
     const ticket_id = String(formData.get('ticket_id') || '') || null;
     const room_no = String(formData.get('room_no') || '') || null;
@@ -425,6 +439,12 @@ export async function POST(req: NextRequest) {
       return jsonErr('INVALID_USER_ID', '전송에 실패했습니다. 관리자 설정이 필요합니다.', 400);
     }
 
+    const translation =
+      message.trim() ? await buildChatTranslations(message || '', sender_side) : {
+        original_lang: '',
+        translated_text: null,
+        back_translated_text: null
+      };
     const insertStarted = Date.now();
     const saved = await createChatMessage({
       ticket_id,
@@ -434,7 +454,25 @@ export async function POST(req: NextRequest) {
       sender_side,
       message_type: image instanceof File ? 'image' : 'text',
       image_url: image_url || null,
-      image_storage_path: image_storage_path || null
+      image_storage_path: image_storage_path || null,
+      original_lang: translation.original_lang,
+      translated_text: translation.translated_text,
+      back_translated_text: translation.back_translated_text
+    });
+    console.log('[CHAT_TRANSLATION_SAVED]', {
+      message_id: saved.id,
+      original_lang: translation.original_lang,
+      has_translated_ru: Boolean(translation.translated_text?.ru),
+      has_translated_ko: Boolean(translation.translated_text?.ko),
+      has_back_ko: Boolean(translation.back_translated_text?.ko),
+      has_back_ru: Boolean(translation.back_translated_text?.ru)
+    });
+    const dbInsertedAt = Date.now();
+    console.log('[CHAT_SEND_DB_INSERTED]', {
+      nonce: client_nonce,
+      message_id: saved.id,
+      ts: dbInsertedAt,
+      db_insert_ms: dbInsertedAt - insertStarted
     });
     if (DEBUG_VERBOSE) {
       console.log('[CHAT_MESSAGE_INSERTED]', {
@@ -448,25 +486,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // DB time probe (diagnostic only)
-    try {
-      const { data, error } = await supabaseAdmin!.rpc('diag_db_now');
-      console.log('[DB_NOW_SEND]', {
-        db_now: data ?? null,
-        admin_chosen_url_host: getAdminChosenUrlHost(),
-        message_id: saved.id,
-        ok: !error,
-        error: error ? (error as any).message || String(error) : null
-      });
-    } catch (e: any) {
-      console.log('[DB_NOW_SEND]', {
-        db_now: null,
-        admin_chosen_url_host: getAdminChosenUrlHost(),
-        message_id: saved.id,
-        ok: false,
-        error: e?.message || String(e)
-      });
-    }
+    // Core v0.1: skip heavy diagnostics before response (target <500ms).
     console.log('[SEND_ROW_PERSISTED_KEYS]', {
       id: saved.id,
       created_at: saved.created_at,
@@ -528,25 +548,38 @@ export async function POST(req: NextRequest) {
       messageId: saved.id,
       text: message,
     });
-    void runAiPostProcess({
-      saved,
-      user_id,
-      ticket_id,
-      message
-    });
-    void applyTranslationFallback({
-      messageId: saved.id,
-      message
-    }).catch((error: any) => {
-      console.error('[CHAT_TRANSLATION_FALLBACK_ERROR]', {
-        message_id: saved.id,
-        error: error?.message || String(error)
-      });
-    });
 
+    // Core v0.1: respond immediately after DB insert. AI ticket pipeline must not block send.
+    if (ENABLE_AI_POSTPROCESS) {
+      void runAiPostProcess({
+        saved,
+        user_id,
+        ticket_id,
+        message
+      }).catch((e: any) => {
+        console.log('[AUTO_TICKET_PIPELINE_FATAL]', {
+          error: String(e),
+          stack: e instanceof Error ? e.stack : null,
+        });
+      });
+    } else {
+      console.log('[CHAT_AI_POSTPROCESS_SKIPPED]', {
+        reason: 'core_v0.1_disabled',
+        message_id: saved.id,
+        hint: 'Set CHAT_ENABLE_AI_POSTPROCESS=1 to re-enable'
+      });
+    }
+
+    const apiRespondedAt = Date.now();
+    console.log('[CHAT_SEND_API_RESPONDED]', {
+      nonce: client_nonce,
+      message_id: saved.id,
+      elapsed_ms: apiRespondedAt - requestStarted,
+      ts: apiRespondedAt
+    });
     console.log('[CHAT_SEND_RESPONSE_RETURNED]', {
       message_id: saved.id,
-      api_total_ms: Date.now() - requestStarted
+      api_total_ms: apiRespondedAt - requestStarted
     });
     const responsePayload = { ok: true as const, data: { message: saved } };
     console.log('[CHAT_SEND_RESPONSE_BODY]', JSON.stringify(responsePayload, null, 2));

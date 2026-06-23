@@ -1,20 +1,29 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { loadUser, runSessionMigration, saveUser } from '@/lib/auth';
 
-export default function LoginPage() {
-  const router = useRouter();
+function readReturnPath(): string {
+  if (typeof window === 'undefined') return '/chat';
+  const params = new URLSearchParams(window.location.search);
+  const ret = params.get('return');
+  if (ret && ret.startsWith('/')) return ret;
+  return '/chat';
+}
+
+function LoginForm() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [returnTo, setReturnTo] = useState('/chat');
 
   useEffect(() => {
     runSessionMigration();
+    const ret = readReturnPath();
+    setReturnTo(ret);
     if (loadUser()) {
-      router.replace('/chat');
+      window.location.href = ret;
     }
-  }, [router]);
+  }, []);
 
   function handleEnter() {
     const trimmed = name.trim();
@@ -24,7 +33,7 @@ export default function LoginPage() {
     }
     setError('');
     saveUser(trimmed);
-    router.replace('/chat');
+    window.location.href = returnTo;
   }
 
   return (
@@ -69,4 +78,8 @@ export default function LoginPage() {
       </div>
     </main>
   );
+}
+
+export default function LoginPage() {
+  return <LoginForm />;
 }
