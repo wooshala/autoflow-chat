@@ -37,6 +37,7 @@ import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
 import { unlockServerStaffTts } from '@/lib/chat/serverTtsClient';
 import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
+import { useStaffChatDebugLog } from '@/lib/hooks/useStaffChatDebugLog';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import {
   isStaffChatSelfMessage,
@@ -47,6 +48,7 @@ import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEd
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
+import StaffChatDebugPanel from '@/components/staff-chat/StaffChatDebugPanel';
 import {
   inviteToSession,
   loadStoredInviteToken,
@@ -92,6 +94,7 @@ type InvitePhase = 'loading' | 'ready' | 'invalid';
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const ruVoiceReady = useStaffRuVoiceAvailability();
+  const { debugEnabled, logs: debugLogs } = useStaffChatDebugLog();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
   );
@@ -1149,6 +1152,8 @@ function StaffChatPageInner() {
         onClose={() => setShowPhraseEditor(false)}
         onSaved={() => setPhraseRefreshToken((n) => n + 1)}
       />
+
+      {debugEnabled ? <StaffChatDebugPanel logs={debugLogs} /> : null}
     </main>
   );
 }
