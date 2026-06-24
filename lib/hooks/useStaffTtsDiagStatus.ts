@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { STAFF_TTS_HEALTH_URL } from '@/lib/chatApi';
-import { peekLastStaffTtsClientError } from '@/lib/chat/serverTtsClient';
+import { isServerStaffTtsUnlocked, peekLastStaffTtsClientError } from '@/lib/chat/serverTtsClient';
 import { isStaffChatDiagMode } from '@/lib/chat/staffChatDebugLog';
 
 type HealthData = {
@@ -14,10 +14,12 @@ type HealthData = {
 export function useStaffTtsDiagStatus(): {
   diagMode: boolean;
   serverTtsAvailable: boolean | null;
+  serverTtsUnlocked: boolean;
   lastTtsError: string | null;
 } {
   const [diagMode, setDiagMode] = useState(false);
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null);
+  const [serverTtsUnlocked, setServerTtsUnlocked] = useState(false);
   const [lastTtsError, setLastTtsError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,6 +42,7 @@ export function useStaffTtsDiagStatus(): {
     })();
 
     const poll = window.setInterval(() => {
+      setServerTtsUnlocked(isServerStaffTtsUnlocked());
       setLastTtsError(peekLastStaffTtsClientError());
     }, 1500);
 
@@ -49,5 +52,5 @@ export function useStaffTtsDiagStatus(): {
     };
   }, [diagMode]);
 
-  return { diagMode, serverTtsAvailable, lastTtsError };
+  return { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError };
 }

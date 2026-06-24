@@ -57,7 +57,8 @@ export const messages = {
     ttsNoRussianVoice: '러시아어 음성이 설치되어 있지 않습니다',
     ttsNoRussianVoiceBanner:
       '⚠️ 러시아어 음성(TTS) 없음 — 자동 읽기 불가. 알림음은 정상입니다. 기기 설정에서 러시아어 음성 데이터를 설치하세요.',
-    ttsVoiceUnavailable: '음성 없음'
+    ttsVoiceUnavailable: '음성 없음',
+    ttsTapSoundOn: '🔊 음성을 켜주세요 (자동 읽기)'
   },
   ru: {
     send: 'Отправить',
@@ -113,7 +114,8 @@ export const messages = {
     ttsNoRussianVoice: 'Русский голос не установлен',
     ttsNoRussianVoiceBanner:
       '⚠️ Нет русского TTS — авточтение недоступно. Звук уведомления работает. Установите русский голос в настройках.',
-    ttsVoiceUnavailable: 'Нет голоса'
+    ttsVoiceUnavailable: 'Нет голоса',
+    ttsTapSoundOn: 'Включите 🔊 (авточтение)'
   }
 } as const;
 

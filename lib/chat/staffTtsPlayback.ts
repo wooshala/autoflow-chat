@@ -1,4 +1,7 @@
-import { playServerStaffTts } from '@/lib/chat/serverTtsClient';
+import {
+  isServerStaffTtsUnlocked,
+  playServerStaffTts
+} from '@/lib/chat/serverTtsClient';
 import { speakStaffTts, type StaffTtsLocale } from '@/lib/chat/staffTts';
 
 export type StaffTtsPlaybackResult =
@@ -6,7 +9,12 @@ export type StaffTtsPlaybackResult =
   | 'server_spoken'
   | 'blocked'
   | 'no_voice'
-  | 'server_failed';
+  | 'server_failed'
+  | 'server_not_unlocked';
+
+export type PlayStaffTtsOptions = {
+  fromUserGesture?: boolean;
+};
 
 /**
  * Browser Web Speech when ru voice is available; otherwise server-side OpenAI TTS mp3.
@@ -14,10 +22,13 @@ export type StaffTtsPlaybackResult =
 export async function playStaffTts(
   text: string,
   locale: StaffTtsLocale,
-  ruVoiceReady: boolean | null
+  ruVoiceReady: boolean | null,
+  options?: PlayStaffTtsOptions
 ): Promise<StaffTtsPlaybackResult> {
   const preview = String(text || '').trim().slice(0, 120);
   if (!preview) return 'blocked';
+
+  const playOpts = { fromUserGesture: options?.fromUserGesture ?? false };
 
   if (ruVoiceReady !== false) {
     const browserResult = await speakStaffTts(preview, locale);
@@ -26,7 +37,10 @@ export async function playStaffTts(
   }
 
   if (locale === 'ru') {
-    const ok = await playServerStaffTts(preview, 'ru');
+    if (!playOpts.fromUserGesture && !isServerStaffTtsUnlocked()) {
+      return 'server_not_unlocked';
+    }
+    const ok = await playServerStaffTts(preview, 'ru', playOpts);
     return ok ? 'server_spoken' : 'server_failed';
   }
 

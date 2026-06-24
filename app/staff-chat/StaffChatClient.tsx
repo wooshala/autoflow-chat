@@ -34,7 +34,11 @@ import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
-import { unlockServerStaffTts } from '@/lib/chat/serverTtsClient';
+import {
+  isServerStaffTtsUnlocked,
+  resetServerStaffTtsUnlock,
+  unlockServerStaffTts
+} from '@/lib/chat/serverTtsClient';
 import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
 import { useStaffTtsDiagStatus } from '@/lib/hooks/useStaffTtsDiagStatus';
@@ -94,7 +98,7 @@ type InvitePhase = 'loading' | 'ready' | 'invalid';
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const ruVoiceReady = useStaffRuVoiceAvailability();
-  const { diagMode, serverTtsAvailable, lastTtsError } = useStaffTtsDiagStatus();
+  const { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError } = useStaffTtsDiagStatus();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
   );
@@ -111,8 +115,17 @@ function StaffChatPageInner() {
   const [showPhraseEditor, setShowPhraseEditor] = useState(false);
   const [phraseRefreshToken, setPhraseRefreshToken] = useState(0);
 
-  function runStaffTts(text: string, ttsLocale: 'ru' | 'ko' = 'ru', showNoVoiceToast = false) {
-    void playStaffTts(text, ttsLocale, ruVoiceReady).then((result) => {
+  function runStaffTts(
+    text: string,
+    ttsLocale: 'ru' | 'ko' = 'ru',
+    showNoVoiceToast = false,
+    fromUserGesture = false
+  ) {
+    void playStaffTts(text, ttsLocale, ruVoiceReady, { fromUserGesture }).then((result) => {
+      if (result === 'server_not_unlocked' && !fromUserGesture) {
+        setToast({ kind: 'error', msg: t('ttsTapSoundOn') });
+        return;
+      }
       const failed =
         result === 'no_voice' || result === 'server_failed' || result === 'blocked';
       if (failed && ttsLocale === 'ru' && showNoVoiceToast) {
@@ -680,21 +693,21 @@ function StaffChatPageInner() {
   }
 
   function toggleSound() {
-    setSoundEnabled((prev) => {
-      const next = !prev;
-      saveSoundEnabled(next);
-      console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
-        prev,
-        next,
-        stored: loadSoundEnabled()
-      });
-      if (next) {
-        unlockNotificationAudio();
-        unlockStaffTts();
-        unlockServerStaffTts();
-      }
-      return next;
+    const next = !soundEnabled;
+    saveSoundEnabled(next);
+    setSoundEnabled(next);
+    console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
+      prev: soundEnabled,
+      next,
+      stored: loadSoundEnabled()
     });
+    if (next) {
+      unlockNotificationAudio();
+      unlockStaffTts();
+      void unlockServerStaffTts();
+    } else {
+      resetServerStaffTtsUnlock();
+    }
   }
 
   function showStaffTestNotification() {
@@ -893,6 +906,7 @@ function StaffChatPageInner() {
         {diagMode ? (
           <StaffChatTtsDiagLine
             serverTtsAvailable={serverTtsAvailable}
+            serverTtsUnlocked={serverTtsUnlocked}
             lastTtsError={lastTtsError}
             ruVoiceReady={ruVoiceReady}
           />
@@ -1002,7 +1016,10 @@ function StaffChatPageInner() {
                       {!mine && ttsText && soundEnabled ? (
                         <button
                           type="button"
-                          onClick={() => runStaffTts(ttsText, 'ru', true)}
+                          onClick={() => {
+                            void unlockServerStaffTts();
+                            runStaffTts(ttsText, 'ru', true, true);
+                          }}
                           className="rounded px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
                         >
                           🔊 {t('readAloud')}
