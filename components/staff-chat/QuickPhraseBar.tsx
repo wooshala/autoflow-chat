@@ -21,6 +21,9 @@ type Props = {
   /** Smaller touch chips: one row scroll, less vertical space than `large`. */
   compactMobile?: boolean;
   selectedLabel?: string;
+  onEditClick?: () => void;
+  editLabel?: string;
+  refreshToken?: number;
 };
 
 export default function QuickPhraseBar({
@@ -30,7 +33,10 @@ export default function QuickPhraseBar({
   disabled = false,
   large = false,
   compactMobile = false,
-  selectedLabel = ''
+  selectedLabel = '',
+  onEditClick,
+  editLabel = '편집',
+  refreshToken = 0
 }: Props) {
   const [phrases, setPhrases] = useState<ChatQuickPhrase[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -50,7 +56,7 @@ export default function QuickPhraseBar({
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [loadPhrases]);
+  }, [loadPhrases, refreshToken]);
 
   function handlePhraseTap(phrase: ChatQuickPhrase) {
     if (disabled) return;
@@ -78,7 +84,21 @@ export default function QuickPhraseBar({
   return (
     <div className={wrapClass}>
       <div className="mx-auto flex max-w-md items-start gap-2">
-        <span className={`${labelClass} pt-2`}>{sectionLabel}</span>
+        <div className="flex shrink-0 items-center gap-1 pt-2">
+          <span className={labelClass}>{sectionLabel}</span>
+          {onEditClick ? (
+            <button
+              type="button"
+              onClick={onEditClick}
+              disabled={disabled}
+              className="flex h-7 min-w-[1.75rem] items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-1.5 text-xs font-semibold text-gray-600 active:bg-gray-100 disabled:opacity-40"
+              aria-label={editLabel}
+              title={editLabel}
+            >
+              ⚙️
+            </button>
+          ) : null}
+        </div>
         <div className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain ${scrollMaxClass}`}>
           <div
             className={

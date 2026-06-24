@@ -43,7 +43,17 @@ export const messages = {
     langKo: '한국어',
     langRu: 'Русский',
     selectRoomRequired: '객실을 선택해주세요',
-    cancel: '취소'
+    cancel: '취소',
+    phraseEdit: '편집',
+    phraseManageTitle: '상태 문구 관리',
+    phraseAdd: '추가',
+    phraseSave: '저장',
+    phraseDelete: '삭제',
+    phraseDeleteConfirm: '이 문구를 삭제할까요?',
+    phraseKeyLabel: '키',
+    phraseKoLabel: '한국어',
+    phraseRuLabel: 'Русский',
+    phraseClose: '닫기'
   },
   ru: {
     send: 'Отправить',
@@ -85,7 +95,17 @@ export const messages = {
     langKo: '한국어',
     langRu: 'Русский',
     selectRoomRequired: 'Выберите номер',
-    cancel: 'Отмена'
+    cancel: 'Отмена',
+    phraseEdit: 'Изменить',
+    phraseManageTitle: 'Управление статусами',
+    phraseAdd: 'Добавить',
+    phraseSave: 'Сохранить',
+    phraseDelete: 'Удалить',
+    phraseDeleteConfirm: 'Удалить эту фразу?',
+    phraseKeyLabel: 'Ключ',
+    phraseKoLabel: 'Корейский',
+    phraseRuLabel: 'Русский',
+    phraseClose: 'Закрыть'
   }
 } as const;
 

@@ -36,6 +36,7 @@ import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
+import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
@@ -96,6 +97,8 @@ function StaffChatPageInner() {
   const [photoRoom, setPhotoRoom] = useState('');
   const [photoStatusText, setPhotoStatusText] = useState('');
   const [photoPhraseKey, setPhotoPhraseKey] = useState<string | null>(null);
+  const [showPhraseEditor, setShowPhraseEditor] = useState(false);
+  const [phraseRefreshToken, setPhraseRefreshToken] = useState(0);
 
   useEffect(() => {
     staffChatLog('STAFF_CHAT_LANG_SELECTED', {
@@ -1029,6 +1032,9 @@ function StaffChatPageInner() {
           disabled={sending || !canSendMessages}
           large
           compactMobile
+          refreshToken={phraseRefreshToken}
+          editLabel={t('phraseEdit')}
+          onEditClick={() => setShowPhraseEditor(true)}
         />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
           <input
@@ -1089,6 +1095,14 @@ function StaffChatPageInner() {
           </>
         )}
       </div>
+
+      <MobileQuickPhraseEditor
+        open={showPhraseEditor}
+        locale={locale}
+        t={t}
+        onClose={() => setShowPhraseEditor(false)}
+        onSaved={() => setPhraseRefreshToken((n) => n + 1)}
+      />
     </main>
   );
 }
