@@ -8,8 +8,7 @@ import { ChatMessage, ISSUE_TYPES, ISSUE_UI, IssueType, SenderSide } from '@/lib
 import { type AutoflowUser, loadUser, logoutAndGoLogin, resolveChatSendUserId, runSessionMigration } from '@/lib/auth';
 import ChatMessages from '@/components/ChatMessages';
 import RoomParticipantsPanel from '@/components/RoomParticipantsPanel';
-import QuickPhraseAdminPanel from '@/components/chat/QuickPhraseAdminPanel';
-import StaffInvitePanel from '@/components/chat/StaffInvitePanel';
+import StaffChatAdminSection from '@/components/chat/StaffChatAdminSection';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
@@ -38,6 +37,11 @@ function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
   const ua = navigator.userAgent.toLowerCase();
   return /android|iphone|ipad|ipod|mobile/.test(ua) ? 'mobile' : 'pc';
+}
+
+function readMobileChatViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(max-width: 767px)').matches;
 }
 
 export default function ChatPage() {
@@ -90,7 +94,8 @@ export default function ChatPage() {
   const [issueType, setIssueType] = useState<IssueType>('설비');
   const [submitting, setSubmitting] = useState(false);
   const [urgentMode, setUrgentMode] = useState(false);
-  const [showStaffAdmin, setShowStaffAdmin] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(readMobileChatViewport);
   /** soft delete 진행 중 message id — 중복 요청 방지 */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -113,6 +118,18 @@ export default function ChatPage() {
       return 'dev-fallback';
     }
   }
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const syncMobile = () => {
+      const mobile = mq.matches;
+      setIsMobileViewport(mobile);
+      if (mobile) setShowAdminPanel(false);
+    };
+    syncMobile();
+    mq.addEventListener('change', syncMobile);
+    return () => mq.removeEventListener('change', syncMobile);
+  }, []);
 
   useEffect(() => {
     const r = new URLSearchParams(window.location.search).get('room');
@@ -600,6 +617,15 @@ export default function ChatPage() {
             <div className="font-bold text-white">AutoFlow 채팅</div>
             {/* 서브타이틀: 카카오 포인트 노랑 */}
             <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
+            {!isMobileViewport ? (
+              <button
+                type="button"
+                onClick={() => setShowAdminPanel((open) => !open)}
+                className="mt-2 rounded-lg border border-yellow-500/50 bg-gray-700 px-3 py-1.5 text-xs font-semibold text-yellow-300 hover:bg-gray-600"
+              >
+                {showAdminPanel ? '직원/문구 닫기' : '직원/문구 열기'}
+              </button>
+            ) : null}
             {sessionUser ? (
               <div className="mt-0.5 text-xs font-semibold text-gray-400">로그인: {sessionUser.name}</div>
             ) : null}
@@ -649,13 +675,6 @@ export default function ChatPage() {
               </span>
             </div>
             <button
-              type="button"
-              onClick={() => setShowStaffAdmin((v) => !v)}
-              className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 text-xs font-medium text-gray-300 hover:bg-gray-600"
-            >
-              {showStaffAdmin ? '직원/문구 닫기' : '직원/문구 관리'}
-            </button>
-            <button
               onClick={() => {
                 log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/login', reason: 'manual_logout' });
                 logoutAndGoLogin(router);
@@ -670,17 +689,12 @@ export default function ChatPage() {
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
 
-      {showStaffAdmin ? (
-        <div className="shrink-0 space-y-3 border-t border-gray-700 bg-gray-800 px-3 py-3">
-          <StaffInvitePanel />
-          <QuickPhraseAdminPanel />
-        </div>
-      ) : null}
+      <StaffChatAdminSection open={showAdminPanel} />
 
       <RoomParticipantsPanel roomId={process.env.NEXT_PUBLIC_DEFAULT_CHAT_ROOM_ID || ''} />
 
       {/* 메시지 목록 — 배경 main에서 상속 */}
-      <section ref={listRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      <section ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
         <ChatMessages
           messages={messages}
           currentUserId={sessionUser ? chatSendUserId : null}
