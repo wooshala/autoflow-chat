@@ -34,6 +34,7 @@ import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
+import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
 import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
@@ -84,6 +85,7 @@ type InvitePhase = 'loading' | 'ready' | 'invalid';
 
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
+  const ruVoiceReady = useStaffRuVoiceAvailability();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
   );
@@ -100,9 +102,9 @@ function StaffChatPageInner() {
   const [showPhraseEditor, setShowPhraseEditor] = useState(false);
   const [phraseRefreshToken, setPhraseRefreshToken] = useState(0);
 
-  function runStaffTts(text: string, ttsLocale: 'ru' | 'ko' = 'ru') {
+  function runStaffTts(text: string, ttsLocale: 'ru' | 'ko' = 'ru', showNoVoiceToast = false) {
     void speakStaffTts(text, ttsLocale).then((result) => {
-      if (result === 'no_voice' && ttsLocale === 'ru') {
+      if (result === 'no_voice' && ttsLocale === 'ru' && showNoVoiceToast) {
         setToast({ kind: 'error', msg: t('ttsNoRussianVoice') });
       }
     });
@@ -817,17 +819,24 @@ function StaffChatPageInner() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={toggleSound}
-            className={`rounded-lg border px-2 py-1 text-[11px] font-bold ${
-              soundEnabled
-                ? 'border-blue-300 bg-blue-50 text-blue-800'
-                : 'border-gray-300 bg-gray-50 text-gray-600'
-            }`}
-          >
-            🔊 {soundEnabled ? t('soundOn') : t('soundOff')}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={toggleSound}
+              className={`rounded-lg border px-2 py-1 text-[11px] font-bold ${
+                soundEnabled
+                  ? 'border-blue-300 bg-blue-50 text-blue-800'
+                  : 'border-gray-300 bg-gray-50 text-gray-600'
+              }`}
+            >
+              🔊 {soundEnabled ? t('soundOn') : t('soundOff')}
+            </button>
+            {ruVoiceReady === false ? (
+              <span className="max-w-[4.5rem] text-[10px] font-bold leading-tight text-amber-700">
+                {t('ttsVoiceUnavailable')}
+              </span>
+            ) : null}
+          </div>
           {browserNotifyPermission === 'unsupported' ? (
             <button
               type="button"
@@ -861,6 +870,15 @@ function StaffChatPageInner() {
       </header>
 
       <StaffPwaInstallBanner lang={locale} />
+
+      {ruVoiceReady === false ? (
+        <div
+          className="mx-3 mt-2 shrink-0 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2.5 text-center text-xs font-semibold leading-snug text-amber-950"
+          role="status"
+        >
+          {t('ttsNoRussianVoiceBanner')}
+        </div>
+      ) : null}
 
       {toast && (
         <div
@@ -954,7 +972,7 @@ function StaffChatPageInner() {
                       {!mine && ttsText && soundEnabled ? (
                         <button
                           type="button"
-                          onClick={() => runStaffTts(ttsText, 'ru')}
+                          onClick={() => runStaffTts(ttsText, 'ru', true)}
                           className="rounded px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
                         >
                           🔊 {t('readAloud')}

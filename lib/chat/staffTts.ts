@@ -2,6 +2,11 @@ export type StaffTtsLocale = 'ru' | 'ko';
 
 export type StaffTtsResult = 'spoken' | 'blocked' | 'no_voice';
 
+/**
+ * Client-side Web Speech API only. When no ru-RU voice is installed, playback is skipped.
+ * Next step: optional server-side TTS (e.g. OpenAI/Google) for devices without ru voices.
+ */
+
 let ttsUnlocked = false;
 
 export function unlockStaffTts() {
@@ -36,6 +41,39 @@ export function selectVoiceForLocale(
 
   const local = matches.find((v) => v.localService);
   return local || matches[0];
+}
+
+function getSynth(): SpeechSynthesis | null {
+  if (typeof window === 'undefined') return null;
+  return window.speechSynthesis ?? null;
+}
+
+export function getAvailableVoices(): SpeechSynthesisVoice[] {
+  const synth = getSynth();
+  return synth ? synth.getVoices() : [];
+}
+
+export function isRuVoiceAvailable(voices = getAvailableVoices()): boolean {
+  return selectVoiceForLocale('ru', voices) !== null;
+}
+
+/** Debug: log all synthesis voices (ru subset highlighted). */
+export function logStaffTtsVoicesDebug(context = 'check'): void {
+  const voices = getAvailableVoices();
+  const ruVoices = voices.filter((v) => voiceMatchesLocale(v, 'ru'));
+  console.log('[STAFF_TTS_VOICES_DEBUG]', {
+    context,
+    total: voices.length,
+    ruCount: ruVoices.length,
+    ruAvailable: ruVoices.length > 0,
+    ruVoices: ruVoices.map((v) => ({
+      name: v.name,
+      lang: v.lang,
+      localService: v.localService,
+      default: v.default
+    })),
+    allVoices: voices.map((v) => ({ name: v.name, lang: v.lang }))
+  });
 }
 
 function getVoicesReady(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {

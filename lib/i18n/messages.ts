@@ -54,7 +54,10 @@ export const messages = {
     phraseKoLabel: '한국어',
     phraseRuLabel: 'Русский',
     phraseClose: '닫기',
-    ttsNoRussianVoice: '러시아어 음성이 설치되어 있지 않습니다'
+    ttsNoRussianVoice: '러시아어 음성이 설치되어 있지 않습니다',
+    ttsNoRussianVoiceBanner:
+      '⚠️ 러시아어 음성(TTS) 없음 — 자동 읽기 불가. 알림음은 정상입니다. 기기 설정에서 러시아어 음성 데이터를 설치하세요.',
+    ttsVoiceUnavailable: '음성 없음'
   },
   ru: {
     send: 'Отправить',
@@ -107,7 +110,10 @@ export const messages = {
     phraseKoLabel: 'Корейский',
     phraseRuLabel: 'Русский',
     phraseClose: 'Закрыть',
-    ttsNoRussianVoice: 'Русский голос не установлен'
+    ttsNoRussianVoice: 'Русский голос не установлен',
+    ttsNoRussianVoiceBanner:
+      '⚠️ Нет русского TTS — авточтение недоступно. Звук уведомления работает. Установите русский голос в настройках.',
+    ttsVoiceUnavailable: 'Нет голоса'
   }
 } as const;
 
