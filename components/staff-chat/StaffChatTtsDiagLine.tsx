@@ -10,6 +10,7 @@ type Props = {
   soundEnabled: boolean;
   lastTtsStage: StaffTtsStage;
   lastTtsError: string;
+  lastTtsSkipReason: string;
   ruVoiceReady: boolean | null;
 };
 
@@ -20,6 +21,7 @@ export default function StaffChatTtsDiagLine({
   soundEnabled,
   lastTtsStage,
   lastTtsError,
+  lastTtsSkipReason,
   ruVoiceReady
 }: Props) {
   const serverLabel =
@@ -37,6 +39,7 @@ export default function StaffChatTtsDiagLine({
       </span>
       <span className="block">lastTtsStage={lastTtsStage}</span>
       <span className={`block truncate ${errorTone}`}>lastTtsError={lastTtsError}</span>
+      <span className="block truncate text-amber-700">lastTtsSkipReason={lastTtsSkipReason}</span>
     </div>
   );
 }

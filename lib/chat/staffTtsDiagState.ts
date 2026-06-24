@@ -9,6 +9,7 @@ export type StaffTtsStage =
 
 let lastTtsStage: StaffTtsStage = 'idle';
 let lastTtsError = 'none';
+let lastTtsSkipReason = 'none';
 
 const diagListeners = new Set<() => void>();
 
@@ -20,8 +21,21 @@ export function peekStaffTtsError(): string {
   return lastTtsError;
 }
 
-export function peekStaffTtsDiag(): { lastTtsStage: StaffTtsStage; lastTtsError: string } {
-  return { lastTtsStage, lastTtsError };
+export function peekStaffTtsDiag(): {
+  lastTtsStage: StaffTtsStage;
+  lastTtsError: string;
+  lastTtsSkipReason: string;
+} {
+  return { lastTtsStage, lastTtsError, lastTtsSkipReason };
+}
+
+export function peekStaffTtsSkipReason(): string {
+  return lastTtsSkipReason;
+}
+
+export function setStaffTtsSkipReason(reason: string) {
+  lastTtsSkipReason = reason || 'none';
+  notifyStaffTtsDiag();
 }
 
 export function subscribeStaffTtsDiag(listener: () => void): () => void {

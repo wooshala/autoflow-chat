@@ -17,11 +17,12 @@ type HealthData = {
 };
 
 function readDiagSnapshot() {
-  const { lastTtsStage, lastTtsError } = peekStaffTtsDiag();
+  const { lastTtsStage, lastTtsError, lastTtsSkipReason } = peekStaffTtsDiag();
   return {
     serverTtsUnlocked: isServerStaffTtsUnlocked(),
     lastTtsStage,
-    lastTtsError
+    lastTtsError,
+    lastTtsSkipReason
   };
 }
 
@@ -31,6 +32,7 @@ export function useStaffTtsDiagStatus(): {
   serverTtsUnlocked: boolean;
   lastTtsStage: StaffTtsStage;
   lastTtsError: string;
+  lastTtsSkipReason: string;
   refreshUnlockSnapshot: () => void;
 } {
   const [diagMode, setDiagMode] = useState(false);
@@ -38,12 +40,14 @@ export function useStaffTtsDiagStatus(): {
   const [serverTtsUnlocked, setServerTtsUnlocked] = useState(false);
   const [lastTtsStage, setLastTtsStage] = useState<StaffTtsStage>('idle');
   const [lastTtsError, setLastTtsError] = useState('none');
+  const [lastTtsSkipReason, setLastTtsSkipReason] = useState('none');
 
   const refreshUnlockSnapshot = useCallback(() => {
     const snap = readDiagSnapshot();
     setServerTtsUnlocked(snap.serverTtsUnlocked);
     setLastTtsStage(snap.lastTtsStage);
     setLastTtsError(snap.lastTtsError);
+    setLastTtsSkipReason(snap.lastTtsSkipReason);
   }, []);
 
   useEffect(() => {
@@ -82,6 +86,7 @@ export function useStaffTtsDiagStatus(): {
     serverTtsUnlocked,
     lastTtsStage,
     lastTtsError,
+    lastTtsSkipReason,
     refreshUnlockSnapshot
   };
 }

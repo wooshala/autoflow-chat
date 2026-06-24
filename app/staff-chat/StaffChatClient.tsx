@@ -41,6 +41,8 @@ import {
 } from '@/lib/chat/serverTtsClient';
 import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
 import { noteStaffTtsMessageReceived } from '@/lib/chat/staffTtsDiagState';
+import { logStaffTtsTriggerCheck } from '@/lib/chat/staffTtsTriggerCheck';
+import { normalizeTranslatedText } from '@/lib/chat/normalizeChatMessage';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
 import { useStaffTtsDiagStatus } from '@/lib/hooks/useStaffTtsDiagStatus';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
@@ -100,7 +102,7 @@ type InvitePhase = 'loading' | 'ready' | 'invalid';
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const ruVoiceReady = useStaffRuVoiceAvailability();
-  const { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsStage, lastTtsError, refreshUnlockSnapshot } =
+  const { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsStage, lastTtsError, lastTtsSkipReason, refreshUnlockSnapshot } =
     useStaffTtsDiagStatus();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
@@ -162,6 +164,7 @@ function StaffChatPageInner() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const knownNotifyIdsRef = useRef<Set<string>>(new Set());
+  const duplicateTtsDiagLoggedRef = useRef<Set<string>>(new Set());
   const notifySeededRef = useRef(false);
   const roomBootstrappedRef = useRef(false);
 
@@ -420,19 +423,92 @@ function StaffChatPageInner() {
     if (!initialHydrationComplete) return;
     if (invitePhase === 'loading') return;
     if (!staffSession.currentUserId && !staffSession.currentTokenId) return;
+
+    const serverUnlocked = isServerStaffTtsUnlocked();
+
     if (!notifySeededRef.current) {
       for (const m of messages) {
         const id = m?.id != null ? String(m.id) : '';
         if (id && !id.startsWith('tmp-')) knownNotifyIdsRef.current.add(id);
       }
       notifySeededRef.current = true;
+      logStaffTtsTriggerCheck({
+        messageId: null,
+        text: '',
+        translatedRu: '',
+        originalLang: '',
+        isSelfMessage: false,
+        soundEnabled,
+        serverTtsAvailable,
+        serverTtsUnlocked: serverUnlocked,
+        localRuVoice: ruVoiceReady,
+        shouldUseServerTts: false,
+        skipReason: 'skip_notify_seeding'
+      });
       return;
     }
+
     for (const m of messages) {
       const id = m?.id != null ? String(m.id) : '';
-      if (!id || id.startsWith('tmp-') || knownNotifyIdsRef.current.has(id)) continue;
+      if (!id || id.startsWith('tmp-')) continue;
+      if (knownNotifyIdsRef.current.has(id)) {
+        const lateRu = normalizeTranslatedText(m.translated_text)?.ru?.trim() || '';
+        if (lateRu && !duplicateTtsDiagLoggedRef.current.has(id)) {
+          duplicateTtsDiagLoggedRef.current.add(id);
+          logStaffTtsTriggerCheck({
+            messageId: id,
+            text: String(m.message || '').trim().slice(0, 120),
+            translatedRu: lateRu.slice(0, 120),
+            originalLang: String(m.original_lang || '').trim(),
+            isSelfMessage: isStaffChatSelfMessage(m, staffSession),
+            soundEnabled,
+            serverTtsAvailable,
+            serverTtsUnlocked: isServerStaffTtsUnlocked(),
+            localRuVoice: ruVoiceReady,
+            shouldUseServerTts: false,
+            skipReason: 'skip_duplicate_message'
+          });
+        }
+        continue;
+      }
+
       knownNotifyIdsRef.current.add(id);
       const isSelf = isStaffChatSelfMessage(m, staffSession);
+      const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
+      const translated = normalizeTranslatedText(m.translated_text);
+      const translatedRu = translated?.ru?.trim() || '';
+      const originalLang = String(m.original_lang || '').trim();
+      const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
+        logContext: 'staff',
+        selectedLang: locale
+      });
+      const urgent = isUrgentMessage(m);
+      const preview = String(primary || m.message || '').trim();
+      const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
+      const willCallPlayStaffTts = Boolean(soundEnabled && toSpeak);
+      const shouldUseServerTts =
+        willCallPlayStaffTts && ruVoiceReady !== true;
+      const willCallPlayServerStaffTts =
+        shouldUseServerTts && (ruVoiceReady === false || ruVoiceReady === null);
+
+      const triggerBase = {
+        messageId: id,
+        text: preview.slice(0, 120),
+        translatedRu: translatedRu.slice(0, 120),
+        originalLang,
+        isSelfMessage: isSelf,
+        soundEnabled,
+        serverTtsAvailable,
+        serverTtsUnlocked: serverUnlocked,
+        localRuVoice: ruVoiceReady,
+        viewerLang,
+        ttsText,
+        toSpeak: toSpeak ? String(toSpeak).slice(0, 120) : null,
+        shouldUseServerTts,
+        willCallPlayStaffTts,
+        willCallPlayServerStaffTts
+      };
+
       if (isSelf) {
         console.log('[CHAT_SOUND_SKIPPED_SELF]', {
           messageId: id,
@@ -441,25 +517,42 @@ function StaffChatPageInner() {
           currentUserId: staffSession.currentUserId,
           currentTokenId: staffSession.currentTokenId
         });
+        logStaffTtsTriggerCheck({
+          ...triggerBase,
+          shouldUseServerTts: false,
+          skipReason: 'skip_self_message'
+        });
         continue;
       }
 
-      const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
-      const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
-        logContext: 'staff',
-        selectedLang: locale
-      });
-      const urgent = isUrgentMessage(m);
-      const preview = String(primary || m.message || '').trim();
-      if (soundEnabled) {
+      if (!soundEnabled) {
+        logStaffTtsTriggerCheck({
+          ...triggerBase,
+          shouldUseServerTts: false,
+          willCallPlayStaffTts: false,
+          willCallPlayServerStaffTts: false,
+          skipReason: 'skip_sound_disabled'
+        });
+      } else {
         console.log('[STAFF_CHAT_SOUND_PLAY]', { messageId: id, soundEnabled: true, urgent });
         void playNotificationTone(urgent ? 'urgent' : 'info');
-        const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
-        if (toSpeak) {
+
+        if (!toSpeak) {
+          logStaffTtsTriggerCheck({
+            ...triggerBase,
+            skipReason:
+              viewerLang !== 'ru' ? 'skip_viewer_lang_not_ru' : 'skip_no_ru_text'
+          });
+        } else {
+          logStaffTtsTriggerCheck({
+            ...triggerBase,
+            skipReason: 'triggered'
+          });
           noteStaffTtsMessageReceived();
           runStaffTts(toSpeak, 'ru');
         }
       }
+
       setToast({
         kind: 'ok',
         urgent,
@@ -488,7 +581,18 @@ function StaffChatPageInner() {
         }
       }
     }
-  }, [messages, initialHydrationComplete, staffSession, invitePhase, locale, staffKey, soundEnabled, t]);
+  }, [
+    messages,
+    initialHydrationComplete,
+    staffSession,
+    invitePhase,
+    locale,
+    staffKey,
+    soundEnabled,
+    serverTtsAvailable,
+    ruVoiceReady,
+    t
+  ]);
 
   const scrollListToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = listRef.current;
@@ -933,6 +1037,7 @@ function StaffChatPageInner() {
             soundEnabled={soundEnabled}
             lastTtsStage={lastTtsStage}
             lastTtsError={lastTtsError}
+            lastTtsSkipReason={lastTtsSkipReason}
             ruVoiceReady={ruVoiceReady}
           />
         ) : null}
