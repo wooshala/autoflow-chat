@@ -40,6 +40,7 @@ import {
   unlockServerStaffTts
 } from '@/lib/chat/serverTtsClient';
 import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
+import { noteStaffTtsMessageReceived } from '@/lib/chat/staffTtsDiagState';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
 import { useStaffTtsDiagStatus } from '@/lib/hooks/useStaffTtsDiagStatus';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
@@ -99,7 +100,7 @@ type InvitePhase = 'loading' | 'ready' | 'invalid';
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const ruVoiceReady = useStaffRuVoiceAvailability();
-  const { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError, refreshUnlockSnapshot } =
+  const { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsStage, lastTtsError, refreshUnlockSnapshot } =
     useStaffTtsDiagStatus();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
@@ -454,7 +455,10 @@ function StaffChatPageInner() {
         console.log('[STAFF_CHAT_SOUND_PLAY]', { messageId: id, soundEnabled: true, urgent });
         void playNotificationTone(urgent ? 'urgent' : 'info');
         const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
-        if (toSpeak) runStaffTts(toSpeak, 'ru');
+        if (toSpeak) {
+          noteStaffTtsMessageReceived();
+          runStaffTts(toSpeak, 'ru');
+        }
       }
       setToast({
         kind: 'ok',
@@ -927,6 +931,7 @@ function StaffChatPageInner() {
             serverTtsAvailable={serverTtsAvailable}
             serverTtsUnlocked={serverTtsUnlocked}
             soundEnabled={soundEnabled}
+            lastTtsStage={lastTtsStage}
             lastTtsError={lastTtsError}
             ruVoiceReady={ruVoiceReady}
           />

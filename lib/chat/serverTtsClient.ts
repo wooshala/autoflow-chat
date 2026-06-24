@@ -1,4 +1,21 @@
 import { STAFF_TTS_URL } from '@/lib/chatApi';
+import {
+  normalizeStaffTtsPlayError,
+  peekStaffTtsDiag,
+  peekStaffTtsError,
+  setStaffTtsError,
+  setStaffTtsStage,
+  subscribeStaffTtsDiag
+} from '@/lib/chat/staffTtsDiagState';
+
+export type { StaffTtsStage } from '@/lib/chat/staffTtsDiagState';
+export {
+  noteStaffTtsMessageReceived,
+  peekStaffTtsDiag,
+  peekStaffTtsError,
+  peekStaffTtsStage,
+  subscribeStaffTtsDiag
+} from '@/lib/chat/staffTtsDiagState';
 
 /** Minimal silent WAV — unlock mobile HTMLAudio autoplay on user gesture. */
 const SILENT_WAV =
@@ -8,30 +25,14 @@ let serverTtsUnlocked = false;
 let unlockAudio: HTMLAudioElement | null = null;
 let activeAudio: HTMLAudioElement | null = null;
 let activeBlobUrl: string | null = null;
-let lastStaffTtsClientError: string | null = null;
-const unlockListeners = new Set<() => void>();
-
-function notifyUnlockListeners() {
-  for (const fn of unlockListeners) {
-    try {
-      fn();
-    } catch {
-      /* ignore */
-    }
-  }
-}
 
 export function subscribeStaffTtsUnlockState(listener: () => void): () => void {
-  unlockListeners.add(listener);
-  return () => unlockListeners.delete(listener);
+  return subscribeStaffTtsDiag(listener);
 }
 
 export function peekLastStaffTtsClientError(): string | null {
-  return lastStaffTtsClientError;
-}
-
-function noteStaffTtsClientError(message: string | null) {
-  lastStaffTtsClientError = message;
+  const err = peekStaffTtsError();
+  return err === 'none' ? null : err;
 }
 
 export function isServerStaffTtsUnlocked(): boolean {
@@ -40,7 +41,6 @@ export function isServerStaffTtsUnlocked(): boolean {
 
 export function resetServerStaffTtsUnlock() {
   serverTtsUnlocked = false;
-  notifyUnlockListeners();
 }
 
 async function unlockViaAudioContext(): Promise<boolean> {
@@ -99,8 +99,7 @@ export async function unlockServerStaffTts(): Promise<boolean> {
     unlockAudio.currentTime = 0;
     await unlockAudio.play();
     serverTtsUnlocked = true;
-    noteStaffTtsClientError(null);
-    notifyUnlockListeners();
+    setStaffTtsError('none');
     console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'silent_audio' });
     return true;
   } catch (audioErr: unknown) {
@@ -109,16 +108,14 @@ export async function unlockServerStaffTts(): Promise<boolean> {
     try {
       await unlockViaAudioContext();
       serverTtsUnlocked = true;
-      noteStaffTtsClientError(null);
-      notifyUnlockListeners();
+      setStaffTtsError('none');
       console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'audio_context' });
       return true;
     } catch (ctxErr: unknown) {
       serverTtsUnlocked = false;
       const error = ctxErr instanceof Error ? ctxErr.message : String(ctxErr);
       console.log('[STAFF_SERVER_TTS_UNLOCK_FAILED]', { audioError, error });
-      noteStaffTtsClientError(`unlock_failed:${error}`);
-      notifyUnlockListeners();
+      setStaffTtsError(`unlock_failed:${error}`);
       return false;
     }
   }
@@ -139,22 +136,25 @@ export async function playServerStaffTts(
 ): Promise<boolean> {
   const fromUserGesture = options?.fromUserGesture ?? false;
   const preview = String(text || '').trim().slice(0, 120);
+  setStaffTtsStage('tts_requested');
+
   console.log('[STAFF_SERVER_TTS_CLIENT_START]', {
     preview: preview.slice(0, 80),
     locale,
     unlocked: serverTtsUnlocked,
-    fromUserGesture
+    fromUserGesture,
+    diag: peekStaffTtsDiag()
   });
 
   if (typeof window === 'undefined') return false;
   if (!serverTtsUnlocked && !fromUserGesture) {
     console.log('[STAFF_SERVER_TTS_CLIENT_BLOCKED]', { reason: 'not_unlocked' });
-    noteStaffTtsClientError('not_unlocked');
+    setStaffTtsError('not_unlocked');
     return false;
   }
   if (!preview) {
     console.log('[STAFF_SERVER_TTS_CLIENT_BLOCKED]', { reason: 'empty_text' });
-    noteStaffTtsClientError('empty_text');
+    setStaffTtsError('empty_text');
     return false;
   }
 
@@ -171,16 +171,18 @@ export async function playServerStaffTts(
         status: res.status,
         cache: res.headers.get('X-TTS-Cache')
       });
-      noteStaffTtsClientError(err);
+      setStaffTtsError(err);
       return false;
     }
 
     const blob = await res.blob();
     if (!blob.size) {
       console.log('[STAFF_SERVER_TTS_CLIENT_FAILED]', { reason: 'empty_blob' });
-      noteStaffTtsClientError('empty_blob');
+      setStaffTtsError('empty_blob');
       return false;
     }
+
+    setStaffTtsStage('tts_response_received');
 
     cleanupActiveAudio();
     const url = URL.createObjectURL(blob);
@@ -188,36 +190,39 @@ export async function playServerStaffTts(
     const audio = new Audio(url);
     activeAudio = audio;
     audio.onended = () => {
+      setStaffTtsStage('audio_play_ended');
       console.log('[STAFF_SERVER_TTS_CLIENT_ENDED]', { preview: preview.slice(0, 80) });
     };
 
     try {
       await audio.play();
+      setStaffTtsStage('audio_play_started');
+      setStaffTtsError('none');
     } catch (playErr: unknown) {
-      const error = playErr instanceof Error ? playErr.message : String(playErr);
+      const error = normalizeStaffTtsPlayError(playErr);
       console.log('[STAFF_SERVER_TTS_AUDIO_PLAY_FAILED]', { error, fromUserGesture });
-      noteStaffTtsClientError(`audio_play_failed:${error}`);
+      setStaffTtsStage('audio_play_failed');
+      setStaffTtsError(error);
       cleanupActiveAudio();
       return false;
     }
 
     if (fromUserGesture) {
       serverTtsUnlocked = true;
-      notifyUnlockListeners();
     }
 
     console.log('[STAFF_SERVER_TTS_CLIENT_PLAYING]', {
       preview: preview.slice(0, 80),
-      cache: res.headers.get('X-TTS-Cache')
+      cache: res.headers.get('X-TTS-Cache'),
+      diag: peekStaffTtsDiag()
     });
-    noteStaffTtsClientError(null);
     return true;
   } catch (e: unknown) {
     const err = e instanceof Error ? e.message : String(e);
     console.log('[STAFF_SERVER_TTS_CLIENT_FAILED]', {
       error: err
     });
-    noteStaffTtsClientError(err);
+    setStaffTtsError(err);
     cleanupActiveAudio();
     return false;
   }

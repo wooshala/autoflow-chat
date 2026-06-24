@@ -1,13 +1,15 @@
 'use client';
 
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
+import type { StaffTtsStage } from '@/lib/chat/staffTtsDiagState';
 
 type Props = {
   clientRev: string;
   serverTtsAvailable: boolean | null;
   serverTtsUnlocked: boolean;
   soundEnabled: boolean;
-  lastTtsError: string | null;
+  lastTtsStage: StaffTtsStage;
+  lastTtsError: string;
   ruVoiceReady: boolean | null;
 };
 
@@ -16,6 +18,7 @@ export default function StaffChatTtsDiagLine({
   serverTtsAvailable,
   serverTtsUnlocked,
   soundEnabled,
+  lastTtsStage,
   lastTtsError,
   ruVoiceReady
 }: Props) {
@@ -23,6 +26,7 @@ export default function StaffChatTtsDiagLine({
     serverTtsAvailable === null ? '…' : serverTtsAvailable ? 'true' : 'false';
   const localLabel =
     ruVoiceReady === null ? '…' : ruVoiceReady ? 'true' : 'false';
+  const errorTone = lastTtsError !== 'none' ? 'text-rose-600' : 'text-gray-600';
 
   return (
     <div className="border-t border-gray-100 bg-gray-50 px-2 py-1 text-center text-[9px] leading-tight text-gray-600">
@@ -31,9 +35,8 @@ export default function StaffChatTtsDiagLine({
         serverTtsAvailable={serverLabel} · serverTtsUnlocked={serverTtsUnlocked ? 'true' : 'false'} ·
         soundEnabled={soundEnabled ? 'true' : 'false'} · localRuVoice={localLabel}
       </span>
-      {lastTtsError ? (
-        <span className="block truncate text-rose-600">lastTtsError: {lastTtsError}</span>
-      ) : null}
+      <span className="block">lastTtsStage={lastTtsStage}</span>
+      <span className={`block truncate ${errorTone}`}>lastTtsError={lastTtsError}</span>
     </div>
   );
 }

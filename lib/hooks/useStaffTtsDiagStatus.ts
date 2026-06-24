@@ -5,9 +5,10 @@ import { fetchEnvelope } from '@/lib/api/envelope';
 import { STAFF_TTS_HEALTH_URL } from '@/lib/chatApi';
 import {
   isServerStaffTtsUnlocked,
-  peekLastStaffTtsClientError,
+  peekStaffTtsDiag,
   subscribeStaffTtsUnlockState
 } from '@/lib/chat/serverTtsClient';
+import type { StaffTtsStage } from '@/lib/chat/staffTtsDiagState';
 import { isStaffChatDiagMode } from '@/lib/chat/staffChatDebugLog';
 
 type HealthData = {
@@ -15,10 +16,12 @@ type HealthData = {
   hasOpenAiKey?: boolean;
 };
 
-function readUnlockSnapshot() {
+function readDiagSnapshot() {
+  const { lastTtsStage, lastTtsError } = peekStaffTtsDiag();
   return {
     serverTtsUnlocked: isServerStaffTtsUnlocked(),
-    lastTtsError: peekLastStaffTtsClientError()
+    lastTtsStage,
+    lastTtsError
   };
 }
 
@@ -26,17 +29,20 @@ export function useStaffTtsDiagStatus(): {
   diagMode: boolean;
   serverTtsAvailable: boolean | null;
   serverTtsUnlocked: boolean;
-  lastTtsError: string | null;
+  lastTtsStage: StaffTtsStage;
+  lastTtsError: string;
   refreshUnlockSnapshot: () => void;
 } {
   const [diagMode, setDiagMode] = useState(false);
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null);
   const [serverTtsUnlocked, setServerTtsUnlocked] = useState(false);
-  const [lastTtsError, setLastTtsError] = useState<string | null>(null);
+  const [lastTtsStage, setLastTtsStage] = useState<StaffTtsStage>('idle');
+  const [lastTtsError, setLastTtsError] = useState('none');
 
   const refreshUnlockSnapshot = useCallback(() => {
-    const snap = readUnlockSnapshot();
+    const snap = readDiagSnapshot();
     setServerTtsUnlocked(snap.serverTtsUnlocked);
+    setLastTtsStage(snap.lastTtsStage);
     setLastTtsError(snap.lastTtsError);
   }, []);
 
@@ -58,7 +64,6 @@ export function useStaffTtsDiagStatus(): {
         setServerTtsAvailable(Boolean(res.data.serverTtsAvailable));
       } else {
         setServerTtsAvailable(false);
-        setLastTtsError(res.message || res.error);
       }
     })();
 
@@ -71,5 +76,12 @@ export function useStaffTtsDiagStatus(): {
     };
   }, [diagMode, refreshUnlockSnapshot]);
 
-  return { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError, refreshUnlockSnapshot };
+  return {
+    diagMode,
+    serverTtsAvailable,
+    serverTtsUnlocked,
+    lastTtsStage,
+    lastTtsError,
+    refreshUnlockSnapshot
+  };
 }

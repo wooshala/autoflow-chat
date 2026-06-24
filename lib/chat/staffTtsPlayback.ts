@@ -2,6 +2,7 @@ import {
   isServerStaffTtsUnlocked,
   playServerStaffTts
 } from '@/lib/chat/serverTtsClient';
+import { setStaffTtsError } from '@/lib/chat/staffTtsDiagState';
 import { speakStaffTts, type StaffTtsLocale } from '@/lib/chat/staffTts';
 
 export type StaffTtsPlaybackResult =
@@ -38,6 +39,7 @@ export async function playStaffTts(
 
   if (locale === 'ru') {
     if (!playOpts.fromUserGesture && !isServerStaffTtsUnlocked()) {
+      setStaffTtsError('not_unlocked');
       return 'server_not_unlocked';
     }
     const ok = await playServerStaffTts(preview, 'ru', playOpts);
