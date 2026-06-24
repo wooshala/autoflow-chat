@@ -432,23 +432,41 @@ function StaffChatPageInner() {
     }
   }, [messages, initialHydrationComplete, chatSendUserId, locale, staffKey, soundEnabled]);
 
-  useEffect(() => {
+  const scrollListToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = listRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    });
+  }, []);
 
-  const canSendMessages = Boolean(chatSendUserId);
-  const canComposerSend = Boolean(canSendMessages && text.trim() && !sending);
+  useEffect(() => {
+    scrollListToBottom('smooth');
+  }, [messages.length, scrollListToBottom]);
+
+  const measureComposerHeight = useCallback(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const next = Math.ceil(el.getBoundingClientRect().height);
+    setComposerHeight((prev) => (prev === next ? prev : next));
+  }, []);
 
   useEffect(() => {
     const el = composerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => setComposerHeight(el.offsetHeight));
+    const ro = new ResizeObserver(() => measureComposerHeight());
     ro.observe(el);
-    setComposerHeight(el.offsetHeight);
+    measureComposerHeight();
     return () => ro.disconnect();
-  }, []);
+  }, [measureComposerHeight, pendingPhoto, i18nHydrated, invitePhase]);
+
+  useEffect(() => {
+    scrollListToBottom(keyboardOffset > 0 ? 'smooth' : 'auto');
+  }, [composerHeight, keyboardOffset, pendingPhoto, scrollListToBottom]);
+
+  const canSendMessages = Boolean(chatSendUserId);
+  const canComposerSend = Boolean(canSendMessages && text.trim() && !sending);
+  const listBottomPad = composerHeight + 16;
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -718,6 +736,7 @@ function StaffChatPageInner() {
   function handleComposerFocus() {
     window.setTimeout(() => {
       inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      scrollListToBottom('smooth');
     }, 320);
   }
 
@@ -765,7 +784,10 @@ function StaffChatPageInner() {
   }
 
   return (
-    <main className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#eceff1]">
+    <main
+      className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#eceff1]"
+      style={{ ['--staff-composer-height' as string]: `${composerHeight}px` }}
+    >
       {/* 상단: 언어 · 소리 · 알림 */}
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-1.5 shadow-sm">
         <div className="mx-auto flex max-w-md items-center justify-end gap-1.5">
@@ -865,7 +887,7 @@ function StaffChatPageInner() {
       <div
         ref={listRef}
         className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto overscroll-contain px-3 py-2"
-        style={{ paddingBottom: composerHeight + 12 }}
+        style={{ paddingBottom: listBottomPad }}
       >
         {listPhase === 'loading' && !initialHydrationComplete ? (
           <p className="py-8 text-center text-sm text-gray-400">{t('loading')}</p>
@@ -968,7 +990,7 @@ function StaffChatPageInner() {
       {/* 하단 composer: 📷 🎤 입력 전송 */}
       <div
         ref={composerRef}
-        className="fixed inset-x-0 z-50 border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.1)]"
+        className="fixed inset-x-0 z-50 max-h-[min(52dvh,28rem)] overflow-y-auto overscroll-contain border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.1)]"
         style={{
           bottom: keyboardOffset,
           paddingBottom: 'max(env(safe-area-inset-bottom), 0px)'
@@ -998,6 +1020,7 @@ function StaffChatPageInner() {
           disabled={sending || !canSendMessages}
           sectionLabel={t('room')}
           large
+          compactMobile
         />
         <QuickPhraseBar
           locale={locale}
@@ -1005,6 +1028,7 @@ function StaffChatPageInner() {
           onInsert={handleQuickPhraseInsert}
           disabled={sending || !canSendMessages}
           large
+          compactMobile
         />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
           <input

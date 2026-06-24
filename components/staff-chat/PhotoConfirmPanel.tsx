@@ -41,7 +41,7 @@ export default function PhotoConfirmPanel({
         <img
           src={previewUrl}
           alt=""
-          className="max-h-40 w-full rounded-xl border border-orange-200 object-contain bg-white"
+          className="max-h-32 w-full rounded-xl border border-orange-200 object-contain bg-white sm:max-h-40"
         />
         {selectedStatusText ? (
           <p className="rounded-lg bg-white px-3 py-2 text-center text-base font-semibold text-gray-800">
@@ -55,6 +55,7 @@ export default function PhotoConfirmPanel({
           disabled={sending}
           sectionLabel={roomLabel}
           large
+          compactMobile
         />
         <QuickPhraseBar
           locale={locale}
@@ -62,6 +63,7 @@ export default function PhotoConfirmPanel({
           onInsert={onStatusSelect}
           disabled={sending}
           large
+          compactMobile
           selectedLabel={selectedStatusText}
         />
         <div className="flex gap-2 pt-1">
