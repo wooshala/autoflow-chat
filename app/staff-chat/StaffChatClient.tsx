@@ -38,6 +38,10 @@ import { unlockServerStaffTts } from '@/lib/chat/serverTtsClient';
 import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
+import {
+  isStaffChatSelfMessage,
+  resolveStaffChatSessionIdentity
+} from '@/lib/chat/staffChatSelfMessage';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
 import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
@@ -143,9 +147,13 @@ function StaffChatPageInner() {
   const roomBootstrappedRef = useRef(false);
 
   const legacyResolved = useMemo(() => resolveStaffChatUserId(userParam), [userParam]);
-  const chatSendUserId = inviteSession?.userId ?? legacyResolved.userId;
+  const staffSession = useMemo(
+    () => resolveStaffChatSessionIdentity(inviteSession, legacyResolved, sessionUser?.name ?? null),
+    [inviteSession, legacyResolved, sessionUser?.name]
+  );
+  const chatSendUserId = staffSession.currentUserId;
   const staffKey = legacyResolved.key;
-  const actorName = inviteSession?.displayName || sessionUser?.name || staffKeyLabel(staffKey);
+  const actorName = staffSession.currentSenderName || staffKeyLabel(staffKey);
 
   const supabase = useMemo(() => createBrowserSupabase(), []);
   const realtimeConnectedRef = useRef(false);
@@ -206,13 +214,15 @@ function StaffChatPageInner() {
   useEffect(() => {
     staffChatLog('STAFF_CHAT_USER_RESOLVED', {
       staffKey,
-      id: chatSendUserId,
-      userId: chatSendUserId,
-      hasUserId: Boolean(chatSendUserId),
+      id: staffSession.currentUserId,
+      userId: staffSession.currentUserId,
+      tokenId: staffSession.currentTokenId,
+      senderName: staffSession.currentSenderName,
+      hasUserId: Boolean(staffSession.currentUserId),
       userParam,
       inviteToken: inviteSession?.token || null
     });
-  }, [staffKey, chatSendUserId, userParam, inviteSession?.token]);
+  }, [staffKey, staffSession, userParam, inviteSession?.token]);
 
   useEffect(() => {
     runSessionMigration();
@@ -384,7 +394,9 @@ function StaffChatPageInner() {
   });
 
   useEffect(() => {
-    if (!initialHydrationComplete || !chatSendUserId) return;
+    if (!initialHydrationComplete) return;
+    if (invitePhase === 'loading') return;
+    if (!staffSession.currentUserId && !staffSession.currentTokenId) return;
     if (!notifySeededRef.current) {
       for (const m of messages) {
         const id = m?.id != null ? String(m.id) : '';
@@ -397,11 +409,14 @@ function StaffChatPageInner() {
       const id = m?.id != null ? String(m.id) : '';
       if (!id || id.startsWith('tmp-') || knownNotifyIdsRef.current.has(id)) continue;
       knownNotifyIdsRef.current.add(id);
-      const isOwn = String(m.user_id) === String(chatSendUserId);
-      if (isOwn) {
-        console.log('[STAFF_CHAT_SOUND_SKIPPED_SELF]', {
+      const isSelf = isStaffChatSelfMessage(m, staffSession);
+      if (isSelf) {
+        console.log('[CHAT_SOUND_SKIPPED_SELF]', {
           messageId: id,
-          chatSendUserId: chatSendUserId || null
+          messageSenderId: m.user_id ?? null,
+          messageTokenId: m.token_id ?? null,
+          currentUserId: staffSession.currentUserId,
+          currentTokenId: staffSession.currentTokenId
         });
         continue;
       }
@@ -447,7 +462,7 @@ function StaffChatPageInner() {
         }
       }
     }
-  }, [messages, initialHydrationComplete, chatSendUserId, locale, staffKey, soundEnabled]);
+  }, [messages, initialHydrationComplete, staffSession, invitePhase, locale, staffKey, soundEnabled, t]);
 
   const scrollListToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = listRef.current;
@@ -941,7 +956,7 @@ function StaffChatPageInner() {
         ) : (
           <div className="space-y-2 pb-2">
             {recentMessages.map((m) => {
-              const mine = chatSendUserId && String(m.user_id) === String(chatSendUserId);
+              const mine = isStaffChatSelfMessage(m, staffSession);
               const urgent = isUrgentMessage(m);
               const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
               const { primary, secondary, ttsText } = getMessageDisplayParts(m, viewerLang, {
