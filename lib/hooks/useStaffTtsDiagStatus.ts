@@ -1,9 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { STAFF_TTS_HEALTH_URL } from '@/lib/chatApi';
-import { isServerStaffTtsUnlocked, peekLastStaffTtsClientError } from '@/lib/chat/serverTtsClient';
+import {
+  isServerStaffTtsUnlocked,
+  peekLastStaffTtsClientError,
+  subscribeStaffTtsUnlockState
+} from '@/lib/chat/serverTtsClient';
 import { isStaffChatDiagMode } from '@/lib/chat/staffChatDebugLog';
 
 type HealthData = {
@@ -11,16 +15,30 @@ type HealthData = {
   hasOpenAiKey?: boolean;
 };
 
+function readUnlockSnapshot() {
+  return {
+    serverTtsUnlocked: isServerStaffTtsUnlocked(),
+    lastTtsError: peekLastStaffTtsClientError()
+  };
+}
+
 export function useStaffTtsDiagStatus(): {
   diagMode: boolean;
   serverTtsAvailable: boolean | null;
   serverTtsUnlocked: boolean;
   lastTtsError: string | null;
+  refreshUnlockSnapshot: () => void;
 } {
   const [diagMode, setDiagMode] = useState(false);
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null);
   const [serverTtsUnlocked, setServerTtsUnlocked] = useState(false);
   const [lastTtsError, setLastTtsError] = useState<string | null>(null);
+
+  const refreshUnlockSnapshot = useCallback(() => {
+    const snap = readUnlockSnapshot();
+    setServerTtsUnlocked(snap.serverTtsUnlocked);
+    setLastTtsError(snap.lastTtsError);
+  }, []);
 
   useEffect(() => {
     setDiagMode(isStaffChatDiagMode());
@@ -28,6 +46,9 @@ export function useStaffTtsDiagStatus(): {
 
   useEffect(() => {
     if (!diagMode) return;
+
+    refreshUnlockSnapshot();
+    const unsubUnlock = subscribeStaffTtsUnlockState(refreshUnlockSnapshot);
 
     let cancelled = false;
     void (async () => {
@@ -41,16 +62,14 @@ export function useStaffTtsDiagStatus(): {
       }
     })();
 
-    const poll = window.setInterval(() => {
-      setServerTtsUnlocked(isServerStaffTtsUnlocked());
-      setLastTtsError(peekLastStaffTtsClientError());
-    }, 1500);
+    const poll = window.setInterval(refreshUnlockSnapshot, 2000);
 
     return () => {
       cancelled = true;
+      unsubUnlock();
       window.clearInterval(poll);
     };
-  }, [diagMode]);
+  }, [diagMode, refreshUnlockSnapshot]);
 
-  return { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError };
+  return { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError, refreshUnlockSnapshot };
 }

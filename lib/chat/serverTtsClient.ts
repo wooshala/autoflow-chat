@@ -9,6 +9,22 @@ let unlockAudio: HTMLAudioElement | null = null;
 let activeAudio: HTMLAudioElement | null = null;
 let activeBlobUrl: string | null = null;
 let lastStaffTtsClientError: string | null = null;
+const unlockListeners = new Set<() => void>();
+
+function notifyUnlockListeners() {
+  for (const fn of unlockListeners) {
+    try {
+      fn();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function subscribeStaffTtsUnlockState(listener: () => void): () => void {
+  unlockListeners.add(listener);
+  return () => unlockListeners.delete(listener);
+}
 
 export function peekLastStaffTtsClientError(): string | null {
   return lastStaffTtsClientError;
@@ -24,6 +40,31 @@ export function isServerStaffTtsUnlocked(): boolean {
 
 export function resetServerStaffTtsUnlock() {
   serverTtsUnlocked = false;
+  notifyUnlockListeners();
+}
+
+async function unlockViaAudioContext(): Promise<boolean> {
+  const AudioCtx =
+    window.AudioContext ||
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) return false;
+  const ctx = new AudioCtx();
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+  window.setTimeout(() => {
+    try {
+      void ctx.close();
+    } catch {
+      /* ignore */
+    }
+  }, 100);
+  return true;
 }
 
 function cleanupActiveAudio() {
@@ -59,14 +100,27 @@ export async function unlockServerStaffTts(): Promise<boolean> {
     await unlockAudio.play();
     serverTtsUnlocked = true;
     noteStaffTtsClientError(null);
-    console.log('[STAFF_SERVER_TTS_UNLOCK_OK]');
+    notifyUnlockListeners();
+    console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'silent_audio' });
     return true;
-  } catch (e: unknown) {
-    serverTtsUnlocked = false;
-    const error = e instanceof Error ? e.message : String(e);
-    console.log('[STAFF_SERVER_TTS_UNLOCK_FAILED]', { error });
-    noteStaffTtsClientError(`unlock_failed:${error}`);
-    return false;
+  } catch (audioErr: unknown) {
+    const audioError = audioErr instanceof Error ? audioErr.message : String(audioErr);
+    console.log('[STAFF_SERVER_TTS_UNLOCK_RETRY]', { method: 'audio_context', audioError });
+    try {
+      await unlockViaAudioContext();
+      serverTtsUnlocked = true;
+      noteStaffTtsClientError(null);
+      notifyUnlockListeners();
+      console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'audio_context' });
+      return true;
+    } catch (ctxErr: unknown) {
+      serverTtsUnlocked = false;
+      const error = ctxErr instanceof Error ? ctxErr.message : String(ctxErr);
+      console.log('[STAFF_SERVER_TTS_UNLOCK_FAILED]', { audioError, error });
+      noteStaffTtsClientError(`unlock_failed:${error}`);
+      notifyUnlockListeners();
+      return false;
+    }
   }
 }
 
@@ -149,6 +203,7 @@ export async function playServerStaffTts(
 
     if (fromUserGesture) {
       serverTtsUnlocked = true;
+      notifyUnlockListeners();
     }
 
     console.log('[STAFF_SERVER_TTS_CLIENT_PLAYING]', {

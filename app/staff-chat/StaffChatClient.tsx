@@ -53,6 +53,7 @@ import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
 import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
+import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import {
   inviteToSession,
   loadStoredInviteToken,
@@ -98,7 +99,8 @@ type InvitePhase = 'loading' | 'ready' | 'invalid';
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const ruVoiceReady = useStaffRuVoiceAvailability();
-  const { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError } = useStaffTtsDiagStatus();
+  const { diagMode, serverTtsAvailable, serverTtsUnlocked, lastTtsError, refreshUnlockSnapshot } =
+    useStaffTtsDiagStatus();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
   );
@@ -369,7 +371,11 @@ function StaffChatPageInner() {
   useEffect(() => {
     const stored = loadSoundEnabled();
     setSoundEnabled(stored);
-    console.log('[STAFF_CHAT_SOUND_TOGGLE]', { event: 'hydrate_from_storage', soundEnabled: stored });
+    console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
+      event: 'hydrate_from_storage',
+      soundEnabled: stored,
+      serverTtsUnlocked: isServerStaffTtsUnlocked()
+    });
   }, []);
 
   useEffect(() => {
@@ -693,6 +699,17 @@ function StaffChatPageInner() {
   }
 
   function toggleSound() {
+    if (soundEnabled && !isServerStaffTtsUnlocked()) {
+      unlockNotificationAudio();
+      unlockStaffTts();
+      void unlockServerStaffTts().then(() => refreshUnlockSnapshot());
+      console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
+        event: 're_unlock_while_on',
+        soundEnabled: true
+      });
+      return;
+    }
+
     const next = !soundEnabled;
     saveSoundEnabled(next);
     setSoundEnabled(next);
@@ -704,9 +721,10 @@ function StaffChatPageInner() {
     if (next) {
       unlockNotificationAudio();
       unlockStaffTts();
-      void unlockServerStaffTts();
+      void unlockServerStaffTts().then(() => refreshUnlockSnapshot());
     } else {
       resetServerStaffTtsUnlock();
+      refreshUnlockSnapshot();
     }
   }
 
@@ -905,8 +923,10 @@ function StaffChatPageInner() {
         </div>
         {diagMode ? (
           <StaffChatTtsDiagLine
+            clientRev={STAFF_CHAT_CLIENT_REV}
             serverTtsAvailable={serverTtsAvailable}
             serverTtsUnlocked={serverTtsUnlocked}
+            soundEnabled={soundEnabled}
             lastTtsError={lastTtsError}
             ruVoiceReady={ruVoiceReady}
           />
