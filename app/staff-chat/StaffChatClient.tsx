@@ -34,6 +34,8 @@ import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
+import { unlockServerStaffTts } from '@/lib/chat/serverTtsClient';
+import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
@@ -103,8 +105,10 @@ function StaffChatPageInner() {
   const [phraseRefreshToken, setPhraseRefreshToken] = useState(0);
 
   function runStaffTts(text: string, ttsLocale: 'ru' | 'ko' = 'ru', showNoVoiceToast = false) {
-    void speakStaffTts(text, ttsLocale).then((result) => {
-      if (result === 'no_voice' && ttsLocale === 'ru' && showNoVoiceToast) {
+    void playStaffTts(text, ttsLocale, ruVoiceReady).then((result) => {
+      const failed =
+        result === 'no_voice' || result === 'server_failed' || result === 'blocked';
+      if (failed && ttsLocale === 'ru' && showNoVoiceToast) {
         setToast({ kind: 'error', msg: t('ttsNoRussianVoice') });
       }
     });
@@ -669,6 +673,7 @@ function StaffChatPageInner() {
       if (next) {
         unlockNotificationAudio();
         unlockStaffTts();
+        unlockServerStaffTts();
       }
       return next;
     });

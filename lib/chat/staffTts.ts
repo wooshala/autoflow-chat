@@ -3,8 +3,8 @@ export type StaffTtsLocale = 'ru' | 'ko';
 export type StaffTtsResult = 'spoken' | 'blocked' | 'no_voice';
 
 /**
- * Client-side Web Speech API only. When no ru-RU voice is installed, playback is skipped.
- * Next step: optional server-side TTS (e.g. OpenAI/Google) for devices without ru voices.
+ * Client-side Web Speech API when a matching ru-RU voice exists.
+ * When no local ru voice, staff chat falls back to server OpenAI TTS via playStaffTts().
  */
 
 let ttsUnlocked = false;
