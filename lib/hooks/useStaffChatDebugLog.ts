@@ -10,20 +10,42 @@ import {
 
 export function useStaffChatDebugLog(): {
   debugEnabled: boolean;
+  debugBroken: boolean;
   logs: StaffChatDebugEntry[];
 } {
-  const [debugEnabled] = useState(() => isStaffChatDebugEnabled());
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  const [debugBroken, setDebugBroken] = useState(false);
   const [logs, setLogs] = useState<StaffChatDebugEntry[]>([]);
 
   useEffect(() => {
-    if (!debugEnabled) return;
-    installStaffChatDebugConsoleHook(true);
-    const unsub = subscribeStaffChatDebugLog(setLogs);
+    try {
+      setDebugEnabled(isStaffChatDebugEnabled());
+    } catch {
+      setDebugBroken(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!debugEnabled || debugBroken) return;
+
+    let unsub: (() => void) | undefined;
+    const tid = window.setTimeout(() => {
+      try {
+        installStaffChatDebugConsoleHook(true);
+        unsub = subscribeStaffChatDebugLog(setLogs);
+      } catch (e) {
+        console.warn('[STAFF_CHAT_DEBUG_INIT_FAILED]', e);
+        setDebugBroken(true);
+        installStaffChatDebugConsoleHook(false);
+      }
+    }, 0);
+
     return () => {
-      unsub();
+      window.clearTimeout(tid);
+      unsub?.();
       installStaffChatDebugConsoleHook(false);
     };
-  }, [debugEnabled]);
+  }, [debugEnabled, debugBroken]);
 
-  return { debugEnabled, logs };
+  return { debugEnabled: debugEnabled && !debugBroken, debugBroken, logs };
 }

@@ -39,13 +39,29 @@ export function isStaffChatDebugEnabled(): boolean {
 
 export function subscribeStaffChatDebugLog(listener: (next: StaffChatDebugEntry[]) => void): () => void {
   listeners.add(listener);
-  listener(entries);
+  // Defer initial sync — avoid setState during parent render/effect setup.
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(() => listener(entries));
+  } else {
+    setTimeout(() => listener(entries), 0);
+  }
   return () => listeners.delete(listener);
 }
 
 function notify() {
-  for (const listener of listeners) {
-    listener(entries);
+  const snapshot = entries;
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(() => {
+      for (const listener of listeners) {
+        listener(snapshot);
+      }
+    });
+  } else {
+    setTimeout(() => {
+      for (const listener of listeners) {
+        listener(snapshot);
+      }
+    }, 0);
   }
 }
 
@@ -89,9 +105,13 @@ export function installStaffChatDebugConsoleHook(enable: boolean) {
   if (enable && !hookInstalled) {
     originalConsoleLog = console.log.bind(console);
     console.log = (...args: unknown[]) => {
-      originalConsoleLog?.(...args);
-      const parsed = parseConsoleLogArgs(args);
-      if (parsed) pushStaffChatDebugLog(parsed.tag, parsed.data);
+      try {
+        originalConsoleLog?.(...args);
+        const parsed = parseConsoleLogArgs(args);
+        if (parsed) pushStaffChatDebugLog(parsed.tag, parsed.data);
+      } catch {
+        originalConsoleLog?.(...args);
+      }
     };
     hookInstalled = true;
     return;

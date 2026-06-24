@@ -15,6 +15,7 @@ export default function StaffChatDebugPanel({ logs }: Props) {
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle');
 
   const handleCopy = useCallback(async () => {
+    if (typeof window === 'undefined') return;
     const text = formatStaffChatDebugLogsForCopy(logs);
     if (!text) {
       setCopyState('fail');
