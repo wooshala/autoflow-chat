@@ -36,8 +36,9 @@ import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
-import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
+import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
+import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
 import {
   inviteToSession,
   loadStoredInviteToken,
@@ -91,6 +92,10 @@ function StaffChatPageInner() {
   const [listPhase, setListPhase] = useState<ListPhase>('loading');
   const [listError, setListError] = useState<string | null>(null);
   const [pendingPhraseKey, setPendingPhraseKey] = useState<string | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [photoRoom, setPhotoRoom] = useState('');
+  const [photoStatusText, setPhotoStatusText] = useState('');
+  const [photoPhraseKey, setPhotoPhraseKey] = useState<string | null>(null);
 
   useEffect(() => {
     staffChatLog('STAFF_CHAT_LANG_SELECTED', {
@@ -471,10 +476,14 @@ function StaffChatPageInner() {
   }, [toast]);
 
   const send = useCallback(
-    async (body: string, image?: File | null): Promise<void> => {
+    async (
+      body: string,
+      image?: File | null,
+      opts?: { roomNo?: string; phraseKey?: string | null }
+    ): Promise<boolean> => {
       const msg = String(body || '').trim();
-      const r = roomNo.trim();
-      const phraseKey = pendingPhraseKey;
+      const r = String(opts?.roomNo ?? roomNo ?? '').trim();
+      const phraseKey = opts?.phraseKey !== undefined ? opts.phraseKey : pendingPhraseKey;
 
       staffChatLog('STAFF_CHAT_SEND_CLICK', {
         staffKey,
@@ -489,11 +498,11 @@ function StaffChatPageInner() {
       if (!chatSendUserId) {
         staffChatLog('STAFF_CHAT_SEND_BLOCKED', { reason: 'no_resolved_staff_user_id' });
         setToast({ kind: 'error', msg: t('noUserId') });
-        return;
+        return false;
       }
       if (!msg && !image) {
         staffChatLog('STAFF_CHAT_SEND_BLOCKED', { reason: 'empty_message' });
-        return;
+        return false;
       }
 
       const nonce = createClientNonce();
@@ -534,13 +543,13 @@ function StaffChatPageInner() {
             message: res.message ?? null
           });
           setToast({ kind: 'error', msg: t('sendFailed') });
-          return;
+          return false;
         }
         const saved = unwrapChatSendEnvelopeData(res.data);
         if (!saved?.id) {
           staffChatLog('STAFF_CHAT_SEND_API_ERROR', { reason: 'missing_message_id' });
           setToast({ kind: 'error', msg: t('sendFailed') });
-          return;
+          return false;
         }
         staffChatLog('STAFF_CHAT_SEND_API_SUCCESS', {
           messageId: saved.id,
@@ -555,17 +564,60 @@ function StaffChatPageInner() {
         setText('');
         setPendingPhraseKey(null);
         setToast({ kind: 'ok', msg: `✅ ${t('sendSuccess')}` });
+        return true;
       } catch (e: unknown) {
         staffChatLog('STAFF_CHAT_SEND_API_ERROR', {
           error: e instanceof Error ? e.message : String(e)
         });
         setToast({ kind: 'error', msg: t('sendFailed') });
+        return false;
       } finally {
         setSending(false);
       }
     },
     [actorName, chatSendUserId, locale, roomNo, sessionSource, setMessages, staffKey, inviteSession?.inviteId, pendingPhraseKey, t]
   );
+
+  function clearPendingPhoto() {
+    if (pendingPhoto?.previewUrl) {
+      try {
+        URL.revokeObjectURL(pendingPhoto.previewUrl);
+      } catch {
+        /* ignore */
+      }
+    }
+    setPendingPhoto(null);
+    setPhotoRoom('');
+    setPhotoStatusText('');
+    setPhotoPhraseKey(null);
+  }
+
+  function buildPhotoCaption(room: string, statusText: string): string {
+    const r = room.trim();
+    const status = statusText.trim();
+    if (!r) return status;
+    if (!status) return locale === 'ko' ? `${r}호` : r;
+    return locale === 'ko' ? `${r}호 ${status}` : `${r} ${status}`;
+  }
+
+  function handlePhotoStatusSelect(payload: { phrase_key: string; text: string }) {
+    setPhotoStatusText(payload.text);
+    setPhotoPhraseKey(payload.phrase_key);
+  }
+
+  async function handlePhotoSend() {
+    if (!pendingPhoto || sending) return;
+    if (!photoRoom.trim()) {
+      setToast({ kind: 'error', msg: t('selectRoomRequired') });
+      return;
+    }
+    const caption = buildPhotoCaption(photoRoom, photoStatusText);
+    const ok = await send(caption, pendingPhoto.file, {
+      roomNo: photoRoom.trim(),
+      phraseKey: photoPhraseKey
+    });
+    if (ok) clearPendingPhoto();
+  }
 
   function handleRoomSelect(next: string) {
     const r = String(next || '').trim();
@@ -677,9 +729,11 @@ function StaffChatPageInner() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const r = roomNo.trim();
-    const caption = text.trim();
-    void send(caption || (r ? `${r}호 사진` : t('photoCaption')), file);
+    setPhotoRoom('');
+    setPhotoStatusText('');
+    setPhotoPhraseKey(null);
+    const previewUrl = URL.createObjectURL(file);
+    setPendingPhoto({ file, previewUrl });
   }
 
   function handleVoiceClick() {
@@ -920,17 +974,37 @@ function StaffChatPageInner() {
           paddingBottom: 'max(env(safe-area-inset-bottom), 0px)'
         }}
       >
+        {pendingPhoto ? (
+          <PhotoConfirmPanel
+            previewUrl={pendingPhoto.previewUrl}
+            photoRoom={photoRoom}
+            selectedStatusText={photoStatusText}
+            locale={locale}
+            roomLabel={t('room')}
+            statusLabel={t('quickPhrase')}
+            cancelLabel={t('cancel')}
+            sendLabel={t('send')}
+            sending={sending}
+            onRoomSelect={setPhotoRoom}
+            onStatusSelect={handlePhotoStatusSelect}
+            onCancel={clearPendingPhoto}
+            onSend={handlePhotoSend}
+          />
+        ) : (
+          <>
         <RoomSelectorBar
           selectedRoom={roomNo}
           onSelect={handleRoomSelect}
           disabled={sending || !canSendMessages}
           sectionLabel={t('room')}
+          large
         />
         <QuickPhraseBar
           locale={locale}
           sectionLabel={t('quickPhrase')}
           onInsert={handleQuickPhraseInsert}
           disabled={sending || !canSendMessages}
+          large
         />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
           <input
@@ -988,6 +1062,8 @@ function StaffChatPageInner() {
             {sending ? '…' : t('send')}
           </button>
         </div>
+          </>
+        )}
       </div>
     </main>
   );

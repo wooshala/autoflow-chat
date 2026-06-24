@@ -28,6 +28,19 @@ function isMaintenanceSystemMessage(msg: ChatMessage, renderedText: string): boo
   return pattern.test(raw) || pattern.test(view);
 }
 
+function isGenericPhotoCaption(text: string): boolean {
+  const t = String(text || '').trim();
+  return !t || /^(사진|\d{3,4}호?\s*사진)$/i.test(t);
+}
+
+function photoStatusLabel(msg: ChatMessage, displayPrimary: string): string | null {
+  if (!msg.image_url) return null;
+  const primary = String(displayPrimary || msg.message || '').trim();
+  if (isGenericPhotoCaption(primary)) return null;
+  const stripped = primary.replace(/^\d{3,4}호?\s*/, '').trim();
+  return stripped || primary;
+}
+
 export default function ChatMessages({
   messages,
   currentUserId,
@@ -53,7 +66,9 @@ export default function ChatMessages({
         });
         const isDeleted = Boolean(msg.is_deleted);
         const urgent = isUrgentMessage(msg);
-        const isImageOnly = !isDeleted && Boolean(msg.image_url) && !String(msgText || "").trim();
+        const statusLabel = photoStatusLabel(msg, displayPrimary);
+        const isImageOnly =
+          !isDeleted && Boolean(msg.image_url) && !statusLabel && isGenericPhotoCaption(displayPrimary || msg.message || '');
         const isSystemEvent = isMaintenanceSystemMessage(msg, msgText);
 
         // 아바타 이니셜
@@ -110,7 +125,9 @@ export default function ChatMessages({
 
               {/* 발신자 이름 — 상대 메시지에만 */}
               {!isPc && (
-                <div className="text-[11px] text-gray-700 font-semibold px-1">{msg.user?.name || "직원"}</div>
+                <div className="text-[11px] text-gray-700 font-semibold px-1">
+                  {msg.sender_name || msg.user?.name || '직원'}
+                </div>
               )}
 
               {/* 말풍선 + 시간 가로 배치 */}
@@ -160,7 +177,7 @@ export default function ChatMessages({
                   {/* 객실 번호 — 굵게 + 배경 강조 (업무 식별 포인트) */}
                   {!isDeleted && msg.room_no && (
                     <div
-                      className={`mb-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                      className={`mb-1 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
                         isPc ? "bg-black/10 text-gray-900" : "bg-blue-50 text-blue-700"
                       }`}
                     >
@@ -168,12 +185,45 @@ export default function ChatMessages({
                     </div>
                   )}
 
+                  {!isDeleted && statusLabel && msg.image_url ? (
+                    <div
+                      className={`mb-1 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
+                        isPc ? "bg-emerald-100 text-emerald-900" : "bg-emerald-50 text-emerald-800"
+                      }`}
+                    >
+                      {statusLabel}
+                    </div>
+                  ) : null}
+
                   {!isDeleted && <AiActionBadge aiAction={msg.ai_action as AiAction} />}
 
                   {isDeleted ? (
                     <div className="text-[10px] font-normal leading-relaxed text-gray-400/90">삭제된 메시지입니다</div>
-                  ) : isImageOnly ? (
-                    <div className="text-xs opacity-80 mb-1">[사진 메시지]</div>
+                  ) : msg.image_url ? (
+                    <>
+                      {isImageOnly ? (
+                        <div className="mb-1 text-xs opacity-80">[사진 메시지]</div>
+                      ) : null}
+                      <img
+                        src={msg.image_url}
+                        alt="업로드"
+                        className="mt-1 h-40 w-full rounded-xl object-cover"
+                      />
+                      {!statusLabel && !isGenericPhotoCaption(displayPrimary || msg.message || '') ? (
+                        <div
+                          className={`mt-1 whitespace-pre-wrap break-words ${
+                            urgent ? 'font-bold' : 'font-medium'
+                          } ${isPc ? 'text-sm' : 'text-base'}`}
+                        >
+                          {displayPrimary}
+                        </div>
+                      ) : null}
+                      {displaySecondary ? (
+                        <div className="mt-1 whitespace-pre-wrap break-words text-[11px] text-gray-500 opacity-80">
+                          {displaySecondary}
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <div>
                       <div
@@ -244,9 +294,6 @@ export default function ChatMessages({
                   )}
                   {!isDeleted && msg.ai_action === "skip_ai_error" && (
                     <div className={`mt-1 text-xs ${isPc ? "text-gray-700" : "text-rose-700"}`}>AI 처리 오류로 자동 생성이 건너뛰어졌습니다.</div>
-                  )}
-                  {!isDeleted && msg.image_url && (
-                    <img src={msg.image_url} alt="업로드" className="mt-2 h-40 w-full rounded-xl object-cover" />
                   )}
                 </div>
 

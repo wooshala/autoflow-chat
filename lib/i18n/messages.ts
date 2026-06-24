@@ -41,7 +41,9 @@ export const messages = {
     sound: '소리',
     notify: '알림',
     langKo: '한국어',
-    langRu: 'Русский'
+    langRu: 'Русский',
+    selectRoomRequired: '객실을 선택해주세요',
+    cancel: '취소'
   },
   ru: {
     send: 'Отправить',
@@ -81,7 +83,9 @@ export const messages = {
     sound: 'Звук',
     notify: 'Уведомл.',
     langKo: '한국어',
-    langRu: 'Русский'
+    langRu: 'Русский',
+    selectRoomRequired: 'Выберите номер',
+    cancel: 'Отмена'
   }
 } as const;
 
