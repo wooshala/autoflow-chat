@@ -33,7 +33,7 @@ import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNo
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
-import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
+import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
 import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
@@ -99,6 +99,14 @@ function StaffChatPageInner() {
   const [photoPhraseKey, setPhotoPhraseKey] = useState<string | null>(null);
   const [showPhraseEditor, setShowPhraseEditor] = useState(false);
   const [phraseRefreshToken, setPhraseRefreshToken] = useState(0);
+
+  function runStaffTts(text: string, ttsLocale: 'ru' | 'ko' = 'ru') {
+    void speakStaffTts(text, ttsLocale).then((result) => {
+      if (result === 'no_voice' && ttsLocale === 'ru') {
+        setToast({ kind: 'error', msg: t('ttsNoRussianVoice') });
+      }
+    });
+  }
 
   useEffect(() => {
     staffChatLog('STAFF_CHAT_LANG_SELECTED', {
@@ -403,7 +411,7 @@ function StaffChatPageInner() {
         console.log('[STAFF_CHAT_SOUND_PLAY]', { messageId: id, soundEnabled: true, urgent });
         void playNotificationTone(urgent ? 'urgent' : 'info');
         const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
-        if (toSpeak) speakStaffRussian(toSpeak);
+        if (toSpeak) runStaffTts(toSpeak, 'ru');
       }
       setToast({
         kind: 'ok',
@@ -946,7 +954,7 @@ function StaffChatPageInner() {
                       {!mine && ttsText && soundEnabled ? (
                         <button
                           type="button"
-                          onClick={() => speakStaffRussian(ttsText)}
+                          onClick={() => runStaffTts(ttsText, 'ru')}
                           className="rounded px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
                         >
                           🔊 {t('readAloud')}

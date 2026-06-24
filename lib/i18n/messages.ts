@@ -53,7 +53,8 @@ export const messages = {
     phraseKeyLabel: '키',
     phraseKoLabel: '한국어',
     phraseRuLabel: 'Русский',
-    phraseClose: '닫기'
+    phraseClose: '닫기',
+    ttsNoRussianVoice: '러시아어 음성이 설치되어 있지 않습니다'
   },
   ru: {
     send: 'Отправить',
@@ -105,7 +106,8 @@ export const messages = {
     phraseKeyLabel: 'Ключ',
     phraseKoLabel: 'Корейский',
     phraseRuLabel: 'Русский',
-    phraseClose: 'Закрыть'
+    phraseClose: 'Закрыть',
+    ttsNoRussianVoice: 'Русский голос не установлен'
   }
 } as const;
 
