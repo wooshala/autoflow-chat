@@ -28,7 +28,21 @@ const listeners = new Set<(next: StaffChatDebugEntry[]) => void>();
 let originalConsoleLog: typeof console.log | null = null;
 let hookInstalled = false;
 
+/** Console-hook debug panel — disabled (breaks mobile touch). Use ?debug=1 API TTS diag instead. */
+export const STAFF_CHAT_CONSOLE_DEBUG_ENABLED = false;
+
 export function isStaffChatDebugEnabled(): boolean {
+  if (!STAFF_CHAT_CONSOLE_DEBUG_ENABLED) return false;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('debug') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** ?debug=1 — API-based TTS status line only (no console hook). */
+export function isStaffChatDiagMode(): boolean {
   if (typeof window === 'undefined') return false;
   try {
     return new URLSearchParams(window.location.search).get('debug') === '1';

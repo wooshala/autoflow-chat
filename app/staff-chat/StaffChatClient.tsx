@@ -1,6 +1,5 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import {
@@ -38,7 +37,7 @@ import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
 import { unlockServerStaffTts } from '@/lib/chat/serverTtsClient';
 import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
-import { useStaffChatDebugLog } from '@/lib/hooks/useStaffChatDebugLog';
+import { useStaffTtsDiagStatus } from '@/lib/hooks/useStaffTtsDiagStatus';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import {
   isStaffChatSelfMessage,
@@ -49,11 +48,7 @@ import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEd
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
-import StaffChatDebugErrorBoundary from '@/components/staff-chat/StaffChatDebugErrorBoundary';
-
-const StaffChatDebugPanel = dynamic(() => import('@/components/staff-chat/StaffChatDebugPanel'), {
-  ssr: false
-});
+import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
 import {
   inviteToSession,
   loadStoredInviteToken,
@@ -99,7 +94,7 @@ type InvitePhase = 'loading' | 'ready' | 'invalid';
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const ruVoiceReady = useStaffRuVoiceAvailability();
-  const { debugEnabled, logs: debugLogs } = useStaffChatDebugLog();
+  const { diagMode, serverTtsAvailable, lastTtsError } = useStaffTtsDiagStatus();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
   );
@@ -807,18 +802,10 @@ function StaffChatPageInner() {
 
   const recentMessages = useMemo(() => messages.filter((m) => !m.is_deleted).slice(-80), [messages]);
 
-  const debugPanel =
-    debugEnabled ? (
-      <StaffChatDebugErrorBoundary>
-        <StaffChatDebugPanel logs={debugLogs} />
-      </StaffChatDebugErrorBoundary>
-    ) : null;
-
   if (invitePhase === 'loading' || !i18nHydrated) {
     return (
       <main className="flex h-[100dvh] items-center justify-center bg-[#eceff1]">
         <p className="text-sm text-gray-500">{t('loading')}</p>
-        {debugPanel}
       </main>
     );
   }
@@ -828,7 +815,6 @@ function StaffChatPageInner() {
       <main className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#eceff1] px-6 text-center">
         <p className="text-lg font-bold text-rose-700">{t('invalidInvite')}</p>
         <p className="text-sm text-gray-600">{t('invalidInviteHelp')}</p>
-        {debugPanel}
       </main>
     );
   }
@@ -904,6 +890,13 @@ function StaffChatPageInner() {
             </button>
           )}
         </div>
+        {diagMode ? (
+          <StaffChatTtsDiagLine
+            serverTtsAvailable={serverTtsAvailable}
+            lastTtsError={lastTtsError}
+            ruVoiceReady={ruVoiceReady}
+          />
+        ) : null}
       </header>
 
       <StaffPwaInstallBanner lang={locale} />
@@ -1167,7 +1160,6 @@ function StaffChatPageInner() {
         onSaved={() => setPhraseRefreshToken((n) => n + 1)}
       />
 
-      {debugPanel}
     </main>
   );
 }

@@ -9,6 +9,8 @@ export const QUICK_PHRASES_URL = '/api/chat/quick-phrases';
 export const QUICK_PHRASES_ADMIN_URL = '/api/chat/quick-phrases/admin';
 export const STAFF_INVITES_URL = '/api/staff/invites';
 export const STAFF_TTS_URL = '/api/staff/tts';
+export const STAFF_TTS_HEALTH_URL = '/api/staff/tts/health';
+export const STAFF_TTS_TEST_URL = '/api/staff/tts/test';
 
 export function chatRoomParticipantsUrl(roomId: string): string {
   return `/api/chat/rooms/${encodeURIComponent(roomId)}/participants`;
