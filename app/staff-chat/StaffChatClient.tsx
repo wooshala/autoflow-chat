@@ -36,6 +36,7 @@ import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffRussian, unlockStaffTts } from '@/lib/chat/staffTts';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
+import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import {
   loadStaffStoredRoom,
@@ -798,6 +799,8 @@ function StaffChatPageInner() {
           )}
         </div>
       </header>
+
+      <StaffPwaInstallBanner lang={lang} />
 
       {toast && (
         <div
