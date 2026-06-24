@@ -41,6 +41,40 @@ alter table if exists chat_messages
 alter table if exists chat_messages
   add column if not exists priority text default 'normal';
 
+create table if not exists chat_quick_phrases (
+  id uuid primary key default gen_random_uuid(),
+  site_id text not null,
+  phrase_key text not null,
+  ko text not null,
+  ru text not null,
+  sort_order integer not null default 0,
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (site_id, phrase_key)
+);
+
+create table if not exists staff_invites (
+  id uuid primary key default gen_random_uuid(),
+  site_id text not null,
+  token text not null unique,
+  display_name text not null,
+  role text not null,
+  user_id uuid references users(id),
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz
+);
+
+alter table if exists chat_messages
+  add column if not exists phrase_key text;
+
+alter table if exists chat_messages
+  add column if not exists sender_name text;
+
+alter table if exists chat_messages
+  add column if not exists token_id uuid references staff_invites(id);
+
 create table if not exists chat_rooms (
   id uuid primary key default gen_random_uuid(),
   name text not null default '기본 대화방',

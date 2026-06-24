@@ -8,6 +8,8 @@ import { ChatMessage, ISSUE_TYPES, ISSUE_UI, IssueType, SenderSide } from '@/lib
 import { type AutoflowUser, loadUser, logoutAndGoLogin, resolveChatSendUserId, runSessionMigration } from '@/lib/auth';
 import ChatMessages from '@/components/ChatMessages';
 import RoomParticipantsPanel from '@/components/RoomParticipantsPanel';
+import QuickPhraseAdminPanel from '@/components/chat/QuickPhraseAdminPanel';
+import StaffInvitePanel from '@/components/chat/StaffInvitePanel';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
@@ -88,6 +90,7 @@ export default function ChatPage() {
   const [issueType, setIssueType] = useState<IssueType>('설비');
   const [submitting, setSubmitting] = useState(false);
   const [urgentMode, setUrgentMode] = useState(false);
+  const [showStaffAdmin, setShowStaffAdmin] = useState(false);
   /** soft delete 진행 중 message id — 중복 요청 방지 */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -646,6 +649,13 @@ export default function ChatPage() {
               </span>
             </div>
             <button
+              type="button"
+              onClick={() => setShowStaffAdmin((v) => !v)}
+              className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 text-xs font-medium text-gray-300 hover:bg-gray-600"
+            >
+              {showStaffAdmin ? '직원/문구 닫기' : '직원/문구 관리'}
+            </button>
+            <button
               onClick={() => {
                 log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/login', reason: 'manual_logout' });
                 logoutAndGoLogin(router);
@@ -659,6 +669,13 @@ export default function ChatPage() {
       </header>
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
+
+      {showStaffAdmin ? (
+        <div className="shrink-0 space-y-3 border-t border-gray-700 bg-gray-800 px-3 py-3">
+          <StaffInvitePanel />
+          <QuickPhraseAdminPanel />
+        </div>
+      ) : null}
 
       <RoomParticipantsPanel roomId={process.env.NEXT_PUBLIC_DEFAULT_CHAT_ROOM_ID || ''} />
 

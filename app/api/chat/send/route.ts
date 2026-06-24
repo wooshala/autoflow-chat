@@ -374,6 +374,10 @@ export async function POST(req: NextRequest) {
     const sender_side_raw = String(formData.get('sender_side') || '').toLowerCase();
     const sender_side = sender_side_raw === 'mobile' ? 'mobile' : sender_side_raw === 'pc' ? 'pc' : null;
     const priority = parseSendPriority(formData.get('priority'));
+    const phrase_key = String(formData.get('phrase_key') || '').trim() || null;
+    const token_id = String(formData.get('token_id') || '').trim() || null;
+    const sender_name =
+      String(formData.get('sender_name') || formData.get('actor_name') || '').trim() || null;
     if (actor_name) {
       console.log('[CHAT_SEND_ACTOR_NAME]', { actor_name, user_id: user_id || null });
     }
@@ -456,6 +460,9 @@ export async function POST(req: NextRequest) {
       user_id,
       sender_side,
       priority,
+      phrase_key,
+      sender_name,
+      token_id,
       message_type: image instanceof File ? 'image' : 'text',
       image_url: image_url || null,
       image_storage_path: image_storage_path || null,

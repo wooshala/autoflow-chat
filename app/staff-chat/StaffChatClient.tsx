@@ -10,7 +10,7 @@ import {
   staffKeyLabel
 } from '@/lib/auth';
 import { fetchEnvelope } from '@/lib/api/envelope';
-import { CHAT_SEND_URL } from '@/lib/chatApi';
+import { CHAT_SEND_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
 import { TIMEOUT_MS_CHAT_SEND } from '@/lib/api/timeouts';
 import type { ChatMessage } from '@/lib/types';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
@@ -39,12 +39,20 @@ import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import {
+  inviteToSession,
+  loadStoredInviteToken,
+  readDeprecatedUserParamFromUrl,
+  readInviteTokenFromUrl,
+  saveStoredInviteToken,
+  type StaffInviteSession
+} from '@/lib/auth/staffInviteSession';
+import { useI18n } from '@/lib/i18n/useI18n';
+import type { StaffLocale } from '@/lib/i18n/messages';
+import {
   loadStaffStoredRoom,
   saveStaffStoredRoom,
   STAFF_VALID_ROOM_SET
 } from '@/lib/chat/staffRoomOptions';
-
-type Lang = 'ko' | 'vi' | 'ru';
 
 const STORAGE_SOUND_ENABLED = 'autoflow_staff_sound_enabled_v1';
 /** OS notification body cap (Browser Notification API, not Web Push). */
@@ -67,122 +75,29 @@ function saveSoundEnabled(enabled: boolean) {
   }
 }
 
-const I18N: Record<Lang, Record<string, string>> = {
-  ko: {
-    title: '청소팀 보고',
-    currentRoom: '현재 객실',
-    changeRoom: '객실 변경',
-    pickRoom: '객실 선택',
-    pickRoomTitle: '객실 선택',
-    close: '닫기',
-    noRoom: '객실을 선택하세요',
-    sending: '전송 중…',
-    messagePlaceholder: '짧게 입력…',
-    send: '전송',
-    room: '호',
-    connection: '연결',
-    noUserId: 'user_id 미설정 — .env.local에 STAFF_USER UUID 필요',
-    photoSoon: '사진 전송은 v0.3에서 연결됩니다',
-    voiceSoon: '음성(워키토키)은 v0.3 예정입니다',
-    soundOn: '소리 켜짐',
-    soundOff: '소리 꺼짐',
-    readAloud: '읽기',
-    notifyEnable: '알림 켜기',
-    notifyGranted: '알림 허용됨',
-    notifyDenied: '알림 차단됨',
-    notifyUnsupported: '알림 미지원',
-    notifyUnsupportedHelp: 'Chrome에서 열어 주세요. iPhone은 홈 화면에 추가가 필요합니다.',
-    notifyDeniedHelp:
-      '브라우저에서 알림이 차단되어 있습니다. 주소창 왼쪽 사이트 설정에서 알림을 허용해 주세요.',
-    notifyTestBody: '알림이 정상적으로 작동합니다.'
-  },
-  vi: {
-    title: 'Báo cáo dọn phòng',
-    currentRoom: 'Phòng hiện tại',
-    changeRoom: 'Đổi phòng',
-    pickRoom: 'Chọn phòng',
-    pickRoomTitle: 'Chọn phòng',
-    close: 'Đóng',
-    noRoom: 'Chọn phòng',
-    sending: 'Đang gửi…',
-    messagePlaceholder: 'Nhập ngắn…',
-    send: 'Gửi',
-    room: 'phòng',
-    connection: 'Kết nối',
-    noUserId: 'Thiếu user_id',
-    photoSoon: 'Ảnh sẽ có ở v0.3',
-    voiceSoon: 'Giọng nói sẽ có ở v0.3',
-    soundOn: 'Âm thanh bật',
-    soundOff: 'Âm thanh tắt',
-    notifyEnable: 'Bật thông báo',
-    notifyGranted: 'Thông báo đã bật',
-    notifyDenied: 'Thông báo bị chặn',
-    notifyUnsupported: 'Không hỗ trợ thông báo',
-    notifyUnsupportedHelp: 'Mở bằng Chrome. iPhone cần thêm vào Màn hình chính.',
-    notifyDeniedHelp:
-      'Thông báo bị chặn. Vui lòng bật thông báo trong cài đặt trang web (bên trái thanh địa chỉ).',
-    notifyTestBody: 'Thông báo hoạt động bình thường.'
-  },
-  ru: {
-    title: 'Отчёт уборки',
-    currentRoom: 'Текущий номер',
-    changeRoom: 'Сменить',
-    pickRoom: 'Выбор номера',
-    pickRoomTitle: 'Выбор номера',
-    close: 'Закрыть',
-    noRoom: 'Выберите номер',
-    sending: 'Отправка…',
-    messagePlaceholder: 'Коротко…',
-    send: 'Отправить',
-    room: 'номер',
-    connection: 'Связь',
-    noUserId: 'Нет user_id',
-    photoSoon: 'Фото в v0.3',
-    voiceSoon: 'Голос в v0.3',
-    soundOn: 'Звук вкл',
-    soundOff: 'Звук выкл',
-    notifyEnable: 'Включить уведомления',
-    notifyGranted: 'Уведомления разрешены',
-    notifyDenied: 'Уведомления заблокированы',
-    notifyUnsupported: 'Уведомления недоступны',
-    notifyUnsupportedHelp: 'Откройте в Chrome. На iPhone добавьте на главный экран.',
-    notifyDeniedHelp:
-      'Уведомления заблокированы. Разрешите их в настройках сайта (слева от адресной строки).',
-    notifyTestBody: 'Уведомления работают.'
-  }
-};
-
-function t(lang: Lang, k: string) {
-  return I18N[lang][k] || k;
-}
 
 type ListPhase = 'loading' | 'ready' | 'error';
-type SessionSource = 'localStorage' | 'query_param' | 'none';
-
-function readUserParamFromUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return new URLSearchParams(window.location.search).get('user');
-  } catch {
-    return null;
-  }
-}
+type SessionSource = 'localStorage' | 'query_param' | 'invite_token' | 'none';
+type InvitePhase = 'loading' | 'ready' | 'invalid';
 
 function StaffChatPageInner() {
+  const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const [userParam, setUserParam] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? readUserParamFromUrl() : null
+    typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
   );
+  const [invitePhase, setInvitePhase] = useState<InvitePhase>('loading');
+  const [inviteSession, setInviteSession] = useState<StaffInviteSession | null>(null);
+  const [deprecatedWarned, setDeprecatedWarned] = useState(false);
   const [listPhase, setListPhase] = useState<ListPhase>('loading');
   const [listError, setListError] = useState<string | null>(null);
-
-  const [lang, setLang] = useState<Lang>('ru');
+  const [pendingPhraseKey, setPendingPhraseKey] = useState<string | null>(null);
 
   useEffect(() => {
     staffChatLog('STAFF_CHAT_LANG_SELECTED', {
-      lang,
-      viewerLang: lang === 'ru' ? 'ru' : 'ko'
+      locale: locale,
+      viewerLang: locale === 'ru' ? 'ru' : 'ko'
     });
-  }, [lang]);
+  }, [locale]);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const [sessionSource, setSessionSource] = useState<SessionSource>('none');
@@ -205,10 +120,10 @@ function StaffChatPageInner() {
   const notifySeededRef = useRef(false);
   const roomBootstrappedRef = useRef(false);
 
-  const { key: staffKey, userId: chatSendUserId } = useMemo(
-    () => resolveStaffChatUserId(userParam),
-    [userParam]
-  );
+  const legacyResolved = useMemo(() => resolveStaffChatUserId(userParam), [userParam]);
+  const chatSendUserId = inviteSession?.userId ?? legacyResolved.userId;
+  const staffKey = legacyResolved.key;
+  const actorName = inviteSession?.displayName || sessionUser?.name || staffKeyLabel(staffKey);
 
   const supabase = useMemo(() => createBrowserSupabase(), []);
   const realtimeConnectedRef = useRef(false);
@@ -226,12 +141,43 @@ function StaffChatPageInner() {
   });
 
   useEffect(() => {
-    const param = readUserParamFromUrl();
+    async function bootstrapInvite() {
+      const urlToken = readInviteTokenFromUrl();
+      const storedToken = loadStoredInviteToken();
+      const token = urlToken || storedToken;
+
+      if (token) {
+        if (urlToken) saveStoredInviteToken(urlToken);
+        try {
+          const res = await fetch(`${STAFF_INVITES_URL}?token=${encodeURIComponent(token)}`);
+          const json = await res.json();
+          if (json?.ok && json?.data?.invite) {
+            setInviteSession(inviteToSession(json.data.invite, json.data.userId ?? null));
+            setInvitePhase('ready');
+            setSessionSource('invite_token');
+            return;
+          }
+        } catch {
+          /* fall through */
+        }
+        setInvitePhase('invalid');
+        return;
+      }
+
+      if (readDeprecatedUserParamFromUrl()) {
+        setDeprecatedWarned(true);
+      }
+      setInvitePhase('ready');
+    }
+    void bootstrapInvite();
+  }, []);
+
+  useEffect(() => {
+    const param = readDeprecatedUserParamFromUrl();
     staffChatLog('STAFF_CHAT_INIT', {
       href: typeof window !== 'undefined' ? window.location.href : null,
       userParam: param
     });
-    staffChatLog('STAFF_CHAT_USER_PARAM', { user: param });
     setUserParam(param);
   }, []);
 
@@ -241,9 +187,10 @@ function StaffChatPageInner() {
       id: chatSendUserId,
       userId: chatSendUserId,
       hasUserId: Boolean(chatSendUserId),
-      userParam
+      userParam,
+      inviteToken: inviteSession?.token || null
     });
-  }, [staffKey, chatSendUserId, userParam]);
+  }, [staffKey, chatSendUserId, userParam, inviteSession?.token]);
 
   useEffect(() => {
     runSessionMigration();
@@ -257,6 +204,15 @@ function StaffChatPageInner() {
         staffKey,
         id: chatSendUserId
       });
+      return;
+    }
+    if (inviteSession?.displayName) {
+      const synthetic: AutoflowUser = {
+        name: inviteSession.displayName,
+        created_at: new Date().toISOString()
+      };
+      setSessionUser(synthetic);
+      setSessionSource('invite_token');
       return;
     }
     if (userParam && chatSendUserId) {
@@ -428,10 +384,10 @@ function StaffChatPageInner() {
         continue;
       }
 
-      const viewerLang: ChatLang = lang === 'ru' ? 'ru' : 'ko';
+      const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
       const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
         logContext: 'staff',
-        selectedLang: lang
+        selectedLang: locale
       });
       const urgent = isUrgentMessage(m);
       const preview = String(primary || m.message || '').trim();
@@ -444,14 +400,14 @@ function StaffChatPageInner() {
       setToast({
         kind: 'ok',
         urgent,
-        msg: urgent ? `🚨 긴급 메시지\n${preview.slice(0, 80)}` : `📩 ${preview.slice(0, 40)}`
+        msg: urgent ? `🚨 ${t('urgentToast')}\n${preview.slice(0, 80)}` : `📩 ${preview.slice(0, 40)}`
       });
 
       // staff-chat OS alerts: Browser Notification API while tab/session is alive (not Web Push).
       // Mobile browsers may suppress notifications when the screen is off or the tab is suspended.
       const { primary: ruPrimary } = getMessageDisplayParts(m, 'ru', {
         logContext: 'staff',
-        selectedLang: lang
+        selectedLang: locale
       });
       const isBackgroundLike =
         typeof document !== 'undefined' &&
@@ -461,7 +417,7 @@ function StaffChatPageInner() {
         const body = String(ruPrimary || m.message || '').trim().slice(0, OS_NOTIFY_BODY_MAX);
         if (body) {
           void showBrowserNotification({
-            title: urgent ? '🚨 긴급 메시지' : staffKeyLabel(staffKey) || 'AutoFlow Chat',
+            title: urgent ? `🚨 ${t('urgentToast')}` : staffKeyLabel(staffKey) || 'AutoFlow Chat',
             body,
             tag: id,
             requireInteraction: urgent
@@ -469,18 +425,13 @@ function StaffChatPageInner() {
         }
       }
     }
-  }, [messages, initialHydrationComplete, chatSendUserId, lang, staffKey, soundEnabled]);
+  }, [messages, initialHydrationComplete, chatSendUserId, locale, staffKey, soundEnabled]);
 
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [messages.length]);
-
-  const actorName = useMemo(
-    () => sessionUser?.name || staffKeyLabel(staffKey),
-    [sessionUser, staffKey]
-  );
 
   const canSendMessages = Boolean(chatSendUserId);
   const canComposerSend = Boolean(canSendMessages && text.trim() && !sending);
@@ -520,9 +471,10 @@ function StaffChatPageInner() {
   }, [toast]);
 
   const send = useCallback(
-    async (body: string, image?: File | null) => {
+    async (body: string, image?: File | null): Promise<void> => {
       const msg = String(body || '').trim();
-      const r = String(roomNo || '').trim();
+      const r = roomNo.trim();
+      const phraseKey = pendingPhraseKey;
 
       staffChatLog('STAFF_CHAT_SEND_CLICK', {
         staffKey,
@@ -536,7 +488,7 @@ function StaffChatPageInner() {
 
       if (!chatSendUserId) {
         staffChatLog('STAFF_CHAT_SEND_BLOCKED', { reason: 'no_resolved_staff_user_id' });
-        setToast({ kind: 'error', msg: t(lang, 'noUserId') });
+        setToast({ kind: 'error', msg: t('noUserId') });
         return;
       }
       if (!msg && !image) {
@@ -561,6 +513,9 @@ function StaffChatPageInner() {
         fd.append('actor_name', actorName);
         fd.append('message', msg || (image ? (r ? `${r}호 사진` : '사진') : ''));
         fd.append('sender_side', 'mobile');
+        fd.append('sender_name', actorName);
+        if (inviteSession?.inviteId) fd.append('token_id', inviteSession.inviteId);
+        if (phraseKey) fd.append('phrase_key', phraseKey);
         if (r) fd.append('room_no', r);
         fd.append('client_nonce', nonce);
         fd.append('client_request_id', nonce);
@@ -578,13 +533,13 @@ function StaffChatPageInner() {
             error: res.error ?? null,
             message: res.message ?? null
           });
-          setToast({ kind: 'error', msg: '전송에 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+          setToast({ kind: 'error', msg: t('sendFailed') });
           return;
         }
         const saved = unwrapChatSendEnvelopeData(res.data);
         if (!saved?.id) {
           staffChatLog('STAFF_CHAT_SEND_API_ERROR', { reason: 'missing_message_id' });
-          setToast({ kind: 'error', msg: '전송에 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+          setToast({ kind: 'error', msg: t('sendFailed') });
           return;
         }
         staffChatLog('STAFF_CHAT_SEND_API_SUCCESS', {
@@ -598,17 +553,18 @@ function StaffChatPageInner() {
           return [...prev, saved].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
         });
         setText('');
-        setToast({ kind: 'ok', msg: '✅ 전송 완료' });
+        setPendingPhraseKey(null);
+        setToast({ kind: 'ok', msg: `✅ ${t('sendSuccess')}` });
       } catch (e: unknown) {
         staffChatLog('STAFF_CHAT_SEND_API_ERROR', {
           error: e instanceof Error ? e.message : String(e)
         });
-        setToast({ kind: 'error', msg: '전송에 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+        setToast({ kind: 'error', msg: t('sendFailed') });
       } finally {
         setSending(false);
       }
     },
-    [actorName, chatSendUserId, lang, roomNo, sessionSource, setMessages, staffKey]
+    [actorName, chatSendUserId, locale, roomNo, sessionSource, setMessages, staffKey, inviteSession?.inviteId, pendingPhraseKey, t]
   );
 
   function handleRoomSelect(next: string) {
@@ -638,7 +594,7 @@ function StaffChatPageInner() {
   function showStaffTestNotification() {
     void showBrowserNotification({
       title: staffKeyLabel(staffKey) || 'AutoFlow Chat',
-      body: t(lang, 'notifyTestBody'),
+      body: t('notifyTestBody'),
       tag: 'staff-chat-notify-test'
     });
   }
@@ -659,7 +615,7 @@ function StaffChatPageInner() {
 
     if (Notification.permission === 'denied') {
       setBrowserNotifyPermission('denied');
-      window.alert(t(lang, 'notifyDeniedHelp'));
+      window.alert(t('notifyDeniedHelp'));
       return;
     }
 
@@ -677,9 +633,10 @@ function StaffChatPageInner() {
     });
   }
 
-  function handleQuickPhraseInsert(label: string) {
+  function handleQuickPhraseInsert(payload: { phrase_key: string; text: string }) {
     const r = roomNo.trim();
-    const next = r ? `${r} ${label}` : label;
+    const next = r ? `${r} ${payload.text}` : payload.text;
+    setPendingPhraseKey(payload.phrase_key);
     setText(next);
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }
@@ -722,20 +679,36 @@ function StaffChatPageInner() {
     if (!file) return;
     const r = roomNo.trim();
     const caption = text.trim();
-    void send(caption || (r ? `${r}호 사진` : '사진'), file);
+    void send(caption || (r ? `${r}호 사진` : t('photoCaption')), file);
   }
 
   function handleVoiceClick() {
-    setToast({ kind: 'ok', msg: t(lang, 'voiceSoon') });
+    setToast({ kind: 'ok', msg: t('voiceSoon') });
   }
 
-  const langButtons: { code: Lang; flag: string }[] = [
+  const localeButtons: { code: StaffLocale; flag: string }[] = [
     { code: 'ko', flag: '🇰🇷' },
-    { code: 'vi', flag: '🇻🇳' },
     { code: 'ru', flag: '🇷🇺' }
   ];
 
   const recentMessages = useMemo(() => messages.filter((m) => !m.is_deleted).slice(-80), [messages]);
+
+  if (invitePhase === 'loading' || !i18nHydrated) {
+    return (
+      <main className="flex h-[100dvh] items-center justify-center bg-[#eceff1]">
+        <p className="text-sm text-gray-500">{t('loading')}</p>
+      </main>
+    );
+  }
+
+  if (invitePhase === 'invalid') {
+    return (
+      <main className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#eceff1] px-6 text-center">
+        <p className="text-lg font-bold text-rose-700">{t('invalidInvite')}</p>
+        <p className="text-sm text-gray-600">{t('invalidInviteHelp')}</p>
+      </main>
+    );
+  }
 
   return (
     <main className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#eceff1]">
@@ -743,13 +716,13 @@ function StaffChatPageInner() {
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-1.5 shadow-sm">
         <div className="mx-auto flex max-w-md items-center justify-end gap-1.5">
           <div className="flex gap-0.5">
-            {langButtons.map((b) => (
+            {localeButtons.map((b) => (
               <button
                 key={b.code}
                 type="button"
-                onClick={() => setLang(b.code)}
+                onClick={() => setLocale(b.code)}
                 className={`flex h-8 w-9 items-center justify-center rounded-lg border text-base ${
-                  lang === b.code ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-gray-50'
+                  locale === b.code ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-gray-50'
                 }`}
                 aria-label={b.code}
               >
@@ -766,16 +739,16 @@ function StaffChatPageInner() {
                 : 'border-gray-300 bg-gray-50 text-gray-600'
             }`}
           >
-            🔊 {soundEnabled ? 'ON' : 'OFF'}
+            🔊 {soundEnabled ? t('soundOn') : t('soundOff')}
           </button>
           {browserNotifyPermission === 'unsupported' ? (
             <button
               type="button"
-              onClick={() => window.alert(t(lang, 'notifyUnsupportedHelp'))}
+              onClick={() => window.alert(t('notifyUnsupportedHelp'))}
               className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800"
-              title={t(lang, 'notifyUnsupportedHelp')}
+              title={t('notifyUnsupportedHelp')}
             >
-              🔔 {t(lang, 'notifyUnsupported')}
+              🔔 {t('notifyUnsupported')}
             </button>
           ) : (
             <button
@@ -791,16 +764,16 @@ function StaffChatPageInner() {
             >
               🔔{' '}
               {browserNotifyPermission === 'default'
-                ? t(lang, 'notifyEnable')
+                ? t('notifyEnable')
                 : browserNotifyPermission === 'granted'
-                  ? t(lang, 'notifyGranted')
-                  : t(lang, 'notifyDenied')}
+                  ? t('notifyGranted')
+                  : t('notifyDenied')}
             </button>
           )}
         </div>
       </header>
 
-      <StaffPwaInstallBanner lang={lang} />
+      <StaffPwaInstallBanner lang={locale} />
 
       {toast && (
         <div
@@ -816,9 +789,21 @@ function StaffChatPageInner() {
         </div>
       )}
 
+      {deprecatedWarned ? (
+        <div className="mx-4 mt-2 shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
+          {t('deprecatedUserParam')}
+        </div>
+      ) : null}
+
+      {inviteSession?.displayName ? (
+        <div className="mx-4 mt-1 shrink-0 text-center text-[11px] font-semibold text-gray-500">
+          {t('signedInAs')}: {inviteSession.displayName}
+        </div>
+      ) : null}
+
       {!canSendMessages && (
         <div className="mx-4 mt-2 shrink-0 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {t(lang, 'noUserId')}
+          {t('noUserId')}
         </div>
       )}
 
@@ -829,7 +814,7 @@ function StaffChatPageInner() {
         style={{ paddingBottom: composerHeight + 12 }}
       >
         {listPhase === 'loading' && !initialHydrationComplete ? (
-          <p className="py-8 text-center text-sm text-gray-400">불러오는 중…</p>
+          <p className="py-8 text-center text-sm text-gray-400">{t('loading')}</p>
         ) : listPhase === 'error' ? (
           <div className="py-8 text-center">
             <p className="text-sm font-semibold text-rose-700">{listError}</p>
@@ -838,20 +823,20 @@ function StaffChatPageInner() {
               onClick={() => void retryListLoad()}
               className="mt-3 rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white"
             >
-              재시도
+              {t('retry')}
             </button>
           </div>
         ) : recentMessages.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">메시지가 없습니다</p>
+          <p className="py-12 text-center text-sm text-gray-400">{t('noMessages')}</p>
         ) : (
           <div className="space-y-2 pb-2">
             {recentMessages.map((m) => {
               const mine = chatSendUserId && String(m.user_id) === String(chatSendUserId);
               const urgent = isUrgentMessage(m);
-              const viewerLang: ChatLang = lang === 'ru' ? 'ru' : 'ko';
+              const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
               const { primary, secondary, ttsText } = getMessageDisplayParts(m, viewerLang, {
                 logContext: 'staff',
-                selectedLang: lang
+                selectedLang: locale
               });
               return (
                 <div key={String(m.id)} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -866,7 +851,7 @@ function StaffChatPageInner() {
                   >
                     {urgent && !mine ? (
                       <div className="mb-1 inline-block rounded bg-orange-500 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-white">
-                        긴급
+                        {t('urgentBadge')}
                       </div>
                     ) : null}
                     <div
@@ -875,7 +860,9 @@ function StaffChatPageInner() {
                       }`}
                     >
                       <span>
-                        {m.room_no ? `${m.room_no}호` : '—'} · {m.sender_side || '?'}
+                        {m.sender_name ||
+                          (m.room_no ? `${m.room_no}${t('roomSuffix')}` : '—')}{' '}
+                        · {m.sender_side || '?'}
                       </span>
                       {!mine && ttsText && soundEnabled ? (
                         <button
@@ -883,7 +870,7 @@ function StaffChatPageInner() {
                           onClick={() => speakStaffRussian(ttsText)}
                           className="rounded px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
                         >
-                          🔊 {t(lang, 'readAloud')}
+                          🔊 {t('readAloud')}
                         </button>
                       ) : null}
                     </div>
@@ -937,8 +924,14 @@ function StaffChatPageInner() {
           selectedRoom={roomNo}
           onSelect={handleRoomSelect}
           disabled={sending || !canSendMessages}
+          sectionLabel={t('room')}
         />
-        <QuickPhraseBar onInsert={handleQuickPhraseInsert} disabled={sending || !canSendMessages} />
+        <QuickPhraseBar
+          locale={locale}
+          sectionLabel={t('quickPhrase')}
+          onInsert={handleQuickPhraseInsert}
+          disabled={sending || !canSendMessages}
+        />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
           <input
             ref={photoInputRef}
@@ -981,7 +974,7 @@ function StaffChatPageInner() {
                 handleComposerSend();
               }
             }}
-            placeholder={t(lang, 'messagePlaceholder')}
+            placeholder={t('messagePlaceholder')}
             className="min-h-[48px] min-w-0 flex-1 rounded-xl border-2 border-gray-200 bg-gray-50 px-3 text-base outline-none focus:border-blue-500"
           />
           <button
@@ -992,7 +985,7 @@ function StaffChatPageInner() {
               canComposerSend ? 'bg-gray-900' : 'bg-gray-400'
             }`}
           >
-            {sending ? '…' : t(lang, 'send')}
+            {sending ? '…' : t('send')}
           </button>
         </div>
       </div>

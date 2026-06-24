@@ -93,6 +93,9 @@ export async function createChatMessage(input: {
   message: string;
   message_type?: MessageType;
   priority?: MessagePriority;
+  phrase_key?: string | null;
+  sender_name?: string | null;
+  token_id?: string | null;
   sender_side?: SenderSide | null;
   room_no?: string | null;
   image_url?: string | null;
@@ -109,6 +112,9 @@ export async function createChatMessage(input: {
     message: input.message,
     message_type: input.message_type || 'text',
     priority: (input.priority === 'urgent' ? 'urgent' : 'normal') as MessagePriority,
+    phrase_key: input.phrase_key || null,
+    sender_name: input.sender_name || null,
+    token_id: input.token_id || null,
     sender_side: input.sender_side || null,
     room_no: input.room_no || null,
     image_url: input.image_url || null,
@@ -126,6 +132,9 @@ export async function createChatMessage(input: {
     message: insertPayload.message,
     message_type: insertPayload.message_type,
     priority: insertPayload.priority,
+    phrase_key: insertPayload.phrase_key,
+    sender_name: insertPayload.sender_name,
+    token_id: insertPayload.token_id,
     sender_side: insertPayload.sender_side,
     room_no: insertPayload.room_no,
     image_url: insertPayload.image_url,
@@ -181,6 +190,15 @@ export async function createChatMessage(input: {
   if (error && String(error?.message || '').includes('priority')) {
     const { priority: _ignored, ...fallbackPayload } = insertPayload as any;
     console.log('[CHAT_INSERT_SUPABASE_PAYLOAD_FALLBACK_NO_PRIORITY]', fallbackPayload);
+    ({ data, error } = await supabaseAdmin
+      .from('chat_messages')
+      .insert(fallbackPayload)
+      .select('id, created_at')
+      .single());
+  }
+  if (error && (String(error?.message || '').includes('phrase_key') || String(error?.message || '').includes('sender_name') || String(error?.message || '').includes('token_id'))) {
+    const { phrase_key: _p, sender_name: _s, token_id: _t, ...fallbackPayload } = insertPayload as any;
+    console.log('[CHAT_INSERT_SUPABASE_PAYLOAD_FALLBACK_NO_STAFF_META]', fallbackPayload);
     ({ data, error } = await supabaseAdmin
       .from('chat_messages')
       .insert(fallbackPayload)

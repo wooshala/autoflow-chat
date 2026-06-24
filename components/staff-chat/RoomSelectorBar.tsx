@@ -7,9 +7,15 @@ type Props = {
   selectedRoom: string;
   onSelect: (roomNo: string) => void;
   disabled?: boolean;
+  sectionLabel?: string;
 };
 
-export default function RoomSelectorBar({ selectedRoom, onSelect, disabled = false }: Props) {
+export default function RoomSelectorBar({
+  selectedRoom,
+  onSelect,
+  disabled = false,
+  sectionLabel = '객실'
+}: Props) {
   const selectedRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -20,7 +26,9 @@ export default function RoomSelectorBar({ selectedRoom, onSelect, disabled = fal
   return (
     <div className="border-b border-gray-100 bg-white px-2 py-1.5">
       <div className="mx-auto flex max-w-md items-center gap-1.5">
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">객실</span>
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          {sectionLabel}
+        </span>
         <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
           <div className="flex w-max items-center gap-1.5 pr-1">
             {STAFF_ROOM_OPTIONS.map((room) => {
@@ -35,7 +43,7 @@ export default function RoomSelectorBar({ selectedRoom, onSelect, disabled = fal
                   className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-extrabold tabular-nums disabled:opacity-40 ${
                     selected
                       ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-200'
-                      : 'border-gray-200 bg-gray-50 text-gray-800 active:bg-blue-50 active:border-blue-300'
+                      : 'border-gray-200 bg-gray-50 text-gray-800 active:border-blue-300 active:bg-blue-50'
                   }`}
                 >
                   {room}

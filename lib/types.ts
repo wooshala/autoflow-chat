@@ -89,12 +89,39 @@ export interface TranslatedText {
 
 export type MessagePriority = 'normal' | 'urgent';
 
+export interface ChatQuickPhrase {
+  id: string;
+  site_id: string;
+  phrase_key: string;
+  ko: string;
+  ru: string;
+  sort_order: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StaffInvite {
+  id: string;
+  site_id: string;
+  token: string;
+  display_name: string;
+  role: string;
+  user_id: string | null;
+  enabled: boolean;
+  created_at: string;
+  last_seen_at: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   user_id: string;
   message: string;
   message_type: MessageType;
   priority?: MessagePriority | null;
+  phrase_key?: string | null;
+  sender_name?: string | null;
+  token_id?: string | null;
   room_no: string | null;
   image_url: string | null;
   image_storage_path: string | null;

@@ -1,0 +1,92 @@
+export type StaffLocale = 'ko' | 'ru';
+
+export const STAFF_LOCALE_STORAGE_KEY = 'autoflow_staff_locale_v1';
+
+export const messages = {
+  ko: {
+    send: '전송',
+    sending: '전송 중…',
+    urgent: '긴급',
+    urgentBadge: '긴급',
+    urgentToast: '긴급 메시지',
+    room: '객실',
+    roomSuffix: '호',
+    quickPhrase: '상태',
+    connected: '연결됨',
+    soundOn: 'ON',
+    soundOff: 'OFF',
+    notifyEnable: '알림 켜기',
+    notifyGranted: '알림 허용됨',
+    notifyDenied: '알림 차단됨',
+    notifyUnsupported: '알림 미지원',
+    notifyUnsupportedHelp: 'Chrome에서 열어 주세요. iPhone은 홈 화면에 추가가 필요합니다.',
+    notifyDeniedHelp:
+      '브라우저에서 알림이 차단되어 있습니다. 주소창 왼쪽 사이트 설정에서 알림을 허용해 주세요.',
+    notifyTestBody: '알림이 정상적으로 작동합니다.',
+    readAloud: '읽기',
+    messagePlaceholder: '짧게 입력…',
+    noUserId: 'user_id 미설정 — 관리자 설정이 필요합니다',
+    sendFailed: '전송에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+    sendSuccess: '전송 완료',
+    voiceSoon: '음성(워키토키)은 v0.3 예정입니다',
+    photoCaption: '사진',
+    loading: '불러오는 중…',
+    retry: '재시도',
+    noMessages: '메시지가 없습니다',
+    invalidInvite: '유효하지 않은 초대 링크',
+    invalidInviteHelp: '관리자에게 새 초대 링크를 요청하세요.',
+    deprecatedUserParam: 'user= 파라미터는 곧 사용 중단됩니다. 초대 링크(?t=)를 사용하세요.',
+    signedInAs: '접속',
+    newMessage: '새 메시지',
+    sound: '소리',
+    notify: '알림',
+    langKo: '한국어',
+    langRu: 'Русский'
+  },
+  ru: {
+    send: 'Отправить',
+    sending: 'Отправка…',
+    urgent: 'Срочно',
+    urgentBadge: 'Срочно',
+    urgentToast: 'Срочное сообщение',
+    room: 'Номер',
+    roomSuffix: '',
+    quickPhrase: 'Статус',
+    connected: 'Подключено',
+    soundOn: 'ВКЛ',
+    soundOff: 'ВЫКЛ',
+    notifyEnable: 'Включить уведомления',
+    notifyGranted: 'Уведомления разрешены',
+    notifyDenied: 'Уведомления заблокированы',
+    notifyUnsupported: 'Уведомления недоступны',
+    notifyUnsupportedHelp: 'Откройте в Chrome. На iPhone добавьте на главный экран.',
+    notifyDeniedHelp:
+      'Уведомления заблокированы. Разрешите их в настройках сайта (слева от адресной строки).',
+    notifyTestBody: 'Уведомления работают.',
+    readAloud: 'Читать',
+    messagePlaceholder: 'Коротко…',
+    noUserId: 'Нет user_id — нужна настройка администратора',
+    sendFailed: 'Не удалось отправить. Попробуйте позже.',
+    sendSuccess: 'Отправлено',
+    voiceSoon: 'Голос — в v0.3',
+    photoCaption: 'Фото',
+    loading: 'Загрузка…',
+    retry: 'Повтор',
+    noMessages: 'Нет сообщений',
+    invalidInvite: 'Недействительная ссылка-приглашение',
+    invalidInviteHelp: 'Запросите новую ссылку у администратора.',
+    deprecatedUserParam: 'Параметр user= устарел. Используйте ссылку-приглашение (?t=).',
+    signedInAs: 'Вход',
+    newMessage: 'Новое сообщение',
+    sound: 'Звук',
+    notify: 'Уведомл.',
+    langKo: '한국어',
+    langRu: 'Русский'
+  }
+} as const;
+
+export type MessageKey = keyof (typeof messages)['ko'];
+
+export function translate(locale: StaffLocale, key: MessageKey): string {
+  return messages[locale][key] ?? messages.ko[key] ?? key;
+}
