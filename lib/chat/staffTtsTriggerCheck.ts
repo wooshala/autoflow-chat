@@ -15,6 +15,7 @@ export type StaffTtsTriggerCheckPayload = {
   originalLang: string;
   isSelfMessage: boolean;
   soundEnabled: boolean;
+  autoTtsEnabled?: boolean;
   serverTtsAvailable: boolean | null;
   serverTtsUnlocked: boolean;
   localRuVoice: boolean | null;
