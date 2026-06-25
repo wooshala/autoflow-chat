@@ -70,13 +70,15 @@ export function noteStaffTtsMessageReceived() {
 /** Map DOM/play errors to diag codes; falls back to raw message. */
 export function normalizeStaffTtsPlayError(err: unknown): string {
   if (err instanceof DOMException) {
-    if (err.name === 'NotAllowedError') return 'not_allowed_error';
+    if (err.name === 'NotAllowedError') return 'blocked_autoplay_no_gesture';
     if (err.name === 'AbortError') return 'abort_error';
     return err.message || err.name;
   }
   if (err instanceof Error) {
     const msg = err.message.toLowerCase();
-    if (msg.includes('notallowed') || msg.includes('not allowed')) return 'not_allowed_error';
+    if (msg.includes('notallowed') || msg.includes('not allowed')) {
+      return 'blocked_autoplay_no_gesture';
+    }
     if (msg.includes('abort')) return 'abort_error';
     return err.message;
   }

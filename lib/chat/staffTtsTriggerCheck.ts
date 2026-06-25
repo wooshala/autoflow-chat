@@ -1,11 +1,17 @@
 import { setStaffTtsSkipReason } from '@/lib/chat/staffTtsDiagState';
-import type { StaffTtsLang } from '@/lib/chat/staffTtsLang';
+import type { StaffTtsLang, StaffTtsLangSource } from '@/lib/chat/staffTtsLang';
+
+export type StaffTtsTextOrigin = 'insert' | 'update';
 
 export type StaffTtsTriggerCheckPayload = {
   messageId: string | null;
   text: string;
   ttsLang: StaffTtsLang | string;
+  ttsLangSource: StaffTtsLangSource | string;
   translatedTts: string;
+  translatedTtsExists: boolean;
+  ttsTextLength: number;
+  ttsTextOrigin: StaffTtsTextOrigin | string;
   originalLang: string;
   isSelfMessage: boolean;
   soundEnabled: boolean;
@@ -14,15 +20,12 @@ export type StaffTtsTriggerCheckPayload = {
   localRuVoice: boolean | null;
   shouldUseServerTts: boolean;
   skipReason: string;
-  /** Extra fields for split-point diagnosis (console only). */
   viewerLang?: string;
   ttsText?: string | null;
   ttsTextSource?: string;
   toSpeak?: string | null;
   willCallPlayStaffTts?: boolean;
   willCallPlayServerStaffTts?: boolean;
-  /** @deprecated use translatedTts */
-  translatedRu?: string;
 };
 
 let lastTriggerCheck: StaffTtsTriggerCheckPayload | null = null;
@@ -32,12 +35,9 @@ export function peekStaffTtsTriggerCheck(): StaffTtsTriggerCheckPayload | null {
 }
 
 export function logStaffTtsTriggerCheck(payload: StaffTtsTriggerCheckPayload) {
-  lastTriggerCheck = {
-    ...payload,
-    translatedRu: payload.translatedTts ?? payload.translatedRu ?? ''
-  };
+  lastTriggerCheck = payload;
   setStaffTtsSkipReason(payload.skipReason);
-  console.log('[STAFF_TTS_TRIGGER_CHECK]', lastTriggerCheck);
+  console.log('[STAFF_TTS_TRIGGER_CHECK]', payload);
 }
 
 export function logStaffTtsPlaybackSkip(

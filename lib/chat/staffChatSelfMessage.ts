@@ -1,4 +1,5 @@
 import type { StaffInviteSession } from '@/lib/auth/staffInviteSession';
+import type { StaffTtsLang } from '@/lib/chat/staffTtsLang';
 import type { StaffUserKey } from '@/lib/auth/staffUsers';
 import { staffKeyLabel } from '@/lib/auth/staffUsers';
 import type { ChatMessage } from '@/lib/types';
@@ -7,6 +8,8 @@ export type StaffChatSessionIdentity = {
   currentUserId: string | null;
   currentTokenId: string | null;
   currentSenderName: string | null;
+  spokenLang: StaffTtsLang | null;
+  role: string | null;
 };
 
 export function resolveStaffChatSessionIdentity(
@@ -18,13 +21,17 @@ export function resolveStaffChatSessionIdentity(
     return {
       currentUserId: inviteSession.userId,
       currentTokenId: inviteSession.inviteId,
-      currentSenderName: inviteSession.displayName || sessionUserName || staffKeyLabel(legacy.key)
+      currentSenderName: inviteSession.displayName || sessionUserName || staffKeyLabel(legacy.key),
+      spokenLang: inviteSession.spokenLang,
+      role: inviteSession.role
     };
   }
   return {
     currentUserId: legacy.userId,
     currentTokenId: null,
-    currentSenderName: sessionUserName || staffKeyLabel(legacy.key)
+    currentSenderName: sessionUserName || staffKeyLabel(legacy.key),
+    spokenLang: null,
+    role: legacy.key === 'cleaner1' || legacy.key === 'cleaner2' ? 'cleaning' : legacy.key
   };
 }
 

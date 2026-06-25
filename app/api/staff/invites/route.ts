@@ -49,8 +49,9 @@ export async function POST(req: NextRequest) {
     const display_name = String(body?.display_name || '').trim();
     const role = String(body?.role || 'cleaning').trim();
     const user_id = body?.user_id ? String(body.user_id).trim() : null;
+    const spoken_lang = body?.spoken_lang ? String(body.spoken_lang).trim() : null;
     if (!display_name) return jsonErr('VALIDATION_ERROR', 'display_name 필요', 400);
-    const invite = await createStaffInvite({ display_name, role, user_id });
+    const invite = await createStaffInvite({ display_name, role, user_id, spoken_lang });
     const origin = req.nextUrl.origin;
     return jsonOk({ invite: { ...invite, url: staffInviteUrl(invite.token, origin) } });
   } catch (e: unknown) {

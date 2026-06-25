@@ -61,6 +61,9 @@ create table if not exists staff_invites (
   display_name text not null,
   role text not null,
   user_id uuid references users(id),
+  spoken_lang text check (
+    spoken_lang is null or spoken_lang in ('ko', 'ru', 'vi', 'en', 'zh', 'th')
+  ),
   enabled boolean not null default true,
   created_at timestamptz not null default now(),
   last_seen_at timestamptz

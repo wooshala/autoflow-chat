@@ -84,16 +84,19 @@ export async function createStaffInvite(input: {
   display_name: string;
   role: string;
   user_id?: string | null;
+  spoken_lang?: string | null;
   site_id?: string;
 }): Promise<StaffInvite> {
   const site_id = input.site_id || getSiteId();
   let token = generateInviteToken();
+  const spokenLang = input.spoken_lang?.trim() || null;
   const row = {
     site_id,
     token,
     display_name: input.display_name.trim(),
     role: input.role.trim() || 'cleaning',
     user_id: input.user_id || null,
+    spoken_lang: spokenLang,
     enabled: true
   };
 

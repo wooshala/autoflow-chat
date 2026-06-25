@@ -9,6 +9,8 @@ import {
   subscribeStaffTtsUnlockState
 } from '@/lib/chat/serverTtsClient';
 import type { StaffTtsStage } from '@/lib/chat/staffTtsDiagState';
+import type { StaffTtsLangSource } from '@/lib/chat/staffTtsLang';
+import { peekStaffTtsTriggerCheck } from '@/lib/chat/staffTtsTriggerCheck';
 import { isStaffChatDiagMode } from '@/lib/chat/staffChatDebugLog';
 
 type HealthData = {
@@ -18,11 +20,17 @@ type HealthData = {
 
 function readDiagSnapshot() {
   const { lastTtsStage, lastTtsError, lastTtsSkipReason } = peekStaffTtsDiag();
+  const trigger = peekStaffTtsTriggerCheck();
   return {
     serverTtsUnlocked: isServerStaffTtsUnlocked(),
     lastTtsStage,
     lastTtsError,
-    lastTtsSkipReason
+    lastTtsSkipReason,
+    ttsLang: trigger?.ttsLang ?? '—',
+    ttsLangSource: trigger?.ttsLangSource ?? '—',
+    translatedTtsExists: trigger?.translatedTtsExists ?? false,
+    ttsTextLength: trigger?.ttsTextLength ?? 0,
+    ttsTextOrigin: trigger?.ttsTextOrigin ?? '—'
   };
 }
 
@@ -33,6 +41,11 @@ export function useStaffTtsDiagStatus(): {
   lastTtsStage: StaffTtsStage;
   lastTtsError: string;
   lastTtsSkipReason: string;
+  ttsLang: string;
+  ttsLangSource: StaffTtsLangSource | string;
+  translatedTtsExists: boolean;
+  ttsTextLength: number;
+  ttsTextOrigin: string;
   refreshUnlockSnapshot: () => void;
 } {
   const [diagMode, setDiagMode] = useState(false);
@@ -41,6 +54,11 @@ export function useStaffTtsDiagStatus(): {
   const [lastTtsStage, setLastTtsStage] = useState<StaffTtsStage>('idle');
   const [lastTtsError, setLastTtsError] = useState('none');
   const [lastTtsSkipReason, setLastTtsSkipReason] = useState('none');
+  const [ttsLang, setTtsLang] = useState('—');
+  const [ttsLangSource, setTtsLangSource] = useState<StaffTtsLangSource | string>('—');
+  const [translatedTtsExists, setTranslatedTtsExists] = useState(false);
+  const [ttsTextLength, setTtsTextLength] = useState(0);
+  const [ttsTextOrigin, setTtsTextOrigin] = useState('—');
 
   const refreshUnlockSnapshot = useCallback(() => {
     const snap = readDiagSnapshot();
@@ -48,6 +66,11 @@ export function useStaffTtsDiagStatus(): {
     setLastTtsStage(snap.lastTtsStage);
     setLastTtsError(snap.lastTtsError);
     setLastTtsSkipReason(snap.lastTtsSkipReason);
+    setTtsLang(String(snap.ttsLang));
+    setTtsLangSource(snap.ttsLangSource);
+    setTranslatedTtsExists(snap.translatedTtsExists);
+    setTtsTextLength(snap.ttsTextLength);
+    setTtsTextOrigin(String(snap.ttsTextOrigin));
   }, []);
 
   useEffect(() => {
@@ -87,6 +110,11 @@ export function useStaffTtsDiagStatus(): {
     lastTtsStage,
     lastTtsError,
     lastTtsSkipReason,
+    ttsLang,
+    ttsLangSource,
+    translatedTtsExists,
+    ttsTextLength,
+    ttsTextOrigin,
     refreshUnlockSnapshot
   };
 }

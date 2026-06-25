@@ -1,4 +1,5 @@
 import type { StaffInvite } from '@/lib/types';
+import { isStaffTtsLang, type StaffTtsLang } from '@/lib/chat/staffTtsLang';
 
 export const STAFF_INVITE_TOKEN_STORAGE_KEY = 'autoflow_staff_invite_token_v1';
 
@@ -8,8 +9,14 @@ export type StaffInviteSession = {
   displayName: string;
   role: string;
   userId: string | null;
+  spokenLang: StaffTtsLang | null;
   siteId: string;
 };
+
+export function parseInviteSpokenLang(raw: string | null | undefined): StaffTtsLang | null {
+  const v = String(raw || '').trim();
+  return isStaffTtsLang(v) ? v : null;
+}
 
 export function loadStoredInviteToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -37,6 +44,7 @@ export function inviteToSession(invite: StaffInvite, userId: string | null): Sta
     displayName: invite.display_name,
     role: invite.role,
     userId,
+    spokenLang: parseInviteSpokenLang(invite.spoken_lang),
     siteId: invite.site_id
   };
 }

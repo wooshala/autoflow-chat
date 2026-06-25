@@ -11,6 +11,11 @@ type Props = {
   lastTtsStage: StaffTtsStage;
   lastTtsError: string;
   lastTtsSkipReason: string;
+  ttsLang: string;
+  ttsLangSource: string;
+  translatedTtsExists: boolean;
+  ttsTextLength: number;
+  ttsTextOrigin: string;
   ruVoiceReady: boolean | null;
 };
 
@@ -22,6 +27,11 @@ export default function StaffChatTtsDiagLine({
   lastTtsStage,
   lastTtsError,
   lastTtsSkipReason,
+  ttsLang,
+  ttsLangSource,
+  translatedTtsExists,
+  ttsTextLength,
+  ttsTextOrigin,
   ruVoiceReady
 }: Props) {
   const serverLabel =
@@ -36,6 +46,11 @@ export default function StaffChatTtsDiagLine({
       <span className="block">
         serverTtsAvailable={serverLabel} · serverTtsUnlocked={serverTtsUnlocked ? 'true' : 'false'} ·
         soundEnabled={soundEnabled ? 'true' : 'false'} · localRuVoice={localLabel}
+      </span>
+      <span className="block">
+        ttsLang={ttsLang} · ttsLangSource={ttsLangSource} · translatedTtsExists=
+        {translatedTtsExists ? 'true' : 'false'} · ttsTextLength={ttsTextLength} · ttsTextOrigin=
+        {ttsTextOrigin}
       </span>
       <span className="block">lastTtsStage={lastTtsStage}</span>
       <span className={`block truncate ${errorTone}`}>lastTtsError={lastTtsError}</span>

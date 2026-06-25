@@ -110,6 +110,7 @@ export interface StaffInvite {
   display_name: string;
   role: string;
   user_id: string | null;
+  spoken_lang?: string | null;
   enabled: boolean;
   created_at: string;
   last_seen_at: string | null;
