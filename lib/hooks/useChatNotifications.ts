@@ -660,6 +660,25 @@ export function useChatNotifications({
         });
       }
 
+      // Diagnostic-only: dump every gate value AT the actual OS-notification branch.
+      // shouldShowBrowserNotification mirrors the real fire condition (willBrowserNotify),
+      // i.e. isBackgroundLike (document.hidden || visibilityState !== 'visible')
+      //      && permission === 'granted' && !browserDedupeHit.
+      const shouldShowBrowserNotification = willBrowserNotify;
+      console.log('[NOTIFY_GATE]', {
+        messageId: id,
+        from: msgSide || safeId((msg as any)?.sender_name) || safeId((msg as any)?.actor_name) || null,
+        isSelf: isOwnUser,
+        notificationPermission: permission,
+        hasFocus,
+        visibilityState,
+        soundUnlocked,
+        allowHidden,
+        isBackgroundLike,
+        browserDedupeHit,
+        shouldShowBrowserNotification
+      });
+
       if (willBrowserNotify) {
         const { title, body } = buildBrowserTitleBody({
           roomNumber: classification.roomNumber,
