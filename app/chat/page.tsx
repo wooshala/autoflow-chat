@@ -35,6 +35,7 @@ import {
   TIMEOUT_MS_MAINTENANCE_CREATE
 } from '@/lib/api/timeouts';
 import { log } from '@/lib/logger';
+import { CHAT_CLIENT_REV, CHAT_PAGE_SOURCE } from '@/lib/chat/chatClientRev';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -67,6 +68,14 @@ export default function ChatPage() {
   const wasNearBottomRef = useRef(true);
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const chatSendUserId = useMemo(() => resolveChatSendUserId(), []);
+
+  useEffect(() => {
+    console.log('[CHAT_PAGE_MOUNT]', {
+      rev: CHAT_CLIENT_REV,
+      page_source: CHAT_PAGE_SOURCE,
+      href: typeof window !== 'undefined' ? window.location.href : null
+    });
+  }, []);
 
   useEffect(() => {
     console.log('[CHAT_SEND_USER_RESOLVED]', {
@@ -609,6 +618,12 @@ export default function ChatPage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-bold text-white">AutoFlow 채팅</div>
+            <div
+              className="mt-1 rounded border border-lime-400/80 bg-lime-950/80 px-2 py-1 font-mono text-sm font-bold text-lime-300"
+              data-testid="chat-deploy-rev"
+            >
+              rev={CHAT_CLIENT_REV} · {CHAT_PAGE_SOURCE}
+            </div>
             {/* 서브타이틀: 카카오 포인트 노랑 */}
             <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
             {!isMobileViewport ? (
@@ -693,6 +708,7 @@ export default function ChatPage() {
       </header>
 
       <ChatNotifyDiagBar onRequestPermission={handleNotificationClick} />
+      {/* ChatNotifyDiagBar: components/chat/ChatNotifyDiagBar.tsx — always mounted, no conditional */}
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
 
