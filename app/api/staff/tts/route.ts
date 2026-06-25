@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonErr } from '@/lib/api/envelope';
-import { synthesizeStaffTtsMp3, type ServerTtsLocale } from '@/lib/chat/serverTts';
+import {
+  STAFF_TTS_MODEL,
+  STAFF_TTS_VOICE,
+  synthesizeStaffTtsMp3,
+  type ServerTtsLocale
+} from '@/lib/chat/serverTts';
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -29,12 +34,17 @@ export async function POST(req: NextRequest) {
     return jsonErr('TTS_UNAVAILABLE', message, status);
   }
 
-  return new NextResponse(new Uint8Array(result.mp3), {
+  const mp3Bytes = new Uint8Array(result.mp3);
+  return new NextResponse(mp3Bytes, {
     status: 200,
     headers: {
       'Content-Type': 'audio/mpeg',
+      'Content-Length': String(mp3Bytes.byteLength),
       'Cache-Control': 'private, max-age=3600',
-      'X-TTS-Cache': result.cache === 'hit' ? 'HIT' : 'MISS'
+      'X-TTS-Cache': result.cache === 'hit' ? 'HIT' : 'MISS',
+      'X-TTS-Model': STAFF_TTS_MODEL,
+      'X-TTS-Voice': STAFF_TTS_VOICE,
+      'X-TTS-Input-Len': String(text.length)
     }
   });
 }

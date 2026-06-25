@@ -116,6 +116,61 @@ function cleanupActiveAudio() {
   }
 }
 
+type TtsPayloadKind = 'mp3' | 'json_error' | 'unknown' | 'empty';
+
+async function classifyTtsBlob(
+  blob: Blob,
+  contentType: string | null
+): Promise<{ payloadKind: TtsPayloadKind; jsonErrorPreview?: string }> {
+  if (!blob.size) return { payloadKind: 'empty' };
+
+  const ct = (contentType || '').toLowerCase();
+  if (ct.includes('application/json')) {
+    const text = await blob.slice(0, 2000).text();
+    return { payloadKind: 'json_error', jsonErrorPreview: text.slice(0, 300) };
+  }
+
+  const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  const isId3 = head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33;
+  const isMp3Frame = head[0] === 0xff && (head[1] & 0xe0) === 0xe0;
+  if (isId3 || isMp3Frame || ct.includes('audio/mpeg') || ct.includes('audio/mp3')) {
+    return { payloadKind: 'mp3' };
+  }
+
+  if (head[0] === 0x7b) {
+    const text = await blob.slice(0, 2000).text();
+    return { payloadKind: 'json_error', jsonErrorPreview: text.slice(0, 300) };
+  }
+
+  return { payloadKind: 'unknown' };
+}
+
+function waitAudioMetadata(audio: HTMLAudioElement): Promise<void> {
+  if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const onMeta = () => {
+      cleanup();
+      resolve();
+    };
+    const onErr = () => {
+      cleanup();
+      reject(new Error('audio_metadata_load_failed'));
+    };
+    const cleanup = () => {
+      audio.removeEventListener('loadedmetadata', onMeta);
+      audio.removeEventListener('error', onErr);
+    };
+    audio.addEventListener('loadedmetadata', onMeta);
+    audio.addEventListener('error', onErr);
+  });
+}
+
+function logStaffTtsPlaybackDiag(payload: Record<string, unknown>) {
+  console.log('[STAFF_TTS_PLAYBACK_DIAG]', payload);
+}
+
 /**
  * Call synchronously inside a user gesture (e.g. 🔊 ON click).
  * Plays silent audio to satisfy mobile autoplay policy.
@@ -206,20 +261,97 @@ export async function playServerStaffTts(
       body: JSON.stringify({ text: preview, locale })
     });
 
+    const responseStatus = res.status;
+    const contentType = res.headers.get('content-type');
+    const contentLength = res.headers.get('content-length');
+    const openaiModel = res.headers.get('x-tts-model');
+    const openaiVoice = res.headers.get('x-tts-voice');
+    const headerInputLen = res.headers.get('x-tts-input-len');
+    const inputLength = headerInputLen ? Number(headerInputLen) : preview.length;
+    const ttsCache = res.headers.get('X-TTS-Cache');
+
     if (!res.ok) {
       const err = `http_${res.status}`;
+      let payloadKind: TtsPayloadKind = 'unknown';
+      let jsonErrorPreview: string | undefined;
+      try {
+        const errBlob = await res.blob();
+        const classified = await classifyTtsBlob(errBlob, contentType);
+        payloadKind = classified.payloadKind;
+        jsonErrorPreview = classified.jsonErrorPreview;
+      } catch {
+        /* ignore */
+      }
+      logStaffTtsPlaybackDiag({
+        phase: 'http_error',
+        responseStatus,
+        contentType,
+        contentLength,
+        blobSize: 0,
+        payloadKind,
+        jsonErrorPreview,
+        objectUrl: null,
+        audioDuration: null,
+        audioVolume: null,
+        audioMuted: null,
+        openaiModel,
+        openaiVoice,
+        inputLength,
+        ttsCache
+      });
       console.log('[STAFF_SERVER_TTS_CLIENT_FAILED]', {
         status: res.status,
-        cache: res.headers.get('X-TTS-Cache')
+        cache: ttsCache
       });
       setStaffTtsError(err);
       return false;
     }
 
     const blob = await res.blob();
+    const { payloadKind, jsonErrorPreview } = await classifyTtsBlob(blob, contentType);
+
     if (!blob.size) {
+      logStaffTtsPlaybackDiag({
+        phase: 'empty_blob',
+        responseStatus,
+        contentType,
+        contentLength,
+        blobSize: 0,
+        payloadKind,
+        jsonErrorPreview,
+        objectUrl: null,
+        audioDuration: null,
+        audioVolume: null,
+        audioMuted: null,
+        openaiModel,
+        openaiVoice,
+        inputLength,
+        ttsCache
+      });
       console.log('[STAFF_SERVER_TTS_CLIENT_FAILED]', { reason: 'empty_blob' });
       setStaffTtsError('empty_blob');
+      return false;
+    }
+
+    if (payloadKind === 'json_error') {
+      logStaffTtsPlaybackDiag({
+        phase: 'json_instead_of_mp3',
+        responseStatus,
+        contentType,
+        contentLength,
+        blobSize: blob.size,
+        payloadKind,
+        jsonErrorPreview,
+        objectUrl: null,
+        audioDuration: null,
+        audioVolume: null,
+        audioMuted: null,
+        openaiModel,
+        openaiVoice,
+        inputLength,
+        ttsCache
+      });
+      setStaffTtsError('response_json_not_mp3');
       return false;
     }
 
@@ -230,8 +362,74 @@ export async function playServerStaffTts(
     activeBlobUrl = url;
     const audio = new Audio(url);
     activeAudio = audio;
+
+    try {
+      await waitAudioMetadata(audio);
+    } catch (metaErr: unknown) {
+      const error = metaErr instanceof Error ? metaErr.message : String(metaErr);
+      logStaffTtsPlaybackDiag({
+        phase: 'metadata_failed',
+        responseStatus,
+        contentType,
+        contentLength,
+        blobSize: blob.size,
+        payloadKind,
+        jsonErrorPreview,
+        objectUrl: url,
+        audioDuration: Number.isFinite(audio.duration) ? audio.duration : null,
+        audioVolume: audio.volume,
+        audioMuted: audio.muted,
+        openaiModel,
+        openaiVoice,
+        inputLength,
+        ttsCache,
+        readyState: audio.readyState,
+        error
+      });
+      setStaffTtsError(error);
+      cleanupActiveAudio();
+      return false;
+    }
+
+    logStaffTtsPlaybackDiag({
+      phase: 'before_play',
+      responseStatus,
+      contentType,
+      contentLength,
+      blobSize: blob.size,
+      payloadKind,
+      jsonErrorPreview,
+      objectUrl: url,
+      audioDuration: Number.isFinite(audio.duration) ? audio.duration : null,
+      audioVolume: audio.volume,
+      audioMuted: audio.muted,
+      openaiModel,
+      openaiVoice,
+      inputLength,
+      ttsCache,
+      readyState: audio.readyState
+    });
+
     audio.onended = () => {
       setStaffTtsStage('audio_play_ended');
+      logStaffTtsPlaybackDiag({
+        phase: 'play_ended',
+        responseStatus,
+        contentType,
+        contentLength,
+        blobSize: blob.size,
+        payloadKind,
+        objectUrl: url,
+        audioDuration: Number.isFinite(audio.duration) ? audio.duration : null,
+        audioVolume: audio.volume,
+        audioMuted: audio.muted,
+        openaiModel,
+        openaiVoice,
+        inputLength,
+        ttsCache,
+        currentTime: audio.currentTime,
+        readyState: audio.readyState
+      });
       console.log('[STAFF_SERVER_TTS_CLIENT_ENDED]', { preview: preview.slice(0, 80) });
     };
 
@@ -239,8 +437,45 @@ export async function playServerStaffTts(
       await audio.play();
       setStaffTtsStage('audio_play_started');
       setStaffTtsError('none');
+      logStaffTtsPlaybackDiag({
+        phase: 'play_started',
+        responseStatus,
+        contentType,
+        contentLength,
+        blobSize: blob.size,
+        payloadKind,
+        objectUrl: url,
+        audioDuration: Number.isFinite(audio.duration) ? audio.duration : null,
+        audioVolume: audio.volume,
+        audioMuted: audio.muted,
+        openaiModel,
+        openaiVoice,
+        inputLength,
+        ttsCache,
+        currentTime: audio.currentTime,
+        readyState: audio.readyState,
+        paused: audio.paused
+      });
     } catch (playErr: unknown) {
       const error = normalizeStaffTtsPlayError(playErr);
+      logStaffTtsPlaybackDiag({
+        phase: 'play_failed',
+        responseStatus,
+        contentType,
+        contentLength,
+        blobSize: blob.size,
+        payloadKind,
+        objectUrl: url,
+        audioDuration: Number.isFinite(audio.duration) ? audio.duration : null,
+        audioVolume: audio.volume,
+        audioMuted: audio.muted,
+        openaiModel,
+        openaiVoice,
+        inputLength,
+        ttsCache,
+        error,
+        readyState: audio.readyState
+      });
       console.log('[STAFF_SERVER_TTS_AUDIO_PLAY_FAILED]', { error, fromUserGesture });
       setStaffTtsStage('audio_play_failed');
       setStaffTtsError(error);
@@ -254,7 +489,7 @@ export async function playServerStaffTts(
 
     console.log('[STAFF_SERVER_TTS_CLIENT_PLAYING]', {
       preview: preview.slice(0, 80),
-      cache: res.headers.get('X-TTS-Cache'),
+      cache: ttsCache,
       diag: peekStaffTtsDiag()
     });
     return true;

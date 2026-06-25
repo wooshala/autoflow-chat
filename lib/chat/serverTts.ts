@@ -5,8 +5,8 @@ export type ServerTtsLocale = 'ru';
 
 const MAX_TEXT_LEN = 120;
 const MAX_CACHE_ENTRIES = 200;
-const TTS_MODEL = 'tts-1';
-const TTS_VOICE = 'nova';
+export const STAFF_TTS_MODEL = 'tts-1';
+export const STAFF_TTS_VOICE = 'nova';
 
 const mp3Cache = new Map<string, Buffer>();
 
@@ -55,10 +55,14 @@ export async function synthesizeStaffTtsMp3(
   }
 
   try {
-    console.log('[STAFF_SERVER_TTS_START]', { locale, textLen: preview.length, model: TTS_MODEL });
+    console.log('[STAFF_SERVER_TTS_START]', {
+      locale,
+      textLen: preview.length,
+      model: STAFF_TTS_MODEL
+    });
     const response = await openai.audio.speech.create({
-      model: TTS_MODEL,
-      voice: TTS_VOICE,
+      model: STAFF_TTS_MODEL,
+      voice: STAFF_TTS_VOICE,
       input: preview,
       response_format: 'mp3'
     });
