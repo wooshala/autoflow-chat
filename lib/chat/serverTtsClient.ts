@@ -4,6 +4,11 @@ import {
   type StaffTtsLang
 } from '@/lib/chat/staffTtsLang';
 import {
+  logStaffTtsUserActivation,
+  peekStaffTtsUserActivation,
+  STAFF_AUTO_TTS_CALL_PATH
+} from '@/lib/chat/staffTtsUserActivationDiag';
+import {
   normalizeStaffTtsPlayError,
   peekStaffTtsDiag,
   peekStaffTtsError,
@@ -28,9 +33,49 @@ const SILENT_WAV =
 const STORAGE_SERVER_TTS_ARMED = 'autoflow_staff_server_tts_armed_v1';
 
 let serverTtsUnlocked = false;
-let unlockAudio: HTMLAudioElement | null = null;
-let activeAudio: HTMLAudioElement | null = null;
+/** Singleton TTS playback element — unlock and mp3 play share this element. */
+let serverTtsAudio: HTMLAudioElement | null = null;
 let activeBlobUrl: string | null = null;
+
+export function getServerTtsAudioElement(): HTMLAudioElement {
+  if (typeof window === 'undefined') {
+    throw new Error('no_window');
+  }
+  if (!serverTtsAudio) {
+    serverTtsAudio = new Audio();
+    serverTtsAudio.preload = 'auto';
+  }
+  return serverTtsAudio;
+}
+
+function isSameTtsElement(audio: HTMLAudioElement): boolean {
+  return serverTtsAudio === audio;
+}
+
+function revokeActiveBlobUrl() {
+  if (activeBlobUrl) {
+    URL.revokeObjectURL(activeBlobUrl);
+    activeBlobUrl = null;
+  }
+}
+
+/** Pause in-flight playback before swapping src (duplicate TTS prevention). */
+function prepareTtsAudioForSrcSwap(): HTMLAudioElement {
+  const audio = getServerTtsAudioElement();
+  audio.pause();
+  audio.currentTime = 0;
+  audio.volume = 1;
+  audio.muted = false;
+  return audio;
+}
+
+function stopTtsPlaybackAndRevokeBlob() {
+  if (serverTtsAudio) {
+    serverTtsAudio.pause();
+    serverTtsAudio.currentTime = 0;
+  }
+  revokeActiveBlobUrl();
+}
 
 export function subscribeStaffTtsUnlockState(listener: () => void): () => void {
   return subscribeStaffTtsDiag(listener);
@@ -73,6 +118,7 @@ export function hydrateServerStaffTtsUnlockFromStorage(): void {
 
 export function resetServerStaffTtsUnlock() {
   serverTtsUnlocked = false;
+  stopTtsPlaybackAndRevokeBlob();
   try {
     sessionStorage.removeItem(STORAGE_SERVER_TTS_ARMED);
   } catch {
@@ -102,18 +148,6 @@ async function unlockViaAudioContext(): Promise<boolean> {
     }
   }, 100);
   return true;
-}
-
-function cleanupActiveAudio() {
-  if (activeAudio) {
-    activeAudio.pause();
-    activeAudio.src = '';
-    activeAudio = null;
-  }
-  if (activeBlobUrl) {
-    URL.revokeObjectURL(activeBlobUrl);
-    activeBlobUrl = null;
-  }
 }
 
 type TtsPayloadKind = 'mp3' | 'json_error' | 'unknown' | 'empty';
@@ -171,9 +205,21 @@ function logStaffTtsPlaybackDiag(payload: Record<string, unknown>) {
   console.log('[STAFF_TTS_PLAYBACK_DIAG]', payload);
 }
 
+function attachBlobUrlToSingletonAudio(blob: Blob): { audio: HTMLAudioElement; url: string } {
+  const audio = prepareTtsAudioForSrcSwap();
+  revokeActiveBlobUrl();
+  const url = URL.createObjectURL(blob);
+  activeBlobUrl = url;
+  audio.src = url;
+  audio.volume = 1;
+  audio.muted = false;
+  audio.load();
+  return { audio, url };
+}
+
 /**
  * Call synchronously inside a user gesture (e.g. 🔊 ON click).
- * Plays silent audio to satisfy mobile autoplay policy.
+ * Plays silent audio on the singleton element to satisfy mobile autoplay policy.
  */
 export async function unlockServerStaffTts(): Promise<boolean> {
   console.log('[STAFF_SERVER_TTS_UNLOCK_START]');
@@ -182,31 +228,39 @@ export async function unlockServerStaffTts(): Promise<boolean> {
     return false;
   }
 
-  // User-gesture entry: arm immediately (notification unlock uses the same pattern).
   armServerStaffTtsUnlock();
 
+  const audio = getServerTtsAudioElement();
+  logStaffTtsUserActivation('unlock_before_silent_play', {
+    sameElement: true
+  });
+
   try {
-    if (!unlockAudio) {
-      unlockAudio = new Audio(SILENT_WAV);
-      unlockAudio.volume = 0.001;
-      unlockAudio.preload = 'auto';
-    }
-    unlockAudio.currentTime = 0;
-    await unlockAudio.play();
-    console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'silent_audio' });
+    revokeActiveBlobUrl();
+    audio.pause();
+    audio.currentTime = 0;
+    audio.src = SILENT_WAV;
+    audio.volume = 0.001;
+    audio.muted = false;
+    audio.load();
+    await audio.play();
+    audio.volume = 1;
+    audio.muted = false;
+    console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'silent_audio', sameElement: true });
     return true;
   } catch (audioErr: unknown) {
     const audioError = audioErr instanceof Error ? audioErr.message : String(audioErr);
     console.log('[STAFF_SERVER_TTS_UNLOCK_RETRY]', { method: 'audio_context', audioError });
     try {
       await unlockViaAudioContext();
-      console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'audio_context' });
+      audio.volume = 1;
+      audio.muted = false;
+      console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'audio_context', sameElement: true });
       return true;
     } catch (ctxErr: unknown) {
       const error = ctxErr instanceof Error ? ctxErr.message : String(ctxErr);
       console.log('[STAFF_SERVER_TTS_UNLOCK_AUDIO_FAILED]', { audioError, error, armed: true });
       setStaffTtsError(`unlock_audio_failed:${error}`);
-      // Keep serverTtsUnlocked=true — gate passes; mp3 play may still need gesture.
       return true;
     }
   }
@@ -218,7 +272,7 @@ export type PlayServerStaffTtsOptions = {
 };
 
 /**
- * Fetch TTS mp3 from server and play via HTMLAudioElement.
+ * Fetch TTS mp3 from server and play via singleton HTMLAudioElement.
  */
 export async function playServerStaffTts(
   text: string,
@@ -234,6 +288,9 @@ export async function playServerStaffTts(
     locale,
     unlocked: serverTtsUnlocked,
     fromUserGesture,
+    sameElement: true,
+    autoTtsCallPath: fromUserGesture ? null : STAFF_AUTO_TTS_CALL_PATH,
+    userActivation: peekStaffTtsUserActivation(),
     diag: peekStaffTtsDiag()
   });
 
@@ -297,7 +354,8 @@ export async function playServerStaffTts(
         openaiModel,
         openaiVoice,
         inputLength,
-        ttsCache
+        ttsCache,
+        sameElement: true
       });
       console.log('[STAFF_SERVER_TTS_CLIENT_FAILED]', {
         status: res.status,
@@ -326,7 +384,8 @@ export async function playServerStaffTts(
         openaiModel,
         openaiVoice,
         inputLength,
-        ttsCache
+        ttsCache,
+        sameElement: true
       });
       console.log('[STAFF_SERVER_TTS_CLIENT_FAILED]', { reason: 'empty_blob' });
       setStaffTtsError('empty_blob');
@@ -349,7 +408,8 @@ export async function playServerStaffTts(
         openaiModel,
         openaiVoice,
         inputLength,
-        ttsCache
+        ttsCache,
+        sameElement: true
       });
       setStaffTtsError('response_json_not_mp3');
       return false;
@@ -357,11 +417,14 @@ export async function playServerStaffTts(
 
     setStaffTtsStage('tts_response_received');
 
-    cleanupActiveAudio();
-    const url = URL.createObjectURL(blob);
-    activeBlobUrl = url;
-    const audio = new Audio(url);
-    activeAudio = audio;
+    const userActivationAfterFetch = logStaffTtsUserActivation('after_fetch_before_src_swap', {
+      fromUserGesture,
+      responseStatus,
+      blobSize: blob.size,
+      sameElement: true
+    });
+
+    const { audio, url } = attachBlobUrlToSingletonAudio(blob);
 
     try {
       await waitAudioMetadata(audio);
@@ -384,10 +447,11 @@ export async function playServerStaffTts(
         inputLength,
         ttsCache,
         readyState: audio.readyState,
-        error
+        error,
+        sameElement: isSameTtsElement(audio)
       });
       setStaffTtsError(error);
-      cleanupActiveAudio();
+      stopTtsPlaybackAndRevokeBlob();
       return false;
     }
 
@@ -407,7 +471,13 @@ export async function playServerStaffTts(
       openaiVoice,
       inputLength,
       ttsCache,
-      readyState: audio.readyState
+      readyState: audio.readyState,
+      fromUserGesture,
+      autoTtsCallPath: fromUserGesture ? null : STAFF_AUTO_TTS_CALL_PATH,
+      userActivationIsActive: userActivationAfterFetch.isActive,
+      userActivationHasBeenActive: userActivationAfterFetch.hasBeenActive,
+      autoplayPolicy: userActivationAfterFetch.autoplayPolicy,
+      sameElement: isSameTtsElement(audio)
     });
 
     audio.onended = () => {
@@ -428,12 +498,22 @@ export async function playServerStaffTts(
         inputLength,
         ttsCache,
         currentTime: audio.currentTime,
-        readyState: audio.readyState
+        readyState: audio.readyState,
+        sameElement: isSameTtsElement(audio)
       });
+      revokeActiveBlobUrl();
       console.log('[STAFF_SERVER_TTS_CLIENT_ENDED]', { preview: preview.slice(0, 80) });
     };
 
     try {
+      const userActivationAtPlay = logStaffTtsUserActivation('audio_play_immediately_before', {
+        fromUserGesture,
+        audioDuration: Number.isFinite(audio.duration) ? audio.duration : null,
+        audioVolume: audio.volume,
+        audioMuted: audio.muted,
+        objectUrl: url,
+        sameElement: isSameTtsElement(audio)
+      });
       await audio.play();
       setStaffTtsStage('audio_play_started');
       setStaffTtsError('none');
@@ -454,10 +534,16 @@ export async function playServerStaffTts(
         ttsCache,
         currentTime: audio.currentTime,
         readyState: audio.readyState,
-        paused: audio.paused
+        paused: audio.paused,
+        fromUserGesture,
+        userActivationIsActive: userActivationAtPlay.isActive,
+        userActivationHasBeenActive: userActivationAtPlay.hasBeenActive,
+        autoplayPolicy: userActivationAtPlay.autoplayPolicy,
+        sameElement: isSameTtsElement(audio)
       });
     } catch (playErr: unknown) {
       const error = normalizeStaffTtsPlayError(playErr);
+      const userActivationOnFail = peekStaffTtsUserActivation();
       logStaffTtsPlaybackDiag({
         phase: 'play_failed',
         responseStatus,
@@ -474,12 +560,21 @@ export async function playServerStaffTts(
         inputLength,
         ttsCache,
         error,
-        readyState: audio.readyState
+        readyState: audio.readyState,
+        fromUserGesture,
+        userActivationIsActive: userActivationOnFail.isActive,
+        userActivationHasBeenActive: userActivationOnFail.hasBeenActive,
+        autoplayPolicy: userActivationOnFail.autoplayPolicy,
+        sameElement: isSameTtsElement(audio),
+        likelyCause:
+          error === 'blocked_autoplay_no_gesture' && !userActivationOnFail.isActive
+            ? 'browser_policy_no_transient_activation'
+            : null
       });
-      console.log('[STAFF_SERVER_TTS_AUDIO_PLAY_FAILED]', { error, fromUserGesture });
+      console.log('[STAFF_SERVER_TTS_AUDIO_PLAY_FAILED]', { error, fromUserGesture, sameElement: true });
       setStaffTtsStage('audio_play_failed');
       setStaffTtsError(error);
-      cleanupActiveAudio();
+      stopTtsPlaybackAndRevokeBlob();
       return false;
     }
 
@@ -490,6 +585,7 @@ export async function playServerStaffTts(
     console.log('[STAFF_SERVER_TTS_CLIENT_PLAYING]', {
       preview: preview.slice(0, 80),
       cache: ttsCache,
+      sameElement: true,
       diag: peekStaffTtsDiag()
     });
     return true;
@@ -499,7 +595,7 @@ export async function playServerStaffTts(
       error: err
     });
     setStaffTtsError(err);
-    cleanupActiveAudio();
+    stopTtsPlaybackAndRevokeBlob();
     return false;
   }
 }
