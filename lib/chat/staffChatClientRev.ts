@@ -1,2 +1,2 @@
 /** Bump when staff-chat client diag/TTS behavior changes — visible in ?debug=1 diag line. */
-export const STAFF_CHAT_CLIENT_REV = 'p0-notify-loud-v14';
+export const STAFF_CHAT_CLIENT_REV = 'staff-timeline-v15';

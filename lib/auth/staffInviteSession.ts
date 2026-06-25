@@ -66,3 +66,8 @@ export function readDeprecatedUserParamFromUrl(): string | null {
     return null;
   }
 }
+
+/** True when legacy `?user=` identity is explicitly requested (not invite `?t=`). */
+export function hasLegacyStaffUserParamInUrl(): boolean {
+  return Boolean(readDeprecatedUserParamFromUrl());
+}

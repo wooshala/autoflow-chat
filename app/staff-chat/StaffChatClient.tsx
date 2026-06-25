@@ -69,6 +69,7 @@ import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
 import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
+import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
 import {
   inviteToSession,
   loadStoredInviteToken,
@@ -214,12 +215,29 @@ function StaffChatPageInner() {
 
   const { messages, setMessages, loadFull, initialHydrationComplete, initialLoadStatus } = useChatLoader({
     loadingRef: isLoadingRef,
-    listTimeoutMs: 10_000
+    listTimeoutMs: 10_000,
+    initialListLimit: STAFF_CHAT_LIST_LIMIT,
+    deltaListLimit: STAFF_CHAT_DELTA_LIMIT
   });
 
   useEffect(() => {
     async function bootstrapInvite() {
+      const legacyUser = readDeprecatedUserParamFromUrl();
       const urlToken = readInviteTokenFromUrl();
+
+      // Legacy ?user=cleaner1: sender identity only — do not block on stored invite token.
+      if (legacyUser && !urlToken) {
+        setInviteSession(null);
+        setDeprecatedWarned(true);
+        setInvitePhase('ready');
+        staffChatLog('STAFF_CHAT_LEGACY_USER_MODE', {
+          userParam: legacyUser,
+          inviteTokenIgnored: Boolean(loadStoredInviteToken()),
+          timelineFilter: 'none'
+        });
+        return;
+      }
+
       const storedToken = loadStoredInviteToken();
       const token = urlToken || storedToken;
 
@@ -237,11 +255,22 @@ function StaffChatPageInner() {
         } catch {
           /* fall through */
         }
+        if (legacyUser) {
+          setInviteSession(null);
+          setDeprecatedWarned(true);
+          setInvitePhase('ready');
+          staffChatLog('STAFF_CHAT_LEGACY_USER_FALLBACK', {
+            userParam: legacyUser,
+            reason: 'invite_token_invalid',
+            timelineFilter: 'none'
+          });
+          return;
+        }
         setInvitePhase('invalid');
         return;
       }
 
-      if (readDeprecatedUserParamFromUrl()) {
+      if (legacyUser) {
         setDeprecatedWarned(true);
       }
       setInvitePhase('ready');
@@ -344,13 +373,25 @@ function StaffChatPageInner() {
     }
     if (listPhase === 'error') return;
     staffChatLog('STAFF_CHAT_LIST_SUCCESS', { message_count: messages.length });
+    const visible = messages.filter((m) => !m.is_deleted);
+    const mobileCount = visible.filter((m) => m.sender_side === 'mobile').length;
+    const pcCount = visible.filter((m) => m.sender_side === 'pc').length;
+    staffChatLog('STAFF_CHAT_TIMELINE_LOADED', {
+      message_count: visible.length,
+      mobile_count: mobileCount,
+      pc_count: pcCount,
+      list_limit: STAFF_CHAT_LIST_LIMIT,
+      user_filter: 'none',
+      userParam: userParam || null,
+      staffKey
+    });
     setListPhase('ready');
     staffChatLog('STAFF_CHAT_READY', {
       staffKey,
       message_count: messages.length,
       hasSession: Boolean(sessionUser)
     });
-  }, [initialHydrationComplete, initialLoadStatus, messages.length, listPhase, staffKey, sessionUser]);
+  }, [initialHydrationComplete, initialLoadStatus, messages, listPhase, staffKey, sessionUser, userParam]);
 
   const retryListLoad = useCallback(async () => {
     staffChatLog('STAFF_CHAT_LIST_START', { source: 'manual_retry' });
@@ -1055,7 +1096,7 @@ function StaffChatPageInner() {
     { code: 'ru', flag: '🇷🇺' }
   ];
 
-  const recentMessages = useMemo(() => messages.filter((m) => !m.is_deleted).slice(-80), [messages]);
+  const timelineMessages = useMemo(() => messages.filter((m) => !m.is_deleted), [messages]);
 
   if (invitePhase === 'loading' || !i18nHydrated) {
     return (
@@ -1237,11 +1278,11 @@ function StaffChatPageInner() {
               {t('retry')}
             </button>
           </div>
-        ) : recentMessages.length === 0 ? (
+        ) : timelineMessages.length === 0 ? (
           <p className="py-12 text-center text-sm text-gray-400">{t('noMessages')}</p>
         ) : (
           <div className="space-y-2 pb-2">
-            {recentMessages.map((m) => {
+            {timelineMessages.map((m) => {
               const mine = isStaffChatSelfMessage(m, staffSession);
               const urgent = isUrgentMessage(m);
               const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';

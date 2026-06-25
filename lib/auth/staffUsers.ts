@@ -80,6 +80,11 @@ export function normalizeStaffUserKey(raw: string | null | undefined): StaffUser
 
   if (p === 'cleaner2' || p === 'cleaner-2' || p === 'staff2') return 'cleaner2';
 
+  // Legacy mobile aliases → cleaner1
+  if (p === 'cleaner1' || p === 'cleaner-1' || p === 'staff' || p === 'staff1' || p === 'mobile') {
+    return 'cleaner1';
+  }
+
   return 'cleaner1';
 
 }

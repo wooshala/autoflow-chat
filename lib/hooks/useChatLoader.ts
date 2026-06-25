@@ -32,12 +32,18 @@ export type UseChatLoaderOptions = {
   loadingRef?: MutableRefObject<boolean>;
   /** Override default list fetch timeout (ms). Staff-chat uses shorter value. */
   listTimeoutMs?: number;
+  /** Full-table list limit (default 50). Staff-chat uses higher value for shared timeline. */
+  initialListLimit?: number;
+  /** Delta (since) list limit (default 40). */
+  deltaListLimit?: number;
 };
 
 export function useChatLoader(options?: UseChatLoaderOptions) {
   const internalLoadingRef = useRef(false);
   const loadingRef = options?.loadingRef ?? internalLoadingRef;
   const listTimeoutMs = options?.listTimeoutMs ?? TIMEOUT_MS_CHAT_LIST;
+  const initialListLimit = options?.initialListLimit ?? 50;
+  const deltaListLimit = options?.deltaListLimit ?? 40;
 
   const isMountedRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -75,14 +81,14 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         log.debug('[CHAT_LOAD_START]', {
           source,
           since: opts?.since ?? null,
-          limit: opts?.since ? 40 : 50,
+          limit: opts?.since ? deltaListLimit : initialListLimit,
           seq: mySeq
         });
       }
 
       try {
         const params = new URLSearchParams();
-        params.set('limit', opts?.since ? '40' : '50');
+        params.set('limit', String(opts?.since ? deltaListLimit : initialListLimit));
         if (opts?.since) params.set('since', opts.since);
         const listUrl = `${CHAT_LIST_URL}?${params.toString()}`;
         const result = await fetchEnvelope<ChatListData>(listUrl, {
@@ -247,7 +253,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         }
       }
     },
-    [loadingRef, listTimeoutMs]
+    [loadingRef, listTimeoutMs, initialListLimit, deltaListLimit]
   );
 
   const loadFull = useCallback(async (source: string) => load(source, { mode: 'full' }), [load]);
