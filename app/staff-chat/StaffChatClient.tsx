@@ -35,6 +35,8 @@ import { isUrgentMessage } from '@/lib/chat/messagePriority';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
 import {
+  armServerStaffTtsUnlock,
+  hydrateServerStaffTtsUnlockFromStorage,
   isServerStaffTtsUnlocked,
   resetServerStaffTtsUnlock,
   unlockServerStaffTts
@@ -401,12 +403,16 @@ function StaffChatPageInner() {
   useEffect(() => {
     const stored = loadSoundEnabled();
     setSoundEnabled(stored);
+    if (stored) {
+      hydrateServerStaffTtsUnlockFromStorage();
+    }
+    refreshUnlockSnapshot();
     console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
       event: 'hydrate_from_storage',
       soundEnabled: stored,
       serverTtsUnlocked: isServerStaffTtsUnlocked()
     });
-  }, []);
+  }, [refreshUnlockSnapshot]);
 
   useEffect(() => {
     if (!isBrowserNotificationSupported()) {
@@ -856,7 +862,9 @@ function StaffChatPageInner() {
     if (soundEnabled && !isServerStaffTtsUnlocked()) {
       unlockNotificationAudio();
       unlockStaffTts();
-      void unlockServerStaffTts().then(() => refreshUnlockSnapshot());
+      armServerStaffTtsUnlock();
+      refreshUnlockSnapshot();
+      void unlockServerStaffTts();
       console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
         event: 're_unlock_while_on',
         soundEnabled: true
@@ -875,7 +883,9 @@ function StaffChatPageInner() {
     if (next) {
       unlockNotificationAudio();
       unlockStaffTts();
-      void unlockServerStaffTts().then(() => refreshUnlockSnapshot());
+      armServerStaffTtsUnlock();
+      refreshUnlockSnapshot();
+      void unlockServerStaffTts();
     } else {
       resetServerStaffTtsUnlock();
       refreshUnlockSnapshot();

@@ -25,6 +25,8 @@ export {
 const SILENT_WAV =
   'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
+const STORAGE_SERVER_TTS_ARMED = 'autoflow_staff_server_tts_armed_v1';
+
 let serverTtsUnlocked = false;
 let unlockAudio: HTMLAudioElement | null = null;
 let activeAudio: HTMLAudioElement | null = null;
@@ -43,8 +45,39 @@ export function isServerStaffTtsUnlocked(): boolean {
   return serverTtsUnlocked;
 }
 
+/** Sync arm on user gesture — matches unlockNotificationAudio() pattern. */
+export function armServerStaffTtsUnlock(): void {
+  if (typeof window === 'undefined') return;
+  serverTtsUnlocked = true;
+  try {
+    sessionStorage.setItem(STORAGE_SERVER_TTS_ARMED, '1');
+  } catch {
+    /* ignore */
+  }
+  setStaffTtsError('none');
+  console.log('[STAFF_SERVER_TTS_ARMED]', { method: 'sync_flag' });
+}
+
+/** Restore arm for this browser tab when sound was left ON. */
+export function hydrateServerStaffTtsUnlockFromStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (sessionStorage.getItem(STORAGE_SERVER_TTS_ARMED) === '1') {
+      serverTtsUnlocked = true;
+      console.log('[STAFF_SERVER_TTS_ARMED]', { method: 'session_storage_hydrate' });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function resetServerStaffTtsUnlock() {
   serverTtsUnlocked = false;
+  try {
+    sessionStorage.removeItem(STORAGE_SERVER_TTS_ARMED);
+  } catch {
+    /* ignore */
+  }
 }
 
 async function unlockViaAudioContext(): Promise<boolean> {
@@ -94,6 +127,9 @@ export async function unlockServerStaffTts(): Promise<boolean> {
     return false;
   }
 
+  // User-gesture entry: arm immediately (notification unlock uses the same pattern).
+  armServerStaffTtsUnlock();
+
   try {
     if (!unlockAudio) {
       unlockAudio = new Audio(SILENT_WAV);
@@ -102,8 +138,6 @@ export async function unlockServerStaffTts(): Promise<boolean> {
     }
     unlockAudio.currentTime = 0;
     await unlockAudio.play();
-    serverTtsUnlocked = true;
-    setStaffTtsError('none');
     console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'silent_audio' });
     return true;
   } catch (audioErr: unknown) {
@@ -111,16 +145,14 @@ export async function unlockServerStaffTts(): Promise<boolean> {
     console.log('[STAFF_SERVER_TTS_UNLOCK_RETRY]', { method: 'audio_context', audioError });
     try {
       await unlockViaAudioContext();
-      serverTtsUnlocked = true;
-      setStaffTtsError('none');
       console.log('[STAFF_SERVER_TTS_UNLOCK_OK]', { method: 'audio_context' });
       return true;
     } catch (ctxErr: unknown) {
-      serverTtsUnlocked = false;
       const error = ctxErr instanceof Error ? ctxErr.message : String(ctxErr);
-      console.log('[STAFF_SERVER_TTS_UNLOCK_FAILED]', { audioError, error });
-      setStaffTtsError(`unlock_failed:${error}`);
-      return false;
+      console.log('[STAFF_SERVER_TTS_UNLOCK_AUDIO_FAILED]', { audioError, error, armed: true });
+      setStaffTtsError(`unlock_audio_failed:${error}`);
+      // Keep serverTtsUnlocked=true — gate passes; mp3 play may still need gesture.
+      return true;
     }
   }
 }
