@@ -16,7 +16,8 @@ export function useChatRealtime({
   lastRealtimeActivityAtRef,
   lastRealtimeInsertPushAtRef,
   reconnectToken,
-  onConnectionStatus
+  onConnectionStatus,
+  onRowEvent
 }: {
   supabase: any;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -26,6 +27,8 @@ export function useChatRealtime({
   lastRealtimeInsertPushAtRef: React.MutableRefObject<number | null>;
   reconnectToken?: number;
   onConnectionStatus?: (s: 'connected' | 'degraded' | 'reconnecting') => void;
+  /** Diagnostics: notified per realtime row event so callers can label INSERT vs UPDATE. */
+  onRowEvent?: (e: { id: string; type: 'INSERT' | 'UPDATE' }) => void;
 }) {
   useEffect(() => {
     if (!supabase) return;
@@ -107,6 +110,7 @@ export function useChatRealtime({
           has_translated_ru: Boolean((row as any)?.translated_text?.ru)
         });
         logRealtimeReceived(String(row.id), row.room_no ?? null, row.sender_side ?? null);
+        onRowEvent?.({ id: String(row.id), type: 'INSERT' });
         upsertMessageRow(normalizeChatMessageFields(row));
       })
       .on('postgres_changes', PG_UPDATE_FILTER, (payload: any) => {
@@ -114,6 +118,7 @@ export function useChatRealtime({
         if (!row?.id) return;
         lastRealtimeActivityAtRef.current = Date.now();
         log.info('[CHAT_REALTIME_EVENT]', { type: 'UPDATE', messageId: row.id });
+        onRowEvent?.({ id: String(row.id), type: 'UPDATE' });
         upsertMessageRow(normalizeChatMessageFields(row));
       })
       .subscribe((status: string, err?: Error) => {
@@ -149,7 +154,8 @@ export function useChatRealtime({
     lastRealtimeActivityAtRef,
     lastRealtimeInsertPushAtRef,
     reconnectToken,
-    onConnectionStatus
+    onConnectionStatus,
+    onRowEvent
   ]);
 }
 

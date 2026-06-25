@@ -11,7 +11,7 @@ import {
 } from '@/lib/auth';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { CHAT_SEND_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
-import { TIMEOUT_MS_CHAT_SEND } from '@/lib/api/timeouts';
+import { TIMEOUT_MS_CHAT_LIST, TIMEOUT_MS_CHAT_SEND } from '@/lib/api/timeouts';
 import type { ChatMessage } from '@/lib/types';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
@@ -70,6 +70,7 @@ import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner
 import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
+import { logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
 import {
   inviteToSession,
   loadStoredInviteToken,
@@ -193,6 +194,8 @@ function StaffChatPageInner() {
   const ttsFailedIdsRef = useRef<Set<string>>(new Set());
   const notifySeededRef = useRef(false);
   const roomBootstrappedRef = useRef(false);
+  // Diagnostics: last realtime event type seen per message id (INSERT/UPDATE). Absent ⇒ local/reload.
+  const eventTypeByIdRef = useRef<Map<string, 'INSERT' | 'UPDATE'>>(new Map());
 
   const legacyResolved = useMemo(() => resolveStaffChatUserId(userParam), [userParam]);
   const staffSession = useMemo(
@@ -215,10 +218,30 @@ function StaffChatPageInner() {
 
   const { messages, setMessages, loadFull, initialHydrationComplete, initialLoadStatus } = useChatLoader({
     loadingRef: isLoadingRef,
-    listTimeoutMs: 10_000,
+    listTimeoutMs: TIMEOUT_MS_CHAT_LIST,
     initialListLimit: STAFF_CHAT_LIST_LIMIT,
-    deltaListLimit: STAFF_CHAT_DELTA_LIMIT
+    deltaListLimit: STAFF_CHAT_DELTA_LIMIT,
+    staffTimelineMode: true
   });
+
+  const setStaffMessages = useCallback<typeof setMessages>(
+    (action) => {
+      setMessages((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        if (next !== prev) {
+          console.log('[STAFF_CHAT_SET_MESSAGES]', {
+            source: 'client_patch',
+            mode: 'patch',
+            count: next.length,
+            before_count: prev.length,
+            user_filter: 'none'
+          });
+        }
+        return next;
+      });
+    },
+    [setMessages]
+  );
 
   useEffect(() => {
     async function bootstrapInvite() {
@@ -478,13 +501,16 @@ function StaffChatPageInner() {
 
   useChatRealtime({
     supabase,
-    setMessages,
+    setMessages: setStaffMessages,
     messagesRef,
     realtimeConnectedRef,
     lastRealtimeActivityAtRef,
     lastRealtimeInsertPushAtRef,
     reconnectToken: realtimeReconnectToken,
-    onConnectionStatus: setConnectionStatus
+    onConnectionStatus: setConnectionStatus,
+    onRowEvent: (e) => {
+      eventTypeByIdRef.current.set(e.id, e.type);
+    }
   });
 
   useChatWatchdog({
@@ -620,6 +646,27 @@ function StaffChatPageInner() {
 
       if (!notifyHandledIdsRef.current.has(id)) {
         notifyHandledIdsRef.current.add(id);
+
+        // Diagnostic: dump the exact gate values immediately before any sound/TTS/toast fires.
+        // Reaching here means isSelf was computed false — log the raw identity fields so we can
+        // see WHY (sender vs my id, alias mapping) and whether the same id re-fires per event.
+        console.log('[STAFF_SOUND_FIRE]', {
+          messageId: id,
+          eventType: eventTypeByIdRef.current.get(id) ?? 'local_or_reload',
+          senderUserId: m.user_id ?? null,
+          senderSide: m.sender_side ?? null,
+          senderName: (m as any).sender_name ?? null,
+          myUserId: staffSession.currentUserId,
+          currentUserAlias: staffKey,
+          userParam: userParam ?? null,
+          currentTokenId: staffSession.currentTokenId,
+          isSelf,
+          soundEnabled,
+          autoTtsEnabled,
+          translatedRuExists: Boolean((m as any).translated_text?.ru),
+          createdAt: m.created_at ?? null,
+          updatedAt: (m as any).updated_at ?? null
+        });
 
         const notifyBody = String(preview || m.message || '').trim();
         const foregroundVisible = isInAppForegroundVisible();
@@ -890,7 +937,7 @@ function StaffChatPageInner() {
         });
         registerMessageIdForNonce(nonce, String(saved.id));
         logSendApiResponded(nonce, String(saved.id), saved.created_at);
-        setMessages((prev) => {
+        setStaffMessages((prev) => {
           if (prev.some((m) => String(m.id) === String(saved.id))) return prev;
           return [...prev, saved].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
         });
@@ -908,7 +955,7 @@ function StaffChatPageInner() {
         setSending(false);
       }
     },
-    [actorName, chatSendUserId, locale, roomNo, sessionSource, setMessages, staffKey, inviteSession?.inviteId, pendingPhraseKey, t]
+    [actorName, chatSendUserId, locale, roomNo, sessionSource, setStaffMessages, staffKey, inviteSession?.inviteId, pendingPhraseKey, t]
   );
 
   function clearPendingPhoto() {
@@ -1096,7 +1143,10 @@ function StaffChatPageInner() {
     { code: 'ru', flag: '🇷🇺' }
   ];
 
-  const timelineMessages = useMemo(() => messages.filter((m) => !m.is_deleted), [messages]);
+  const timelineMessages = useMemo(
+    () => logStaffChatVisibleMessages(messages, { staffKey, userParam: userParam || null }),
+    [messages, staffKey, userParam]
+  );
 
   if (invitePhase === 'loading' || !i18nHydrated) {
     return (
