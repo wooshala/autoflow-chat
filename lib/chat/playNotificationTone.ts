@@ -1,20 +1,88 @@
 import type { NotificationTone } from '@/lib/chat/notificationTone';
 
-let audioUnlocked = false;
+/** Minimal silent WAV — unlock HTMLAudio autoplay on user gesture (fallback). */
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
-export function unlockNotificationAudio() {
-  audioUnlocked = true;
+/** Unlock test beep — keep quiet. */
+const UNLOCK_BEEP_GAIN = 0.002;
+const UNLOCK_BEEP_DURATION_MS = 40;
+
+/** Message notification beeps — louder, clearly audible. */
+export const NOTIFY_BEEP_GAIN = 0.1;
+export const NOTIFY_BEEP_DURATION_MS = 180;
+export const NOTIFY_BEEP_GAP_MS = 80;
+const NOTIFY_BEEP_REPEATS_DEFAULT = 2;
+const NOTIFY_BEEP_REPEATS_URGENT = 3;
+
+let audioUnlocked = false;
+let sharedCtx: AudioContext | null = null;
+let unlockAudio: HTMLAudioElement | null = null;
+
+const unlockListeners = new Set<() => void>();
+
+function notifyUnlockListeners() {
+  for (const fn of unlockListeners) {
+    try {
+      fn();
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
-export function isNotificationAudioUnlocked() {
+function getAudioContextCtor(): typeof AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  return (
+    window.AudioContext ||
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext ||
+    null
+  );
+}
+
+function playErrorFields(err: unknown): { errorName: string; errorMessage: string } {
+  if (err instanceof Error) {
+    return { errorName: err.name, errorMessage: err.message };
+  }
+  return { errorName: 'unknown', errorMessage: String(err) };
+}
+
+export function isNotificationAudioUnlocked(): boolean {
   return audioUnlocked;
+}
+
+export function peekNotificationAudioDiag(): {
+  audioUnlocked: boolean;
+  ctxState: AudioContextState | null;
+  hasSharedCtx: boolean;
+} {
+  return {
+    audioUnlocked,
+    ctxState: sharedCtx?.state ?? null,
+    hasSharedCtx: Boolean(sharedCtx)
+  };
+}
+
+export function subscribeNotificationAudioUnlock(listener: () => void): () => void {
+  unlockListeners.add(listener);
+  return () => unlockListeners.delete(listener);
 }
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-async function beep(ctx: AudioContext, frequency: number, durationMs: number, gainValue = 0.03) {
+async function beep(
+  ctx: AudioContext,
+  frequency: number,
+  durationMs: number,
+  gainValue: number,
+  logMeta?: Record<string, unknown>
+) {
+  if (logMeta) {
+    console.log('[CHAT_SOUND_BEEP]', { frequency, durationMs, gain: gainValue, ...logMeta });
+  }
+
   const oscillator = ctx.createOscillator();
   const gain = ctx.createGain();
 
@@ -38,66 +106,219 @@ async function beep(ctx: AudioContext, frequency: number, durationMs: number, ga
   }
 }
 
-export async function playNotificationTone(tone: NotificationTone): Promise<boolean> {
+async function playMessageNotificationBeeps(ctx: AudioContext, tone: NotificationTone) {
+  const gain = NOTIFY_BEEP_GAIN;
+  const durationMs = NOTIFY_BEEP_DURATION_MS;
+  const gapMs = NOTIFY_BEEP_GAP_MS;
+
+  let repeats = NOTIFY_BEEP_REPEATS_DEFAULT;
+  let frequency = 660;
+
+  switch (tone) {
+    case 'urgent':
+      repeats = NOTIFY_BEEP_REPEATS_URGENT;
+      frequency = 880;
+      break;
+    case 'warn':
+      frequency = 520;
+      break;
+    case 'soft':
+      frequency = 700;
+      break;
+    case 'info':
+    default:
+      frequency = 660;
+      break;
+  }
+
+  console.log('[CHAT_SOUND_NOTIFY_PATTERN]', {
+    tone,
+    gain,
+    durationMs,
+    repeats,
+    frequency
+  });
+
+  for (let i = 0; i < repeats; i++) {
+    await beep(ctx, frequency, durationMs, gain, {
+      kind: 'notification',
+      tone,
+      repeat: i + 1,
+      of: repeats
+    });
+    if (i < repeats - 1) {
+      await sleep(gapMs);
+    }
+  }
+}
+
+async function unlockViaHtmlAudio(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  if (tone === 'silent') return false;
-  // In hidden/inactive state, in-app beep is not treated as primary alert.
-  if (typeof document !== 'undefined' && (document.hidden || document.visibilityState !== 'visible')) return false;
-  // Background-like: visible but unfocused should not be relied on.
-  if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) return false;
-  if (!audioUnlocked) return false;
-
   try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return false;
-
-    const ctx = new AudioCtx();
-    if (ctx.state === 'suspended') {
-      try {
-        await ctx.resume();
-      } catch {
-        // continue best-effort
-      }
+    if (!unlockAudio) {
+      unlockAudio = new Audio(SILENT_WAV);
+      unlockAudio.volume = 0.001;
+      unlockAudio.preload = 'auto';
     }
-
-    switch (tone) {
-      case 'urgent':
-        await beep(ctx, 880, 110, 0.06);
-        await sleep(70);
-        await beep(ctx, 880, 110, 0.06);
-        await sleep(70);
-        await beep(ctx, 990, 140, 0.06);
-        break;
-      case 'warn':
-        await beep(ctx, 440, 140, 0.05);
-        await sleep(90);
-        await beep(ctx, 520, 140, 0.05);
-        break;
-      case 'info':
-        await beep(ctx, 660, 120, 0.04);
-        await sleep(60);
-        await beep(ctx, 760, 100, 0.04);
-        break;
-      case 'soft':
-        await beep(ctx, 700, 80, 0.025);
-        break;
-      default:
-        break;
-    }
-
-    setTimeout(() => {
-      try {
-        void ctx.close();
-      } catch {
-        /* ignore */
-      }
-    }, 300);
+    unlockAudio.currentTime = 0;
+    await unlockAudio.play();
+    console.log('[CHAT_SOUND_UNLOCK_OK]', { method: 'html_audio_silent', volume: unlockAudio.volume });
     return true;
-  } catch (error) {
-    console.warn('[CHAT_SOUND_PLAY_FAILED]', error);
+  } catch (err: unknown) {
+    console.log('[CHAT_SOUND_UNLOCK_HTML_FAILED]', playErrorFields(err));
     return false;
   }
 }
 
+/**
+ * Call inside a user gesture (tap, click, 🔊 ON).
+ * Creates/resumes singleton AudioContext and plays a tiny beep.
+ */
+export async function unlockNotificationAudio(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  const AudioCtx = getAudioContextCtor();
+  if (!AudioCtx) {
+    console.log('[CHAT_SOUND_UNLOCK_FAILED]', { reason: 'no_audio_context_ctor' });
+    const htmlOk = await unlockViaHtmlAudio();
+    if (htmlOk) {
+      audioUnlocked = true;
+      notifyUnlockListeners();
+    }
+    return htmlOk;
+  }
+
+  if (!sharedCtx) {
+    sharedCtx = new AudioCtx();
+  }
+
+  const stateBefore = sharedCtx.state;
+  console.log('[CHAT_SOUND_UNLOCK_START]', { stateBefore, diag: peekNotificationAudioDiag() });
+
+  try {
+    if (sharedCtx.state === 'suspended') {
+      await sharedCtx.resume();
+    }
+    const stateAfterResume = sharedCtx.state;
+    console.log('[CHAT_SOUND_UNLOCK_RESUME]', { stateBefore, stateAfterResume });
+
+    if (stateAfterResume !== 'running') {
+      const htmlOk = await unlockViaHtmlAudio();
+      if (!htmlOk) {
+        console.log('[CHAT_SOUND_UNLOCK_FAILED]', {
+          reason: 'ctx_not_running',
+          stateBefore,
+          stateAfterResume
+        });
+        return false;
+      }
+    }
+
+    await beep(sharedCtx, 440, UNLOCK_BEEP_DURATION_MS, UNLOCK_BEEP_GAIN, { kind: 'unlock_test' });
+
+    audioUnlocked = true;
+    notifyUnlockListeners();
+    console.log('[CHAT_SOUND_UNLOCK_OK]', {
+      method: 'web_audio_beep',
+      state: sharedCtx.state,
+      unlockGain: UNLOCK_BEEP_GAIN
+    });
+    return true;
+  } catch (err: unknown) {
+    console.log('[CHAT_SOUND_UNLOCK_FAILED]', {
+      stateBefore,
+      stateAfter: sharedCtx.state,
+      ...playErrorFields(err)
+    });
+    const htmlOk = await unlockViaHtmlAudio();
+    if (htmlOk) {
+      audioUnlocked = true;
+      notifyUnlockListeners();
+      return true;
+    }
+    return false;
+  }
+}
+
+export type PlayNotificationToneOptions = {
+  /** Best-effort beep when tab hidden (often blocked; OS notification sound is primary). */
+  allowHidden?: boolean;
+};
+
+export async function playNotificationTone(
+  tone: NotificationTone,
+  options?: PlayNotificationToneOptions
+): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (tone === 'silent') return false;
+
+  const hidden =
+    typeof document !== 'undefined' &&
+    (document.hidden || document.visibilityState !== 'visible');
+  if (hidden && !options?.allowHidden) {
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'not_visible', tone });
+    return false;
+  }
+
+  const diag = peekNotificationAudioDiag();
+  if (!audioUnlocked || !sharedCtx) {
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'not_unlocked', tone, hidden, diag });
+    return false;
+  }
+
+  const ctx = sharedCtx;
+  const stateBefore = ctx.state;
+  console.log('[CHAT_SOUND_PLAY]', {
+    tone,
+    stateBefore,
+    hidden,
+    allowHidden: Boolean(options?.allowHidden),
+    notifyGain: NOTIFY_BEEP_GAIN,
+    diag
+  });
+
+  try {
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch (resumeErr: unknown) {
+        console.log('[CHAT_SOUND_PLAY_FAILED]', {
+          phase: 'resume',
+          tone,
+          stateBefore,
+          stateAfter: ctx.state,
+          ...playErrorFields(resumeErr)
+        });
+        return false;
+      }
+    }
+
+    const stateAfterResume = ctx.state;
+    console.log('[CHAT_SOUND_PLAY_CTX]', { tone, stateBefore, stateAfterResume, notifyGain: NOTIFY_BEEP_GAIN });
+
+    if (stateAfterResume !== 'running') {
+      console.log('[CHAT_SOUND_PLAY_FAILED]', {
+        phase: 'ctx_not_running',
+        tone,
+        stateBefore,
+        stateAfterResume
+      });
+      return false;
+    }
+
+    await playMessageNotificationBeeps(ctx, tone);
+
+    console.log('[CHAT_SOUND_PLAY_OK]', { tone, state: ctx.state, notifyGain: NOTIFY_BEEP_GAIN });
+    return true;
+  } catch (error: unknown) {
+    console.log('[CHAT_SOUND_PLAY_FAILED]', {
+      phase: 'beep',
+      tone,
+      stateBefore,
+      stateAfter: ctx.state,
+      notifyGain: NOTIFY_BEEP_GAIN,
+      ...playErrorFields(error)
+    });
+    return false;
+  }
+}

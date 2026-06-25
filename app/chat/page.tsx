@@ -12,6 +12,7 @@ import StaffChatAdminSection from '@/components/chat/StaffChatAdminSection';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
+import ChatNotifyDiagBar from '@/components/chat/ChatNotifyDiagBar';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
 import { useChatNotifications } from '@/lib/hooks/useChatNotifications';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
@@ -23,6 +24,8 @@ import {
   logSendClick,
   registerMessageIdForNonce
 } from '@/lib/chat/sendTrace';
+import { unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
+import { useNotificationAudioUnlock } from '@/lib/hooks/useNotificationAudioUnlock';
 import { useChatRenderTrace } from '@/lib/hooks/useChatRenderTrace';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
@@ -100,9 +103,6 @@ export default function ChatPage() {
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
-  const [browserNotifyPermission, setBrowserNotifyPermission] = useState<
-    NotificationPermission | 'unsupported'
-  >('default');
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'degraded' | 'reconnecting'>('reconnecting');
   const [realtimeReconnectToken, setRealtimeReconnectToken] = useState(0);
 
@@ -157,15 +157,6 @@ export default function ChatPage() {
     messagesRef.current = messages;
   }, [messages]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!isBrowserNotificationSupported()) {
-      setBrowserNotifyPermission('unsupported');
-      return;
-    }
-    setBrowserNotifyPermission(Notification.permission);
-  }, []);
-
   const showChatTestNotification = useCallback(() => {
     void showBrowserNotification({
       title: 'AutoFlow 채팅',
@@ -173,6 +164,17 @@ export default function ChatPage() {
       tag: 'chat-notify-test'
     });
   }, []);
+
+  const { toasts, onToastClick, removeToast, permission: browserNotifyPermission, requestBrowserPermission } =
+    useChatNotifications({
+      messages,
+      initialHydrationComplete,
+      currentUserId: sessionUser && chatSendUserId ? chatSendUserId : null,
+      roomNo,
+      setRoomNo,
+      router
+    });
+  const notificationAudioUnlocked = useNotificationAudioUnlock();
 
   const handleNotificationClick = useCallback(() => {
     const supported = isBrowserNotificationSupported();
@@ -185,12 +187,10 @@ export default function ChatPage() {
     });
 
     if (!supported) {
-      setBrowserNotifyPermission('unsupported');
       return;
     }
 
     if (Notification.permission === 'denied') {
-      setBrowserNotifyPermission('denied');
       window.alert(
         '브라우저에서 알림이 차단되어 있습니다. 주소창 왼쪽 자물쇠 아이콘에서 알림을 허용해 주세요.'
       );
@@ -198,17 +198,16 @@ export default function ChatPage() {
     }
 
     if (Notification.permission === 'granted') {
-      setBrowserNotifyPermission('granted');
+      showChatTestNotification();
       return;
     }
 
-    Notification.requestPermission().then((p) => {
-      setBrowserNotifyPermission(p);
-      if (p === 'granted') {
+    void requestBrowserPermission().then(() => {
+      if (Notification.permission === 'granted') {
         showChatTestNotification();
       }
     });
-  }, [showChatTestNotification]);
+  }, [requestBrowserPermission, showChatTestNotification]);
 
   const handleTestNotificationClick = useCallback(() => {
     console.log('[CHAT_NOTIFICATION_TEST]', {
@@ -218,14 +217,9 @@ export default function ChatPage() {
     showChatTestNotification();
   }, [showChatTestNotification]);
 
-  const { toasts, onToastClick, removeToast } = useChatNotifications({
-    messages,
-    initialHydrationComplete,
-    currentUserId: sessionUser && chatSendUserId ? chatSendUserId : null,
-    roomNo,
-    setRoomNo,
-    router
-  });
+  const handleEnableAlertSound = useCallback(() => {
+    void unlockNotificationAudio();
+  }, []);
 
   useChatRenderTrace(messages, initialHydrationComplete);
 
@@ -637,15 +631,26 @@ export default function ChatPage() {
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400">
-              {browserNotifyPermission !== 'unsupported' && browserNotifyPermission !== 'granted' && (
+              {!notificationAudioUnlocked ? (
+                <button
+                  type="button"
+                  onClick={handleEnableAlertSound}
+                  className="rounded-lg border border-amber-500/60 bg-amber-950/40 px-2 py-1 font-semibold text-amber-200 hover:bg-amber-900/50"
+                >
+                  🔊 알림음 켜기
+                </button>
+              ) : null}
+              {browserNotifyPermission !== 'unsupported' && browserNotifyPermission !== 'granted' ? (
                 <button
                   type="button"
                   onClick={handleNotificationClick}
-                  className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
+                  className="rounded-lg border border-sky-500/70 bg-sky-950/50 px-2 py-1 font-semibold text-sky-100 hover:bg-sky-900/60"
                 >
-                  {browserNotifyPermission === 'denied' ? '브라우저 알림 차단됨' : '브라우저 알림 켜기'}
+                  {browserNotifyPermission === 'denied'
+                    ? '탭 밖 OS 알림 차단됨'
+                    : '탭 밖 OS 알림 허용 (필수)'}
                 </button>
-              )}
+              ) : null}
               {browserNotifyPermission === 'granted' && (
                 <button
                   type="button"
@@ -686,6 +691,8 @@ export default function ChatPage() {
           </div>
         </div>
       </header>
+
+      <ChatNotifyDiagBar onRequestPermission={handleNotificationClick} />
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
 

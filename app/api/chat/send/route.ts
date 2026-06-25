@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { sendStaffPushAfterMessage } from '@/lib/push/sendStaffPushAfterMessage';
 import { buildChatTranslations } from '@/lib/chat/translateMessageForChat';
 import { parseSendPriority } from '@/lib/chat/messagePriority';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
@@ -553,6 +554,13 @@ export async function POST(req: NextRequest) {
       room_no: saved.room_no,
       has_ticket_id: Boolean(saved.ticket_id),
       has_message: Boolean(message.trim())
+    });
+
+    void sendStaffPushAfterMessage(saved).catch((e: unknown) => {
+      console.log('[STAFF_FCM_ENQUEUE_FAILED]', {
+        message_id: saved.id,
+        error: e instanceof Error ? e.message : String(e)
+      });
     });
 
     console.log('[CHAT_AFTER_SEND]', {

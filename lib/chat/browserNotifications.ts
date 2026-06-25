@@ -23,8 +23,33 @@ export async function showBrowserNotification(params: {
   tag?: string;
   requireInteraction?: boolean;
   silent?: boolean;
+  messageId?: string;
+  source?: string;
 }): Promise<boolean> {
-  if (!canShowBrowserNotification()) return false;
+  const permission =
+    isBrowserNotificationSupported() && typeof window !== 'undefined'
+      ? Notification.permission
+      : 'unsupported';
+
+  console.log('[CHAT_BROWSER_NOTIFY_ATTEMPT]', {
+    permission,
+    title: params.title,
+    bodyPreview: String(params.body || '').slice(0, 80),
+    tag: params.tag ?? null,
+    silent: params.silent ?? false,
+    visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+    messageId: params.messageId ?? null,
+    source: params.source ?? null
+  });
+
+  if (!canShowBrowserNotification()) {
+    console.log('[CHAT_BROWSER_NOTIFY_FAILED]', {
+      permission,
+      reason: permission === 'denied' ? 'permission_denied' : 'permission_not_granted'
+    });
+    return false;
+  }
+
   try {
     const n = new Notification(params.title, {
       body: params.body,
@@ -40,9 +65,11 @@ export async function showBrowserNotification(params: {
         /* ignore */
       }
     };
+    console.log('[CHAT_BROWSER_NOTIFY_OK]', { permission, tag: params.tag ?? null });
     return true;
-  } catch {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? { name: err.name, message: err.message } : { message: String(err) };
+    console.log('[CHAT_BROWSER_NOTIFY_FAILED]', { permission, ...error });
     return false;
   }
 }
-

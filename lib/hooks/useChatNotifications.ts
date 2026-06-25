@@ -6,9 +6,16 @@ import { isSameRoomForNotify, messagePreview, normalizeRoomNo } from '@/lib/chat
 import { classifyMessage, getCategoryLabel, type ClassificationFlags, type MainCategory } from '@/lib/chat/classifyMessageCategory';
 import { getNotificationTone, type NotificationTone } from '@/lib/chat/notificationTone';
 import { makeNotificationDedupeKey, shouldPlayNotificationSound } from '@/lib/chat/notificationDedupe';
-import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
+import {
+  isNotificationAudioUnlocked,
+  NOTIFY_BEEP_GAIN,
+  playNotificationTone,
+  peekNotificationAudioDiag,
+  unlockNotificationAudio
+} from '@/lib/chat/playNotificationTone';
 import { shouldCreateQueueItem } from '@/lib/chat/chatOpsQueue';
 import { canShowBrowserNotification, isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
+import { isOsBackgroundLike } from '@/lib/chat/notifyForeground';
 import { log } from '@/lib/logger';
 
 const TAG = '[CHAT_NOTIFY]';
@@ -85,7 +92,7 @@ export function useChatNotifications({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onFirst = () => {
-      unlockNotificationAudio();
+      void unlockNotificationAudio();
       window.removeEventListener('pointerdown', onFirst, true);
       window.removeEventListener('keydown', onFirst, true);
       window.removeEventListener('click', onFirst, true);
@@ -129,20 +136,18 @@ export function useChatNotifications({
       tone: NotificationTone;
       senderSide: 'pc' | 'mobile' | '' | null;
     }): NotifyChannelDecision => {
-      const senderSide = p.senderSide || '';
-      // background-like (hidden OR not focused): Browser/OS notification is primary channel.
       if (p.isBackgroundLike) {
+        // Hidden/minimized tab: OS notification is P0 (in-app toast does not count).
         return {
           showToast: false,
           showBrowserNotification: true,
-          playInAppSound: false
+          playInAppSound: true
         };
       }
-      // foreground-active (visible + focused)
+      // Visible foreground tab: in-app toast + beep only.
       return {
         showToast: true,
-        // visible에서도 urgent/mobile은 OS 알림 허용 (운영 이벤트 성격)
-        showBrowserNotification: p.tone === 'urgent' || senderSide === 'mobile',
+        showBrowserNotification: false,
         playInAppSound: true
       };
     },
@@ -202,10 +207,20 @@ export function useChatNotifications({
 
   const requestBrowserPermission = useCallback(async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
+    const before = Notification.permission;
+    console.log('[CHAT_NOTIFICATION_PERMISSION]', { phase: 'request_start', permission: before });
     try {
       const p = await Notification.requestPermission();
       setPermission(p);
+      console.log('[CHAT_NOTIFICATION_PERMISSION]', { phase: 'request_done', before, after: p });
     } catch (e) {
+      const after = Notification.permission;
+      console.log('[CHAT_NOTIFICATION_PERMISSION]', {
+        phase: 'request_failed',
+        before,
+        after,
+        error: String(e)
+      });
       log.warn(TAG, { event: 'permission_request_failed', error: String(e) });
     }
   }, []);
@@ -451,11 +466,31 @@ export function useChatNotifications({
         typeof document !== 'undefined' && typeof document.hasFocus === 'function'
           ? document.hasFocus()
           : hasFocusRef.current;
-      const isBackgroundLike = hidden || !hasFocus;
+      const isBackgroundLike = isOsBackgroundLike();
       const sameRoom = isSameRoomForNotify(viewRoom, msg);
 
       // Mark first to guarantee de-dupe even if toast/sound fails.
       notified.add(id);
+
+      const notificationPermission =
+        isBrowserNotificationSupported() && typeof window !== 'undefined'
+          ? Notification.permission
+          : 'unsupported';
+      const visibilityState =
+        typeof document !== 'undefined' ? document.visibilityState : null;
+      const soundUnlocked = isNotificationAudioUnlocked();
+      const allowHidden = isBackgroundLike;
+
+      console.log('[CHAT_NOTIFY_RECEIVED]', {
+        messageId: id,
+        from: msgSide || safeId((msg as any)?.actor_name) || null,
+        isSelf: isOwnUser,
+        visibilityState,
+        notificationPermission,
+        soundUnlocked,
+        notifyGain: NOTIFY_BEEP_GAIN,
+        allowHidden
+      });
 
       const preview = messagePreview(msg);
       const roomLabel = normalizeRoomNo(msg.room_no);
@@ -552,12 +587,30 @@ export function useChatNotifications({
       if (willPlaySound) {
         console.log('[CHAT_SOUND_PLAY]', {
           messageId: id,
-          soundEnabled: channels.playInAppSound
+          soundEnabled: channels.playInAppSound,
+          tone,
+          allowHidden: isBackgroundLike,
+          notifyGain: NOTIFY_BEEP_GAIN,
+          soundUnlocked
         });
-        void playNotificationTone(tone).then((ok) => {
+        void playNotificationTone(tone, { allowHidden: isBackgroundLike }).then((ok) => {
           if (DEBUG_VERBOSE) log.info('[CHAT_SOUND_RESULT]', { id, ok, tone });
-          if (!ok) {
-            console.warn('[CHAT_SOUND_PLAY_FAILED]', { messageId: id, reason: 'play_returned_false' });
+          if (ok) {
+            console.log('[CHAT_SOUND_PLAY_OK]', {
+              messageId: id,
+              tone,
+              allowHidden: isBackgroundLike,
+              notifyGain: NOTIFY_BEEP_GAIN
+            });
+          } else {
+            console.log('[CHAT_SOUND_PLAY_FAILED]', {
+              messageId: id,
+              reason: 'play_returned_false',
+              tone,
+              allowHidden: isBackgroundLike,
+              notifyGain: NOTIFY_BEEP_GAIN,
+              diag: peekNotificationAudioDiag()
+            });
           }
         });
       } else if (!channels.playInAppSound) {
@@ -582,8 +635,18 @@ export function useChatNotifications({
       const shouldAttemptBrowser = channels.showBrowserNotification && canShowBrowserNotification();
       const willBrowserNotify = shouldAttemptBrowser && !browserDedupeHit;
 
+      console.log('[CHAT_BROWSER_NOTIFY_DECISION]', {
+        messageId: id,
+        permission,
+        isBackgroundLike,
+        visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+        showBrowserNotification: channels.showBrowserNotification,
+        willBrowserNotify,
+        canShow: canShowBrowserNotification()
+      });
+
       if (DEBUG_VERBOSE) {
-        log.info('[CHAT_BROWSER_NOTIFY_DECISION]', {
+        log.info('[CHAT_BROWSER_NOTIFY_DECISION_VERBOSE]', {
           id,
           visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
           hasFocus,
@@ -609,24 +672,35 @@ export function useChatNotifications({
           body,
           tag: id,
           requireInteraction: tone === 'urgent',
-          silent: false
+          silent: false,
+          messageId: id,
+          source: 'message_receive_hidden'
         }).then((ok) => {
           if (ok) {
             notifiedBrowserIdsRef.current.add(id);
+          } else if (!ok) {
+            console.log('[CHAT_BROWSER_NOTIFY_FAILED]', {
+              messageId: id,
+              permission,
+              reason: 'show_returned_false'
+            });
           }
           if (DEBUG_VERBOSE) {
-            log.info('[CHAT_BROWSER_NOTIFY_RESULT]', { id, ok, title });
+            log.info('[CHAT_BROWSER_NOTIFY_RESULT_VERBOSE]', { messageId: id, ok, title });
           }
         });
-      } else if (DEBUG_VERBOSE) {
+      } else {
         let reason: string = 'unknown';
         if (browserDedupeHit) reason = 'duplicate';
-        else if (!channels.showBrowserNotification) reason = 'not_important_while_visible';
+        else if (!channels.showBrowserNotification) reason = 'foreground_visible_no_os_notify';
         else if (!supported) reason = 'unsupported';
         else if (permission === 'denied') reason = 'permission_denied';
-        else if (permission === 'default') reason = 'permission_default_not_requested';
+        else if (permission === 'default') reason = 'permission_default';
         else if (!canShowBrowserNotification()) reason = `permission_${permission}`;
-        log.debug('[CHAT_BROWSER_NOTIFY_SKIPPED]', { id, reason });
+        console.log('[CHAT_BROWSER_NOTIFY_SKIPPED]', { messageId: id, permission, reason, isBackgroundLike });
+        if (DEBUG_VERBOSE) {
+          log.debug('[CHAT_BROWSER_NOTIFY_SKIPPED_VERBOSE]', { id, reason });
+        }
       }
 
       // /chat must not render ops UI; we only enqueue server-side if needed.

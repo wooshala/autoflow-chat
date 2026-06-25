@@ -42,6 +42,7 @@ import {
   unlockServerStaffTts
 } from '@/lib/chat/serverTtsClient';
 import { playStaffTts, type StaffTtsPlaybackResult } from '@/lib/chat/staffTtsPlayback';
+import { logStaffTtsUserActivation } from '@/lib/chat/staffTtsUserActivationDiag';
 import {
   isServerTtsLangSupported,
   resolveAutoStaffTtsSkipReason,
@@ -55,6 +56,7 @@ import { noteStaffTtsMessageReceived } from '@/lib/chat/staffTtsDiagState';
 import { logStaffTtsTriggerCheck } from '@/lib/chat/staffTtsTriggerCheck';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
 import { useStaffTtsDiagStatus } from '@/lib/hooks/useStaffTtsDiagStatus';
+import { useNotificationAudioUnlock } from '@/lib/hooks/useNotificationAudioUnlock';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
 import {
   isStaffChatSelfMessage,
@@ -83,27 +85,16 @@ import {
   STAFF_VALID_ROOM_SET
 } from '@/lib/chat/staffRoomOptions';
 
-const STORAGE_SOUND_ENABLED = 'autoflow_staff_sound_enabled_v1';
+import {
+  loadStaffAlertsEnabled,
+  loadStaffAutoTtsEnabled,
+  saveStaffAlertsEnabled,
+  saveStaffAutoTtsEnabled
+} from '@/lib/chat/staffAlertPrefs';
+import { isInAppForegroundVisible, isOsBackgroundLike } from '@/lib/chat/notifyForeground';
+
 /** OS notification body cap (Browser Notification API, not Web Push). */
 const OS_NOTIFY_BODY_MAX = 100;
-
-function loadSoundEnabled(): boolean {
-  try {
-    const v = localStorage.getItem(STORAGE_SOUND_ENABLED);
-    return v === '1' || v === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function saveSoundEnabled(enabled: boolean) {
-  try {
-    localStorage.setItem(STORAGE_SOUND_ENABLED, enabled ? '1' : '0');
-  } catch {
-    // ignore
-  }
-}
-
 
 type ListPhase = 'loading' | 'ready' | 'error';
 type SessionSource = 'localStorage' | 'query_param' | 'invite_token' | 'none';
@@ -126,6 +117,7 @@ function StaffChatPageInner() {
     ttsTextOrigin,
     refreshUnlockSnapshot
   } = useStaffTtsDiagStatus();
+  const notificationAudioUnlocked = useNotificationAudioUnlock();
   const [userParam, setUserParam] = useState<string | null>(() =>
     typeof window !== 'undefined' ? readDeprecatedUserParamFromUrl() : null
   );
@@ -152,7 +144,7 @@ function StaffChatPageInner() {
     void playStaffTts(text, ttsLang, { fromUserGesture }).then((result) => {
       onResult?.(result);
       if (result === 'server_not_unlocked' && !fromUserGesture) {
-        setToast({ kind: 'error', msg: t('ttsTapSoundOn') });
+        console.log('[STAFF_AUTO_TTS_SKIPPED]', { reason: 'not_unlocked', severity: 'P2' });
         return;
       }
       if (result === 'lang_unsupported' && showNoVoiceToast) {
@@ -172,7 +164,12 @@ function StaffChatPageInner() {
       viewerLang: locale === 'ru' ? 'ru' : 'ko'
     });
   }, [locale]);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() =>
+    typeof window !== 'undefined' ? loadStaffAlertsEnabled() : true
+  );
+  const [autoTtsEnabled, setAutoTtsEnabled] = useState(() =>
+    typeof window !== 'undefined' ? loadStaffAutoTtsEnabled() : false
+  );
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const [sessionSource, setSessionSource] = useState<SessionSource>('none');
   const [roomNo, setRoomNo] = useState('');
@@ -401,8 +398,24 @@ function StaffChatPageInner() {
   }, []);
 
   useEffect(() => {
-    const stored = loadSoundEnabled();
+    if (typeof window === 'undefined') return;
+    const onFirst = () => {
+      void unlockNotificationAudio();
+      window.removeEventListener('pointerdown', onFirst, true);
+      window.removeEventListener('keydown', onFirst, true);
+    };
+    window.addEventListener('pointerdown', onFirst, true);
+    window.addEventListener('keydown', onFirst, true);
+    return () => {
+      window.removeEventListener('pointerdown', onFirst, true);
+      window.removeEventListener('keydown', onFirst, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    const stored = loadStaffAlertsEnabled();
     setSoundEnabled(stored);
+    setAutoTtsEnabled(loadStaffAutoTtsEnabled());
     if (stored) {
       hydrateServerStaffTtsUnlockFromStorage();
     }
@@ -484,6 +497,7 @@ function StaffChatPageInner() {
         originalLang: '',
         isSelfMessage: false,
         soundEnabled,
+        autoTtsEnabled,
         serverTtsAvailable,
         serverTtsUnlocked: serverUnlocked,
         localRuVoice: ruVoiceReady,
@@ -513,7 +527,9 @@ function StaffChatPageInner() {
         ttsLang === 'ru' && ruVoiceReady !== null
           ? ruVoiceReady
           : isVoiceAvailableForLocale(ttsLang);
-      const willCallPlayStaffTts = Boolean(soundEnabled && toSpeak && !ttsCompletedIdsRef.current.has(id));
+      const willCallPlayStaffTts = Boolean(
+        autoTtsEnabled && toSpeak && !ttsCompletedIdsRef.current.has(id)
+      );
       const shouldUseServerTts =
         willCallPlayStaffTts &&
         isServerTtsLangSupported(ttsLang) &&
@@ -531,6 +547,7 @@ function StaffChatPageInner() {
         originalLang,
         isSelfMessage: isSelf,
         soundEnabled,
+        autoTtsEnabled,
         serverTtsAvailable,
         serverTtsUnlocked: serverUnlocked,
         localRuVoice: ruVoiceReady,
@@ -562,45 +579,82 @@ function StaffChatPageInner() {
 
       if (!notifyHandledIdsRef.current.has(id)) {
         notifyHandledIdsRef.current.add(id);
-        if (soundEnabled) {
-          console.log('[STAFF_CHAT_SOUND_PLAY]', { messageId: id, soundEnabled: true, urgent });
-          void playNotificationTone(urgent ? 'urgent' : 'info');
-        }
-        setToast({
-          kind: 'ok',
-          urgent,
-          msg: urgent ? `🚨 ${t('urgentToast')}\n${preview.slice(0, 80)}` : `📩 ${preview.slice(0, 40)}`
-        });
 
-        const { primary: ruPrimary } = getMessageDisplayParts(m, 'ru', {
-          logContext: 'staff',
-          selectedLang: locale
-        });
-        const isBackgroundLike =
-          typeof document !== 'undefined' &&
-          (document.hidden ||
-            (typeof document.hasFocus === 'function' && !document.hasFocus()));
-        if (isBackgroundLike && canShowBrowserNotification()) {
-          const body = String(ruPrimary || m.message || '').trim().slice(0, OS_NOTIFY_BODY_MAX);
-          if (body) {
-            void showBrowserNotification({
-              title: urgent ? `🚨 ${t('urgentToast')}` : staffKeyLabel(staffKey) || 'AutoFlow Chat',
-              body,
-              tag: id,
-              requireInteraction: urgent
+        const notifyBody = String(preview || m.message || '').trim();
+        const foregroundVisible = isInAppForegroundVisible();
+        const backgroundLike = isOsBackgroundLike();
+
+        if (foregroundVisible) {
+          setToast({
+            kind: 'ok',
+            urgent,
+            msg: urgent ? `🚨 ${t('urgentToast')}\n${preview.slice(0, 80)}` : `📩 ${preview.slice(0, 40)}`
+          });
+
+          if (soundEnabled) {
+            console.log('[STAFF_CHAT_SOUND_PLAY]', {
+              messageId: id,
+              soundEnabled: true,
+              urgent,
+              foregroundVisible: true
             });
+            void playNotificationTone(urgent ? 'urgent' : 'info');
+          }
+        }
+
+        if (backgroundLike) {
+          const permission =
+            typeof window !== 'undefined' && 'Notification' in window
+              ? Notification.permission
+              : 'unsupported';
+          console.log('[STAFF_BROWSER_NOTIFY_DECISION]', {
+            messageId: id,
+            permission,
+            backgroundLike,
+            visibilityState: typeof document !== 'undefined' ? document.visibilityState : null
+          });
+
+          if (canShowBrowserNotification()) {
+            const body = notifyBody.slice(0, OS_NOTIFY_BODY_MAX);
+            if (body) {
+              void showBrowserNotification({
+                title: urgent ? `🚨 ${t('urgentToast')}` : staffKeyLabel(staffKey) || 'AutoFlow Chat',
+                body,
+                tag: id,
+                requireInteraction: urgent,
+                silent: false
+              }).then((ok) => {
+                console.log('[STAFF_BROWSER_NOTIFY_RESULT]', { messageId: id, ok, permission });
+              });
+            }
+          } else {
+            console.log('[STAFF_BROWSER_NOTIFY_SKIPPED]', {
+              messageId: id,
+              permission,
+              reason:
+                permission === 'denied'
+                  ? 'permission_denied'
+                  : permission === 'default'
+                    ? 'permission_default'
+                    : 'unsupported',
+              hint: 'mobile_screen_off_requires_native_fcm'
+            });
+          }
+
+          if (soundEnabled) {
+            void playNotificationTone(urgent ? 'urgent' : 'info', { allowHidden: true });
           }
         }
       }
 
-      if (!soundEnabled) {
+      if (!autoTtsEnabled) {
         if (ttsTextOrigin === 'insert') {
           logStaffTtsTriggerCheck({
             ...triggerBase,
             shouldUseServerTts: false,
             willCallPlayStaffTts: false,
             willCallPlayServerStaffTts: false,
-            skipReason: 'skip_sound_disabled'
+            skipReason: 'skip_auto_tts_disabled'
           });
         }
         continue;
@@ -625,6 +679,11 @@ function StaffChatPageInner() {
         skipReason
       });
       noteStaffTtsMessageReceived();
+      logStaffTtsUserActivation('realtime_effect_before_runStaffTts', {
+        messageId: id,
+        ttsTextOrigin,
+        fromUserGesture: false
+      });
       runStaffTts(toSpeak, ttsLang, false, false, (result) => {
         if (result === 'spoken' || result === 'server_spoken') {
           ttsCompletedIdsRef.current.add(id);
@@ -641,6 +700,7 @@ function StaffChatPageInner() {
     locale,
     staffKey,
     soundEnabled,
+    autoTtsEnabled,
     serverTtsAvailable,
     ruVoiceReady,
     t
@@ -860,7 +920,7 @@ function StaffChatPageInner() {
 
   function toggleSound() {
     if (soundEnabled && !isServerStaffTtsUnlocked()) {
-      unlockNotificationAudio();
+      void unlockNotificationAudio();
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -873,15 +933,15 @@ function StaffChatPageInner() {
     }
 
     const next = !soundEnabled;
-    saveSoundEnabled(next);
+    saveStaffAlertsEnabled(next);
     setSoundEnabled(next);
     console.log('[STAFF_CHAT_SOUND_TOGGLE]', {
       prev: soundEnabled,
       next,
-      stored: loadSoundEnabled()
+      stored: loadStaffAlertsEnabled()
     });
     if (next) {
-      unlockNotificationAudio();
+      void unlockNotificationAudio();
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -1021,6 +1081,17 @@ function StaffChatPageInner() {
     >
       {/* 상단: 언어 · 소리 · 알림 */}
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+        {!notificationAudioUnlocked && soundEnabled ? (
+          <div className="mx-auto mb-1 max-w-md">
+            <button
+              type="button"
+              onClick={() => void unlockNotificationAudio()}
+              className="w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-center text-[11px] font-semibold text-amber-900"
+            >
+              🔊 {t('soundOn')} — tap to enable alert beep
+            </button>
+          </div>
+        ) : null}
         <div className="mx-auto flex max-w-md items-center justify-end gap-1.5">
           <div className="flex gap-0.5">
             {localeButtons.map((b) => (
