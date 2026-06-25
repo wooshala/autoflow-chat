@@ -15,7 +15,6 @@ import {
 } from '@/lib/chat/playNotificationTone';
 import { shouldCreateQueueItem } from '@/lib/chat/chatOpsQueue';
 import { canShowBrowserNotification, isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
-import { isOsBackgroundLike } from '@/lib/chat/notifyForeground';
 import { log } from '@/lib/logger';
 
 const TAG = '[CHAT_NOTIFY]';
@@ -466,7 +465,14 @@ export function useChatNotifications({
         typeof document !== 'undefined' && typeof document.hasFocus === 'function'
           ? document.hasFocus()
           : hasFocusRef.current;
-      const isBackgroundLike = isOsBackgroundLike();
+      // P0: OS notification must fire when the AutoFlow tab is not focused (user looking at
+      // Excel / another app), even though visibilityState stays 'visible'. Gate on focus, not
+      // visibility. visibilityState is kept for [NOTIFY_GATE] logging only. Shared
+      // isOsBackgroundLike() is intentionally left untouched.
+      const isBackgroundLike =
+        typeof document !== 'undefined' && typeof document.hasFocus === 'function'
+          ? !document.hasFocus()
+          : !hasFocusRef.current;
       const sameRoom = isSameRoomForNotify(viewRoom, msg);
 
       // Mark first to guarantee de-dupe even if toast/sound fails.

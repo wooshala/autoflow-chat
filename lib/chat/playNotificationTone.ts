@@ -4,6 +4,9 @@ import type { NotificationTone } from '@/lib/chat/notificationTone';
 const SILENT_WAV =
   'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
+/** Primary message notification sound — real audio file (oscillator is fallback only). */
+const NOTIFY_SOUND_SRC = '/sounds/notify.mp3';
+
 /** Unlock test beep — keep quiet. */
 const UNLOCK_BEEP_GAIN = 0.002;
 const UNLOCK_BEEP_DURATION_MS = 40;
@@ -18,6 +21,7 @@ const NOTIFY_BEEP_REPEATS_URGENT = 3;
 let audioUnlocked = false;
 let sharedCtx: AudioContext | null = null;
 let unlockAudio: HTMLAudioElement | null = null;
+let notifyAudio: HTMLAudioElement | null = null;
 
 const unlockListeners = new Set<() => void>();
 
@@ -45,6 +49,49 @@ function playErrorFields(err: unknown): { errorName: string; errorMessage: strin
     return { errorName: err.name, errorMessage: err.message };
   }
   return { errorName: 'unknown', errorMessage: String(err) };
+}
+
+/** Single reusable HTMLAudioElement for the real notification sound (autoplay-friendly). */
+function getNotifyAudio(): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null;
+  if (!notifyAudio) {
+    notifyAudio = new Audio(NOTIFY_SOUND_SRC);
+    notifyAudio.preload = 'auto';
+  }
+  return notifyAudio;
+}
+
+/** Play the real notification sound file at full volume. Primary playback path. */
+async function playNotifyAudioFile(): Promise<boolean> {
+  const audio = getNotifyAudio();
+  if (!audio) return false;
+  try {
+    audio.volume = 1.0;
+    audio.currentTime = 0;
+    await audio.play();
+    console.log('[CHAT_SOUND_AUDIO_FILE_PLAY_OK]', { src: NOTIFY_SOUND_SRC, volume: audio.volume });
+    return true;
+  } catch (err: unknown) {
+    console.log('[CHAT_SOUND_AUDIO_FILE_PLAY_FAILED]', { src: NOTIFY_SOUND_SRC, ...playErrorFields(err) });
+    return false;
+  }
+}
+
+/** Unlock the notify.mp3 element inside a user gesture: volume=0 play → pause. */
+async function unlockViaNotifyAudioFile(): Promise<boolean> {
+  const audio = getNotifyAudio();
+  if (!audio) return false;
+  try {
+    audio.volume = 0;
+    audio.currentTime = 0;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    return true;
+  } catch (err: unknown) {
+    console.log('[CHAT_SOUND_UNLOCK_FAILED]', { method: 'audio_file', ...playErrorFields(err) });
+    return false;
+  }
 }
 
 export function isNotificationAudioUnlocked(): boolean {
@@ -177,8 +224,18 @@ async function unlockViaHtmlAudio(): Promise<boolean> {
 export async function unlockNotificationAudio(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
+  // Primary: unlock the real notify.mp3 element (the actual playback path).
+  const fileUnlocked = await unlockViaNotifyAudioFile();
+  if (fileUnlocked) {
+    audioUnlocked = true;
+    notifyUnlockListeners();
+    console.log('[CHAT_SOUND_UNLOCK_OK]', { method: 'audio_file' });
+  }
+
+  // Best-effort: also prepare the WebAudio oscillator fallback within the same gesture.
   const AudioCtx = getAudioContextCtor();
   if (!AudioCtx) {
+    if (fileUnlocked) return true;
     console.log('[CHAT_SOUND_UNLOCK_FAILED]', { reason: 'no_audio_context_ctor' });
     const htmlOk = await unlockViaHtmlAudio();
     if (htmlOk) {
@@ -210,7 +267,7 @@ export async function unlockNotificationAudio(): Promise<boolean> {
           stateBefore,
           stateAfterResume
         });
-        return false;
+        return fileUnlocked;
       }
     }
 
@@ -236,7 +293,7 @@ export async function unlockNotificationAudio(): Promise<boolean> {
       notifyUnlockListeners();
       return true;
     }
-    return false;
+    return fileUnlocked;
   }
 }
 
@@ -261,8 +318,18 @@ export async function playNotificationTone(
   }
 
   const diag = peekNotificationAudioDiag();
-  if (!audioUnlocked || !sharedCtx) {
+  if (!audioUnlocked) {
     console.log('[CHAT_SOUND_SKIPPED]', { reason: 'not_unlocked', tone, hidden, diag });
+    return false;
+  }
+
+  // Primary: real notification sound file (same notify.mp3 for all tones in this P0).
+  const fileOk = await playNotifyAudioFile();
+  if (fileOk) return true;
+
+  // Fallback only: WebAudio oscillator beeps.
+  if (!sharedCtx) {
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'no_fallback_ctx', tone, hidden, diag });
     return false;
   }
 
