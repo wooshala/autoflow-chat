@@ -1,11 +1,19 @@
-export type StaffTtsLocale = 'ru' | 'ko';
+import type { StaffTtsLang } from '@/lib/chat/staffTtsLang';
+
+export type { StaffTtsLang };
+/** @deprecated use StaffTtsLang */
+export type StaffTtsLocale = StaffTtsLang;
 
 export type StaffTtsResult = 'spoken' | 'blocked' | 'no_voice';
 
-/**
- * Client-side Web Speech API when a matching ru-RU voice exists.
- * When no local ru voice, staff chat falls back to server OpenAI TTS via playStaffTts().
- */
+const UTTERANCE_LANG: Record<StaffTtsLang, string> = {
+  ko: 'ko-KR',
+  ru: 'ru-RU',
+  vi: 'vi-VN',
+  en: 'en-US',
+  zh: 'zh-CN',
+  th: 'th-TH'
+};
 
 let ttsUnlocked = false;
 
@@ -17,19 +25,23 @@ export function isStaffTtsUnlocked(): boolean {
   return ttsUnlocked;
 }
 
-function utteranceLangForLocale(locale: StaffTtsLocale): string {
-  return locale === 'ru' ? 'ru-RU' : 'ko-KR';
+function utteranceLangForLocale(locale: StaffTtsLang): string {
+  return UTTERANCE_LANG[locale] ?? locale;
 }
 
-function voiceMatchesLocale(voice: SpeechSynthesisVoice, locale: StaffTtsLocale): boolean {
+function voiceBaseLang(locale: StaffTtsLang): string {
+  return locale;
+}
+
+function voiceMatchesLocale(voice: SpeechSynthesisVoice, locale: StaffTtsLang): boolean {
   const lang = String(voice.lang || '').toLowerCase();
-  if (locale === 'ru') return lang === 'ru' || lang.startsWith('ru-');
-  return lang === 'ko' || lang.startsWith('ko-');
+  const base = voiceBaseLang(locale);
+  return lang === base || lang.startsWith(`${base}-`);
 }
 
 /** Pick a synthesis voice strictly matching locale — never fall back to another language. */
 export function selectVoiceForLocale(
-  locale: StaffTtsLocale,
+  locale: StaffTtsLang,
   voices: SpeechSynthesisVoice[]
 ): SpeechSynthesisVoice | null {
   const matches = voices.filter((v) => voiceMatchesLocale(v, locale));
@@ -53,20 +65,29 @@ export function getAvailableVoices(): SpeechSynthesisVoice[] {
   return synth ? synth.getVoices() : [];
 }
 
-export function isRuVoiceAvailable(voices = getAvailableVoices()): boolean {
-  return selectVoiceForLocale('ru', voices) !== null;
+export function isVoiceAvailableForLocale(
+  locale: StaffTtsLang,
+  voices = getAvailableVoices()
+): boolean {
+  return selectVoiceForLocale(locale, voices) !== null;
 }
 
-/** Debug: log all synthesis voices (ru subset highlighted). */
-export function logStaffTtsVoicesDebug(context = 'check'): void {
+/** @deprecated use isVoiceAvailableForLocale('ru') */
+export function isRuVoiceAvailable(voices = getAvailableVoices()): boolean {
+  return isVoiceAvailableForLocale('ru', voices);
+}
+
+/** Debug: log synthesis voices for a locale subset. */
+export function logStaffTtsVoicesDebug(context = 'check', locale: StaffTtsLang = 'ru'): void {
   const voices = getAvailableVoices();
-  const ruVoices = voices.filter((v) => voiceMatchesLocale(v, 'ru'));
+  const matched = voices.filter((v) => voiceMatchesLocale(v, locale));
   console.log('[STAFF_TTS_VOICES_DEBUG]', {
     context,
+    locale,
     total: voices.length,
-    ruCount: ruVoices.length,
-    ruAvailable: ruVoices.length > 0,
-    ruVoices: ruVoices.map((v) => ({
+    matchedCount: matched.length,
+    matchedAvailable: matched.length > 0,
+    matchedVoices: matched.map((v) => ({
       name: v.name,
       lang: v.lang,
       localService: v.localService,
@@ -94,7 +115,7 @@ function getVoicesReady(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]>
   });
 }
 
-export async function speakStaffTts(text: string, locale: StaffTtsLocale): Promise<StaffTtsResult> {
+export async function speakStaffTts(text: string, locale: StaffTtsLang): Promise<StaffTtsResult> {
   const preview = String(text || '').trim().slice(0, 120);
   const utterLang = utteranceLangForLocale(locale);
 
@@ -136,8 +157,12 @@ export async function speakStaffTts(text: string, locale: StaffTtsLocale): Promi
       return 'no_voice';
     }
 
-    if (locale === 'ru' && !voiceMatchesLocale(voice, 'ru')) {
-      console.log('[STAFF_TTS_BLOCKED]', { reason: 'refuse_non_ru_voice', voiceLang: voice.lang });
+    if (!voiceMatchesLocale(voice, locale)) {
+      console.log('[STAFF_TTS_BLOCKED]', {
+        reason: 'refuse_wrong_voice_lang',
+        locale,
+        voiceLang: voice.lang
+      });
       return 'no_voice';
     }
 

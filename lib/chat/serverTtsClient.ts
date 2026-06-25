@@ -1,5 +1,9 @@
 import { STAFF_TTS_URL } from '@/lib/chatApi';
 import {
+  isServerTtsLangSupported,
+  type StaffTtsLang
+} from '@/lib/chat/staffTtsLang';
+import {
   normalizeStaffTtsPlayError,
   peekStaffTtsDiag,
   peekStaffTtsError,
@@ -127,11 +131,11 @@ export type PlayServerStaffTtsOptions = {
 };
 
 /**
- * Fetch Russian TTS mp3 from server and play via HTMLAudioElement.
+ * Fetch TTS mp3 from server and play via HTMLAudioElement.
  */
 export async function playServerStaffTts(
   text: string,
-  locale: 'ru' = 'ru',
+  locale: StaffTtsLang,
   options?: PlayServerStaffTtsOptions
 ): Promise<boolean> {
   const fromUserGesture = options?.fromUserGesture ?? false;
@@ -147,6 +151,11 @@ export async function playServerStaffTts(
   });
 
   if (typeof window === 'undefined') return false;
+  if (!isServerTtsLangSupported(locale)) {
+    console.log('[STAFF_SERVER_TTS_CLIENT_BLOCKED]', { reason: 'unsupported_locale', locale });
+    setStaffTtsError('skip_tts_lang_unsupported');
+    return false;
+  }
   if (!serverTtsUnlocked && !fromUserGesture) {
     console.log('[STAFF_SERVER_TTS_CLIENT_BLOCKED]', { reason: 'not_unlocked' });
     setStaffTtsError('not_unlocked');

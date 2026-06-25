@@ -1,9 +1,11 @@
 import { setStaffTtsSkipReason } from '@/lib/chat/staffTtsDiagState';
+import type { StaffTtsLang } from '@/lib/chat/staffTtsLang';
 
 export type StaffTtsTriggerCheckPayload = {
   messageId: string | null;
   text: string;
-  translatedRu: string;
+  ttsLang: StaffTtsLang | string;
+  translatedTts: string;
   originalLang: string;
   isSelfMessage: boolean;
   soundEnabled: boolean;
@@ -15,9 +17,12 @@ export type StaffTtsTriggerCheckPayload = {
   /** Extra fields for split-point diagnosis (console only). */
   viewerLang?: string;
   ttsText?: string | null;
+  ttsTextSource?: string;
   toSpeak?: string | null;
   willCallPlayStaffTts?: boolean;
   willCallPlayServerStaffTts?: boolean;
+  /** @deprecated use translatedTts */
+  translatedRu?: string;
 };
 
 let lastTriggerCheck: StaffTtsTriggerCheckPayload | null = null;
@@ -27,9 +32,12 @@ export function peekStaffTtsTriggerCheck(): StaffTtsTriggerCheckPayload | null {
 }
 
 export function logStaffTtsTriggerCheck(payload: StaffTtsTriggerCheckPayload) {
-  lastTriggerCheck = payload;
+  lastTriggerCheck = {
+    ...payload,
+    translatedRu: payload.translatedTts ?? payload.translatedRu ?? ''
+  };
   setStaffTtsSkipReason(payload.skipReason);
-  console.log('[STAFF_TTS_TRIGGER_CHECK]', payload);
+  console.log('[STAFF_TTS_TRIGGER_CHECK]', lastTriggerCheck);
 }
 
 export function logStaffTtsPlaybackSkip(

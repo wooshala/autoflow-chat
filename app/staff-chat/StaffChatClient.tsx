@@ -40,6 +40,15 @@ import {
   unlockServerStaffTts
 } from '@/lib/chat/serverTtsClient';
 import { playStaffTts } from '@/lib/chat/staffTtsPlayback';
+import {
+  getTranslationForTtsLang,
+  isServerTtsLangSupported,
+  resolveStaffTtsLang,
+  resolveStaffTtsText,
+  resolveStaffTtsTriggerSkipReason,
+  type StaffTtsLang
+} from '@/lib/chat/staffTtsLang';
+import { isVoiceAvailableForLocale } from '@/lib/chat/staffTts';
 import { noteStaffTtsMessageReceived } from '@/lib/chat/staffTtsDiagState';
 import { logStaffTtsTriggerCheck } from '@/lib/chat/staffTtsTriggerCheck';
 import { normalizeTranslatedText } from '@/lib/chat/normalizeChatMessage';
@@ -122,19 +131,22 @@ function StaffChatPageInner() {
 
   function runStaffTts(
     text: string,
-    ttsLocale: 'ru' | 'ko' = 'ru',
+    ttsLang: StaffTtsLang,
     showNoVoiceToast = false,
     fromUserGesture = false
   ) {
-    void playStaffTts(text, ttsLocale, ruVoiceReady, { fromUserGesture }).then((result) => {
+    void playStaffTts(text, ttsLang, { fromUserGesture }).then((result) => {
       if (result === 'server_not_unlocked' && !fromUserGesture) {
         setToast({ kind: 'error', msg: t('ttsTapSoundOn') });
         return;
       }
-      const failed =
-        result === 'no_voice' || result === 'server_failed' || result === 'blocked';
-      if (failed && ttsLocale === 'ru' && showNoVoiceToast) {
-        setToast({ kind: 'error', msg: t('ttsNoRussianVoice') });
+      if (result === 'lang_unsupported' && showNoVoiceToast) {
+        setToast({ kind: 'error', msg: t('ttsVoiceUnavailable') });
+        return;
+      }
+      const failed = result === 'server_failed' || result === 'blocked';
+      if (failed && showNoVoiceToast) {
+        setToast({ kind: 'error', msg: t('ttsVoiceUnavailable') });
       }
     });
   }
@@ -435,7 +447,8 @@ function StaffChatPageInner() {
       logStaffTtsTriggerCheck({
         messageId: null,
         text: '',
-        translatedRu: '',
+        ttsLang: resolveStaffTtsLang(locale),
+        translatedTts: '',
         originalLang: '',
         isSelfMessage: false,
         soundEnabled,
@@ -452,13 +465,18 @@ function StaffChatPageInner() {
       const id = m?.id != null ? String(m.id) : '';
       if (!id || id.startsWith('tmp-')) continue;
       if (knownNotifyIdsRef.current.has(id)) {
-        const lateRu = normalizeTranslatedText(m.translated_text)?.ru?.trim() || '';
-        if (lateRu && !duplicateTtsDiagLoggedRef.current.has(id)) {
+        const ttsLang = resolveStaffTtsLang(locale);
+        const lateTranslated = getTranslationForTtsLang(
+          normalizeTranslatedText(m.translated_text),
+          ttsLang
+        );
+        if (lateTranslated && !duplicateTtsDiagLoggedRef.current.has(id)) {
           duplicateTtsDiagLoggedRef.current.add(id);
           logStaffTtsTriggerCheck({
             messageId: id,
             text: String(m.message || '').trim().slice(0, 120),
-            translatedRu: lateRu.slice(0, 120),
+            ttsLang,
+            translatedTts: lateTranslated.slice(0, 120),
             originalLang: String(m.original_lang || '').trim(),
             isSelfMessage: isStaffChatSelfMessage(m, staffSession),
             soundEnabled,
@@ -474,27 +492,35 @@ function StaffChatPageInner() {
 
       knownNotifyIdsRef.current.add(id);
       const isSelf = isStaffChatSelfMessage(m, staffSession);
+      const ttsLang = resolveStaffTtsLang(locale);
       const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
       const translated = normalizeTranslatedText(m.translated_text);
-      const translatedRu = translated?.ru?.trim() || '';
+      const translatedTts = getTranslationForTtsLang(translated, ttsLang);
       const originalLang = String(m.original_lang || '').trim();
-      const { primary, ttsText } = getMessageDisplayParts(m, viewerLang, {
+      const ttsResolved = resolveStaffTtsText(m, ttsLang, viewerLang);
+      const toSpeak = ttsResolved.text;
+      const { primary } = getMessageDisplayParts(m, viewerLang, {
         logContext: 'staff',
         selectedLang: locale
       });
       const urgent = isUrgentMessage(m);
       const preview = String(primary || m.message || '').trim();
-      const toSpeak = ttsText || (viewerLang === 'ru' ? primary : null);
+      const localVoiceForLang =
+        ttsLang === 'ru' && ruVoiceReady !== null
+          ? ruVoiceReady
+          : isVoiceAvailableForLocale(ttsLang);
       const willCallPlayStaffTts = Boolean(soundEnabled && toSpeak);
       const shouldUseServerTts =
-        willCallPlayStaffTts && ruVoiceReady !== true;
-      const willCallPlayServerStaffTts =
-        shouldUseServerTts && (ruVoiceReady === false || ruVoiceReady === null);
+        willCallPlayStaffTts &&
+        isServerTtsLangSupported(ttsLang) &&
+        !localVoiceForLang;
+      const willCallPlayServerStaffTts = shouldUseServerTts;
 
       const triggerBase = {
         messageId: id,
         text: preview.slice(0, 120),
-        translatedRu: translatedRu.slice(0, 120),
+        ttsLang,
+        translatedTts: translatedTts.slice(0, 120),
         originalLang,
         isSelfMessage: isSelf,
         soundEnabled,
@@ -502,7 +528,8 @@ function StaffChatPageInner() {
         serverTtsUnlocked: serverUnlocked,
         localRuVoice: ruVoiceReady,
         viewerLang,
-        ttsText,
+        ttsText: toSpeak ? String(toSpeak).slice(0, 120) : null,
+        ttsTextSource: ttsResolved.source,
         toSpeak: toSpeak ? String(toSpeak).slice(0, 120) : null,
         shouldUseServerTts,
         willCallPlayStaffTts,
@@ -540,8 +567,7 @@ function StaffChatPageInner() {
         if (!toSpeak) {
           logStaffTtsTriggerCheck({
             ...triggerBase,
-            skipReason:
-              viewerLang !== 'ru' ? 'skip_viewer_lang_not_ru' : 'skip_no_ru_text'
+            skipReason: resolveStaffTtsTriggerSkipReason(ttsResolved) ?? 'skip_no_tts_text'
           });
         } else {
           logStaffTtsTriggerCheck({
@@ -549,7 +575,7 @@ function StaffChatPageInner() {
             skipReason: 'triggered'
           });
           noteStaffTtsMessageReceived();
-          runStaffTts(toSpeak, 'ru');
+          runStaffTts(toSpeak, ttsLang);
         }
       }
 
@@ -1113,7 +1139,10 @@ function StaffChatPageInner() {
               const mine = isStaffChatSelfMessage(m, staffSession);
               const urgent = isUrgentMessage(m);
               const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
-              const { primary, secondary, ttsText } = getMessageDisplayParts(m, viewerLang, {
+              const ttsLang = resolveStaffTtsLang(locale);
+              const ttsResolved = resolveStaffTtsText(m, ttsLang, viewerLang);
+              const speakText = ttsResolved.text;
+              const { primary, secondary } = getMessageDisplayParts(m, viewerLang, {
                 logContext: 'staff',
                 selectedLang: locale
               });
@@ -1143,12 +1172,12 @@ function StaffChatPageInner() {
                           (m.room_no ? `${m.room_no}${t('roomSuffix')}` : '—')}{' '}
                         · {m.sender_side || '?'}
                       </span>
-                      {!mine && ttsText && soundEnabled ? (
+                      {!mine && speakText && soundEnabled ? (
                         <button
                           type="button"
                           onClick={() => {
                             void unlockServerStaffTts();
-                            runStaffTts(ttsText, 'ru', true, true);
+                            runStaffTts(speakText, ttsLang, true, true);
                           }}
                           className="rounded px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
                         >

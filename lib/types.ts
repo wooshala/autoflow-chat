@@ -85,6 +85,8 @@ export interface TranslatedText {
   vi?: string;
   ru?: string;
   en?: string;
+  zh?: string;
+  th?: string;
 }
 
 export type MessagePriority = 'normal' | 'urgent';
