@@ -17,6 +17,10 @@ const REMOTE_CHAT_URL: &str = "https://autoflow-mvp.vercel.app/chat";
 const SND_DEFAULT: &[u8] = include_bytes!("../assets/default.wav");
 const SND_BELL: &[u8] = include_bytes!("../assets/bell.wav");
 const SND_BEEP: &[u8] = include_bytes!("../assets/beep.wav");
+const SND_INCOMING: &[u8] = include_bytes!("../assets/incoming.mp3");
+const SND_NOTIFY_022: &[u8] = include_bytes!("../assets/notify-022.mp3");
+const SND_NOTIFY_036: &[u8] = include_bytes!("../assets/notify-036.mp3");
+const SND_NOTIFY_053: &[u8] = include_bytes!("../assets/notify-053.mp3");
 const ALERT_ICON: &[u8] = include_bytes!("../icons/alert.png");
 const BRIDGE_JS: &str = include_str!("../notify-bridge.js");
 
@@ -29,16 +33,26 @@ fn play_sound_key(key: &str) {
         "mute" => return,
         "bell" => (SND_BELL, 2.0),
         "beep" => (SND_BEEP, 1.4),
+        "incoming" => (SND_INCOMING, 1.5),
+        "notify-022" => (SND_NOTIFY_022, 1.5),
+        "notify-036" => (SND_NOTIFY_036, 1.5),
+        "notify-053" => (SND_NOTIFY_053, 1.5),
         _ => (SND_DEFAULT, 1.6),
     };
+    let key_owned = key.to_string();
     std::thread::spawn(move || {
         if let Ok((_stream, handle)) = rodio::OutputStream::try_default() {
             if let Ok(sink) = rodio::Sink::try_new(&handle) {
                 let cursor = std::io::Cursor::new(bytes);
-                if let Ok(src) = rodio::Decoder::new(cursor) {
-                    sink.set_volume(vol); // > 1.0 amplifies above source level
-                    sink.append(src);
-                    sink.sleep_until_end(); // keep _stream alive until done
+                match rodio::Decoder::new(cursor) {
+                    Ok(src) => {
+                        sink.set_volume(vol); // > 1.0 amplifies above source level
+                        sink.append(src);
+                        sink.sleep_until_end(); // keep _stream alive until done
+                    }
+                    Err(e) => {
+                        log::warn!("[PLAY_SOUND_DECODE_ERR] key={} err={}", key_owned, e);
+                    }
                 }
             }
         }

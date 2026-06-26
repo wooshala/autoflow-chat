@@ -15,6 +15,10 @@ export type NotifySoundKey =
   | 'office-soft'
   | 'digital-soft'
   | 'knock'
+  | 'incoming'
+  | 'notify-022'
+  | 'notify-036'
+  | 'notify-053'
   | 'mute';
 
 export type NotifySoundKind = 'file' | 'synth' | 'mute';
@@ -39,6 +43,10 @@ export const NOTIFY_SOUND_OPTIONS: NotifySoundOption[] = [
   { key: 'office-soft', label: '오피스 (부드럽게)', kind: 'synth', synth: 'office-soft' },
   { key: 'digital-soft', label: '디지털 (부드럽게)', kind: 'synth', synth: 'digital-soft' },
   { key: 'knock', label: '노크', kind: 'synth', synth: 'knock' },
+  { key: 'incoming', label: '인커밍 (MP3)', kind: 'file', file: '/sounds/incoming.mp3' },
+  { key: 'notify-022', label: '뉴 알림 022 (MP3)', kind: 'file', file: '/sounds/notify-022.mp3' },
+  { key: 'notify-036', label: '뉴 알림 036 (MP3)', kind: 'file', file: '/sounds/notify-036.mp3' },
+  { key: 'notify-053', label: '뉴 알림 053 (MP3)', kind: 'file', file: '/sounds/notify-053.mp3' },
   { key: 'mute', label: '무음', kind: 'mute' }
 ];
 

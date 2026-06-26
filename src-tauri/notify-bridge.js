@@ -40,9 +40,14 @@
   function readSoundKey() {
     try {
       var v = window.localStorage.getItem('autoflow_notify_sound');
-      if (v === 'default' || v === 'bell' || v === 'beep' || v === 'mute') return v;
+      var known = {
+        default: 1, 'soft-chime': 1, bell: 1, beep: 1, ding: 1, pop: 1, glass: 1,
+        'water-drop': 1, 'office-soft': 1, 'digital-soft': 1, knock: 1,
+        incoming: 1, 'notify-022': 1, 'notify-036': 1, 'notify-053': 1, mute: 1
+      };
+      if (v && known[v]) return v;
     } catch (e) { /* ignore */ }
-    return 'default';
+    return 'soft-chime';
   }
 
   function install() {
