@@ -1,42 +1,67 @@
 // Notification sound selection for the PC /chat surface.
-// The chosen key is persisted in localStorage and read by:
-//   1) the web "테스트 재생" preview (HTMLAudio against /public/sounds/*),
-//   2) the Tauri native bridge (notify-bridge.js), which forwards it to the
-//      native_notify Rust command so the OS notification plays the matching WAV.
-// This module does NOT touch the existing web notification gate/conditions.
+// Persisted key is read by web preview, playNotificationTone mapping, and Tauri bridge.
 
-export type NotifySoundKey = 'default' | 'bell' | 'beep' | 'mute';
+import type { NotifySynthProfile } from '@/lib/chat/notifySoundSynth';
+
+export type NotifySoundKey =
+  | 'default'
+  | 'soft-chime'
+  | 'bell'
+  | 'beep'
+  | 'ding'
+  | 'pop'
+  | 'glass'
+  | 'water-drop'
+  | 'office-soft'
+  | 'digital-soft'
+  | 'knock'
+  | 'mute';
+
+export type NotifySoundKind = 'file' | 'synth' | 'mute';
 
 export type NotifySoundOption = {
   key: NotifySoundKey;
   label: string;
-  /** Public asset path for web preview. Empty for mute. */
-  file: string;
+  kind: NotifySoundKind;
+  file?: string;
+  synth?: NotifySynthProfile;
 };
 
 export const NOTIFY_SOUND_OPTIONS: NotifySoundOption[] = [
-  { key: 'default', label: '기본음', file: '/sounds/default.wav' },
-  { key: 'bell', label: '큰 벨', file: '/sounds/bell.wav' },
-  { key: 'beep', label: '짧은 삐', file: '/sounds/beep.wav' },
-  { key: 'mute', label: '무음', file: '' }
+  { key: 'default', label: '기본음 (부드러운 차임)', kind: 'synth', synth: 'soft-chime' },
+  { key: 'soft-chime', label: '소프트 차임', kind: 'synth', synth: 'soft-chime' },
+  { key: 'bell', label: '벨', kind: 'file', file: '/sounds/bell.wav' },
+  { key: 'beep', label: '짧은 삐', kind: 'file', file: '/sounds/beep.wav' },
+  { key: 'ding', label: '딩', kind: 'synth', synth: 'ding' },
+  { key: 'pop', label: '팝', kind: 'synth', synth: 'pop' },
+  { key: 'glass', label: '글래스', kind: 'synth', synth: 'glass' },
+  { key: 'water-drop', label: '물방울', kind: 'synth', synth: 'water-drop' },
+  { key: 'office-soft', label: '오피스 (부드럽게)', kind: 'synth', synth: 'office-soft' },
+  { key: 'digital-soft', label: '디지털 (부드럽게)', kind: 'synth', synth: 'digital-soft' },
+  { key: 'knock', label: '노크', kind: 'synth', synth: 'knock' },
+  { key: 'mute', label: '무음', kind: 'mute' }
 ];
 
-// Shared with notify-bridge.js — keep the string in sync if changed.
+/** Shared with notify-bridge.js — keep the string in sync if changed. */
 export const NOTIFY_SOUND_STORAGE_KEY = 'autoflow_notify_sound';
 
-const DEFAULT_KEY: NotifySoundKey = 'default';
+const FALLBACK_KEY: NotifySoundKey = 'soft-chime';
 
-function isValidKey(v: unknown): v is NotifySoundKey {
-  return v === 'default' || v === 'bell' || v === 'beep' || v === 'mute';
+const VALID_KEYS = new Set<NotifySoundKey>(NOTIFY_SOUND_OPTIONS.map((o) => o.key));
+
+export function normalizeNotifySoundKey(raw: unknown): NotifySoundKey {
+  const v = String(raw ?? '').trim();
+  if (VALID_KEYS.has(v as NotifySoundKey)) return v as NotifySoundKey;
+  return FALLBACK_KEY;
 }
 
 export function getNotifySoundKey(): NotifySoundKey {
-  if (typeof window === 'undefined') return DEFAULT_KEY;
+  if (typeof window === 'undefined') return FALLBACK_KEY;
   try {
     const v = window.localStorage.getItem(NOTIFY_SOUND_STORAGE_KEY);
-    return isValidKey(v) ? v : DEFAULT_KEY;
+    return normalizeNotifySoundKey(v);
   } catch {
-    return DEFAULT_KEY;
+    return FALLBACK_KEY;
   }
 }
 
@@ -50,19 +75,9 @@ export function setNotifySoundKey(key: NotifySoundKey): void {
 }
 
 export function notifySoundOption(key: NotifySoundKey): NotifySoundOption {
-  return NOTIFY_SOUND_OPTIONS.find((o) => o.key === key) ?? NOTIFY_SOUND_OPTIONS[0];
-}
-
-/** Web preview playback (used by the "테스트 재생" button in a plain browser). */
-export function playNotifySoundPreview(key: NotifySoundKey): void {
-  if (typeof window === 'undefined') return;
-  const opt = notifySoundOption(key);
-  if (!opt.file) return; // mute
-  try {
-    const audio = new Audio(opt.file);
-    audio.volume = 1;
-    void audio.play().catch(() => {});
-  } catch {
-    /* ignore */
-  }
+  const normalized = normalizeNotifySoundKey(key);
+  return (
+    NOTIFY_SOUND_OPTIONS.find((o) => o.key === normalized) ??
+    NOTIFY_SOUND_OPTIONS.find((o) => o.key === 'soft-chime')!
+  );
 }

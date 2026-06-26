@@ -6,9 +6,9 @@ import {
   NOTIFY_SOUND_OPTIONS,
   getNotifySoundKey,
   setNotifySoundKey,
-  playNotifySoundPreview,
   type NotifySoundKey
 } from '@/lib/chat/notifySound';
+import { playNotifySoundPreview } from '@/lib/chat/notifySoundPlay';
 import {
   testBrowserOsNotification,
   testBrowserOsNotificationPlain,
@@ -42,9 +42,9 @@ export default function ChatNotifyDiagBar({ onRequestPermission }: Props) {
       | { playSound?: (k: string) => void }
       | undefined;
     if (native && typeof native.playSound === 'function') {
-      native.playSound(soundKey); // Tauri: test the actual native sound path
+      native.playSound(soundKey);
     } else {
-      playNotifySoundPreview(soundKey); // plain browser: web audio preview
+      void playNotifySoundPreview(soundKey);
     }
   };
 

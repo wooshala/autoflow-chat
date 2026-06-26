@@ -1,18 +1,20 @@
 import type { NotificationTone } from '@/lib/chat/notificationTone';
+import { getNotifySoundKey } from '@/lib/chat/notifySound';
+import { NOTIFY_PLAY_VOLUME, playPreferredNotifySound } from '@/lib/chat/notifySoundPlay';
 
 /** Minimal silent WAV — unlock HTMLAudio autoplay on user gesture (fallback). */
 const SILENT_WAV =
   'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
-/** Primary message notification sound — real audio file (oscillator is fallback only). */
+/** Legacy unlock target — kept for autoplay unlock gesture compatibility. */
 const NOTIFY_SOUND_SRC = '/sounds/notify.mp3';
 
 /** Unlock test beep — keep quiet. */
 const UNLOCK_BEEP_GAIN = 0.002;
 const UNLOCK_BEEP_DURATION_MS = 40;
 
-/** Message notification beeps — louder, clearly audible. */
-export const NOTIFY_BEEP_GAIN = 0.1;
+/** Oscillator fallback when file/synth preference playback fails. */
+export const NOTIFY_BEEP_GAIN = NOTIFY_PLAY_VOLUME;
 export const NOTIFY_BEEP_DURATION_MS = 180;
 export const NOTIFY_BEEP_GAP_MS = 80;
 const NOTIFY_BEEP_REPEATS_DEFAULT = 2;
@@ -66,7 +68,7 @@ async function playNotifyAudioFile(): Promise<boolean> {
   const audio = getNotifyAudio();
   if (!audio) return false;
   try {
-    audio.volume = 1.0;
+    audio.volume = NOTIFY_PLAY_VOLUME;
     audio.currentTime = 0;
     await audio.play();
     console.log('[CHAT_SOUND_AUDIO_FILE_PLAY_OK]', { src: NOTIFY_SOUND_SRC, volume: audio.volume });
@@ -323,7 +325,16 @@ export async function playNotificationTone(
     return false;
   }
 
-  // Primary: real notification sound file (same notify.mp3 for all tones in this P0).
+  if (getNotifySoundKey() === 'mute') {
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'notify_sound_mute', tone });
+    return false;
+  }
+
+  // Primary: user-selected notification sound (file or soft synth profile).
+  const prefOk = await playPreferredNotifySound({ tone, volume: NOTIFY_PLAY_VOLUME, audioContext: sharedCtx });
+  if (prefOk) return true;
+
+  // Legacy file fallback if preference playback failed.
   const fileOk = await playNotifyAudioFile();
   if (fileOk) return true;
 

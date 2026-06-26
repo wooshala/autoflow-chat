@@ -6,7 +6,9 @@ import AiActionBadge from "@/components/AiActionBadge";
 import { AiAction, ChatMessage } from "@/lib/types";
 import { formatKSTTime } from "@/lib/formatKST";
 import { getMessageDisplayParts } from "@/lib/chat/displayMessageText";
+import { isEmojiOnlyMessage } from "@/lib/chat/isEmojiOnlyMessage";
 import { isUrgentMessage } from "@/lib/chat/messagePriority";
+import MessageOverflowMenu from "@/components/chat/MessageOverflowMenu";
 
 type Props = {
   messages: ChatMessage[];
@@ -85,6 +87,8 @@ export default function ChatMessages({
         const displaySecondaryBody = displaySecondary
           ? stripDuplicateRoomPrefix(displaySecondary, msg.room_no)
           : displaySecondary;
+        const emojiOnly =
+          !isDeleted && !msg.image_url && isEmojiOnlyMessage(displayBody || msg.message || '');
         const isImageOnly =
           !isDeleted && Boolean(msg.image_url) && !statusLabel && isGenericPhotoCaption(displayPrimary || msg.message || '');
         const isSystemEvent = isMaintenanceSystemMessage(msg, msgText);
@@ -127,6 +131,12 @@ export default function ChatMessages({
           await onDeleteMessage(msg);
         }
 
+        const showManualTicketAction =
+          !isDeleted && !msg.ticket_id && !emojiOnly && typeof onCreateManualTicket === "function";
+        const overflowItems = showManualTicketAction
+          ? [{ id: "manual-ticket", label: "수동 티켓 생성", onClick: () => onCreateManualTicket!(msg) }]
+          : [];
+
         return (
           // 카카오: 내 메시지=오른쪽, 상대=왼쪽 + 아바타
           <div key={msg.id} className={`flex w-full gap-2 ${isPc ? "justify-end" : "justify-start"}`}>
@@ -151,7 +161,30 @@ export default function ChatMessages({
               {/* 말풍선 + 시간 가로 배치 */}
               <div className={`flex items-end gap-1.5 ${isPc ? "flex-row-reverse" : "flex-row"}`}>
 
-                {/* 말풍선 */}
+                {emojiOnly ? (
+                  <div className="group relative flex flex-col items-center gap-0.5 px-1">
+                    <div className="flex items-start gap-1">
+                      {showDeleteBtn ? (
+                        <button
+                          type="button"
+                          disabled={deleteDisabled}
+                          aria-busy={isDeletingThis}
+                          aria-label="메시지 삭제"
+                          onClick={() => void handleDeleteClick()}
+                          className="shrink-0 rounded px-1 py-0.5 text-[10px] font-medium text-gray-500 opacity-0 transition-opacity hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 group-hover:opacity-100"
+                        >
+                          {isDeletingThis ? "삭제 중" : "삭제"}
+                        </button>
+                      ) : null}
+                      {overflowItems.length > 0 ? (
+                        <MessageOverflowMenu items={overflowItems} align={isPc ? 'right' : 'left'} />
+                      ) : null}
+                    </div>
+                    <div className="text-4xl leading-none sm:text-5xl" aria-label="이모티콘 메시지">
+                      {displayBody}
+                    </div>
+                  </div>
+                ) : (
                 <div
                   className={`group relative rounded-2xl px-3 pb-2 shadow-sm ${
                     isDeleted
@@ -174,7 +207,8 @@ export default function ChatMessages({
                     </div>
                   )}
                   {showDeleteBtn && (
-                    <div className="-mt-0.5 mb-1 flex min-h-[22px] justify-end">
+                    <div className="-mt-0.5 mb-1 flex min-h-[22px] items-center justify-end gap-0.5">
+                      <MessageOverflowMenu items={overflowItems} align="right" />
                       <button
                         type="button"
                         disabled={deleteDisabled}
@@ -191,6 +225,11 @@ export default function ChatMessages({
                       </button>
                     </div>
                   )}
+                  {!showDeleteBtn && overflowItems.length > 0 ? (
+                    <div className="-mt-0.5 mb-1 flex min-h-[22px] justify-end">
+                      <MessageOverflowMenu items={overflowItems} align="right" />
+                    </div>
+                  ) : null}
 
                   {/* 객실 번호 — 굵게 + 배경 강조 (업무 식별 포인트) */}
                   {!isDeleted && msg.room_no && (
@@ -275,14 +314,6 @@ export default function ChatMessages({
                       연결된 티켓 보기
                     </button>
                   )}
-                  {!isDeleted && !msg.ticket_id && onCreateManualTicket && (
-                    <button
-                      onClick={() => onCreateManualTicket(msg)}
-                      className={`mt-1 text-xs font-semibold underline ${isPc ? "text-gray-800" : "text-cyan-700"}`}
-                    >
-                      수동 티켓 생성
-                    </button>
-                  )}
                   {!isDeleted && msg.ai_action === "skip_duplicate" && (
                     <div className={`mt-1 text-xs ${isPc ? "text-gray-700" : "text-amber-700"}`}>
                       최근 동일 이슈 티켓이 있어 새로 생성하지 않았습니다.
@@ -314,6 +345,7 @@ export default function ChatMessages({
                     <div className={`mt-1 text-xs ${isPc ? "text-gray-700" : "text-rose-700"}`}>AI 처리 오류로 자동 생성이 건너뛰어졌습니다.</div>
                   )}
                 </div>
+                )}
 
                 {/* 시간 — 말풍선 옆 하단에 배치 */}
                 <div className="text-[10px] text-gray-500 shrink-0 pb-0.5 leading-none whitespace-nowrap">
