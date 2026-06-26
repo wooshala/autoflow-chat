@@ -7,8 +7,8 @@ import Navigation from '@/components/Navigation';
 import { ChatMessage, ISSUE_TYPES, ISSUE_UI, IssueType, SenderSide } from '@/lib/types';
 import { type AutoflowUser, loadUser, logoutAndGoLogin, resolveChatSendUserId, runSessionMigration } from '@/lib/auth';
 import ChatMessages from '@/components/ChatMessages';
-import RoomParticipantsPanel from '@/components/RoomParticipantsPanel';
 import StaffChatAdminSection from '@/components/chat/StaffChatAdminSection';
+import StaffInvitePanel from '@/components/chat/StaffInvitePanel';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
@@ -324,9 +324,9 @@ export default function ChatPage() {
       alert(missingSendEnvMsg);
       return;
     }
+    const clientNonce = createClientNonce('pc');
     setSubmitting(true);
     const optimisticId = `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const clientNonce = createClientNonce();
     const clientSendTs = Date.now();
     logSendClick(clientNonce);
     latSendClick({ client_nonce: clientNonce, sender_side: getDeviceSide(), room: roomNo || null, source: 'pc' });
@@ -373,7 +373,7 @@ export default function ChatPage() {
       }
 
       latApiStart(clientNonce);
-      const sendResult = await fetchEnvelope<{ message: ChatMessage }>(CHAT_SEND_URL, {
+      const sendResult = await fetchEnvelope<{ message: ChatMessage; client_nonce?: string }>(CHAT_SEND_URL, {
         method: 'POST',
         body: fd,
         timeoutMs: TIMEOUT_MS_CHAT_SEND
@@ -411,6 +411,11 @@ export default function ChatPage() {
       }
 
       log.info('[SEND_RESPONSE_OK]', {
+        client_nonce: clientNonce,
+        echoed_client_nonce:
+          sendResult.data && typeof sendResult.data === 'object'
+            ? (sendResult.data as { client_nonce?: string }).client_nonce ?? null
+            : null,
         message_id: saved.id,
         ai_action: saved.ai_action || null,
         ticket_id: saved.ticket_id || null
@@ -635,15 +640,13 @@ export default function ChatPage() {
             </div>
             {/* 서브타이틀: 카카오 포인트 노랑 */}
             <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
-            {!isMobileViewport ? (
-              <button
-                type="button"
-                onClick={() => setShowAdminPanel((open) => !open)}
-                className="mt-2 rounded-lg border border-yellow-500/50 bg-gray-700 px-3 py-1.5 text-xs font-semibold text-yellow-300 hover:bg-gray-600"
-              >
-                {showAdminPanel ? '직원/문구 닫기' : '직원/문구 열기'}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setShowAdminPanel((open) => !open)}
+              className="mt-2 rounded-lg border border-yellow-500/50 bg-gray-700 px-3 py-1.5 text-xs font-semibold text-yellow-300 hover:bg-gray-600"
+            >
+              {showAdminPanel ? '상태 문구 닫기' : '상태 문구 관리'}
+            </button>
             {sessionUser ? (
               <div className="mt-0.5 text-xs font-semibold text-gray-400">로그인: {sessionUser.name}</div>
             ) : null}
@@ -721,9 +724,9 @@ export default function ChatPage() {
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
 
-      <StaffChatAdminSection open={showAdminPanel} />
+      <StaffInvitePanel variant="chat" collapsible defaultOpen messages={messages} />
 
-      <RoomParticipantsPanel roomId={process.env.NEXT_PUBLIC_DEFAULT_CHAT_ROOM_ID || ''} />
+      <StaffChatAdminSection open={showAdminPanel} />
 
       {/* 메시지 목록 — 배경 main에서 상속 */}
       <section ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">

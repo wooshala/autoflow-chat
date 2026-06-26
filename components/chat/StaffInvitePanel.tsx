@@ -5,7 +5,7 @@ import { fetchEnvelope } from '@/lib/api/envelope';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { STAFF_ENTRY_INVITE_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
 import { formatRelativeKST } from '@/lib/formatKST';
-import type { StaffInvite } from '@/lib/types';
+import type { ChatMessage, StaffInvite } from '@/lib/types';
 
 type InviteRow = StaffInvite & { url?: string };
 
@@ -14,18 +14,20 @@ type Props = {
   variant?: 'chat' | 'admin';
   collapsible?: boolean;
   defaultOpen?: boolean;
+  /** Loaded chat messages — used to derive each staff's "마지막 메시지" time. */
+  messages?: ChatMessage[];
 };
 
 /** Broadcast channel for the per-staff "🔔 테스트" ping (ephemeral, no DB row). */
 export const STAFF_TEST_CHANNEL = 'autoflow-staff-test';
 export const STAFF_TEST_EVENT = 'staff-test';
 
-const ACTIVE_WINDOW_MS = 10 * 60 * 1000;
-
-function isRecentlyActive(lastSeen: string | null | undefined): boolean {
-  if (!lastSeen) return false;
-  return Date.now() - new Date(lastSeen).getTime() < ACTIVE_WINDOW_MS;
-}
+const POLL_MS = 20_000; // keep last_seen / joins fresh while the panel is mounted
+const TICK_MS = 15_000; // recompute online → away → offline over time
+const ONLINE_MS = 60_000;
+const AWAY_MS = 5 * 60_000;
+const EVENTS_KEY = 'autoflow_staff_events';
+const EVENTS_MAX = 20;
 
 function qrUrl(link: string) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(link)}`;
@@ -51,34 +53,58 @@ function langLabel(lang: unknown): string {
   return `🌐 ${safeText(lang, '언어 미설정')}`;
 }
 
-type StatusKind = 'online' | 'offline' | 'removed';
-function statusOf(inv: InviteRow): StatusKind {
+type StatusKind = 'online' | 'away' | 'offline' | 'removed';
+
+function statusOf(inv: InviteRow, now: number): StatusKind {
   if (!inv.enabled) return 'removed';
-  return isRecentlyActive(inv.last_seen_at) ? 'online' : 'offline';
+  if (!inv.last_seen_at) return 'offline';
+  const age = now - new Date(inv.last_seen_at).getTime();
+  if (age <= ONLINE_MS) return 'online';
+  if (age <= AWAY_MS) return 'away';
+  return 'offline';
 }
-const STATUS_META: Record<StatusKind, { dot: string; label: string; cls: string }> = {
-  online: { dot: '🟢', label: '온라인', cls: 'text-emerald-600' },
-  offline: { dot: '⚪', label: '오프라인', cls: 'text-gray-400' },
-  removed: { dot: '🔴', label: '내보냄', cls: 'text-rose-500' }
+
+const STATUS_META: Record<StatusKind, { dot: string; label: string; cls: string; order: number }> = {
+  online: { dot: '🟢', label: '온라인', cls: 'text-emerald-600', order: 0 },
+  away: { dot: '🟡', label: '자리 비움', cls: 'text-amber-500', order: 1 },
+  offline: { dot: '⚪', label: '오프라인', cls: 'text-gray-400', order: 2 },
+  removed: { dot: '🔴', label: '내보냄', cls: 'text-rose-500', order: 3 }
 };
+
+type StaffEvent = { ts: number; text: string };
+
+function loadEvents(): StaffEvent[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(EVENTS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.slice(0, EVENTS_MAX) : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function StaffInvitePanel({
   variant = 'admin',
   collapsible = false,
-  defaultOpen = true
+  defaultOpen = true,
+  messages
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const [showQr, setShowQr] = useState(true);
+  const [showLog, setShowLog] = useState(false);
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [entryUrl, setEntryUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rotatingEntry, setRotatingEntry] = useState(false);
-  const [testedId, setTestedId] = useState<string | null>(null);
+  const [testState, setTestState] = useState<Record<string, 'sending' | 'done'>>({});
   const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [events, setEvents] = useState<StaffEvent[]>([]);
 
-  const isChat = variant === 'chat';
-  const participantCount = invites.filter((i) => i.enabled).length;
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const seededRef = useRef(false);
 
   // Supabase channel used only to SEND the per-staff test ping.
   const supabase = useMemo(() => createBrowserSupabase(), []);
@@ -96,33 +122,125 @@ export default function StaffInvitePanel({
     };
   }, [supabase]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    const [listRes, entryRes] = await Promise.all([
-      fetchEnvelope<{ invites: InviteRow[] }>(STAFF_INVITES_URL),
-      fetchEnvelope<{ url: string }>(STAFF_ENTRY_INVITE_URL)
-    ]);
-    if (listRes.ok && listRes.data?.invites) setInvites(listRes.data.invites);
-    if (entryRes.ok && entryRes.data?.url) setEntryUrl(entryRes.data.url);
-    if (!listRes.ok) setLoadError('참여자 목록을 불러오지 못했습니다.');
-    else if (!entryRes.ok) setLoadError('입장 QR을 불러오지 못했습니다.');
-    setLoading(false);
+  useEffect(() => {
+    setEvents(loadEvents());
   }, []);
 
+  const logEvent = useCallback((text: string) => {
+    setEvents((prev) => {
+      const next = [{ ts: Date.now(), text }, ...prev].slice(0, EVENTS_MAX);
+      try {
+        window.localStorage.setItem(EVENTS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  // Apply a freshly-fetched invite list and log newly-joined staff (after seed).
+  const applyInvites = useCallback(
+    (next: InviteRow[]) => {
+      setInvites(next);
+      const enabledIds = next.filter((i) => i.enabled).map((i) => String(i.id));
+      if (!seededRef.current) {
+        enabledIds.forEach((id) => seenIdsRef.current.add(id));
+        seededRef.current = true;
+        return;
+      }
+      for (const inv of next) {
+        const id = String(inv.id);
+        if (inv.enabled && !seenIdsRef.current.has(id)) {
+          seenIdsRef.current.add(id);
+          logEvent(`${safeText(inv.display_name, '직원')} 입장`);
+        }
+      }
+    },
+    [logEvent]
+  );
+
+  const load = useCallback(
+    async (opts?: { quiet?: boolean }) => {
+      if (!opts?.quiet) setLoading(true);
+      setLoadError(null);
+      const [listRes, entryRes] = await Promise.all([
+        fetchEnvelope<{ invites: InviteRow[] }>(STAFF_INVITES_URL),
+        fetchEnvelope<{ url: string }>(STAFF_ENTRY_INVITE_URL)
+      ]);
+      if (listRes.ok && listRes.data?.invites) applyInvites(listRes.data.invites);
+      if (entryRes.ok && entryRes.data?.url) setEntryUrl(entryRes.data.url);
+      if (!listRes.ok) setLoadError('참여자 목록을 불러오지 못했습니다.');
+      else if (!entryRes.ok && !entryUrl) setLoadError('입장 QR을 불러오지 못했습니다.');
+      if (!opts?.quiet) setLoading(false);
+    },
+    [applyInvites, entryUrl]
+  );
+
+  // Initial load + background polling (kept running even while collapsed, so the
+  // panel shows the latest state immediately when reopened).
   useEffect(() => {
     void load();
-  }, [load]);
+    const poll = setInterval(() => void load({ quiet: true }), POLL_MS);
+    const tick = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => {
+      clearInterval(poll);
+      clearInterval(tick);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Per-staff last message time, derived from loaded messages (mobile senders).
+  const lastMsgByKey = useMemo(() => {
+    const byUser = new Map<string, number>();
+    const byName = new Map<string, number>();
+    for (const m of messages ?? []) {
+      if (!m || m.sender_side !== 'mobile') continue;
+      const t = m.created_at ? new Date(m.created_at).getTime() : NaN;
+      if (!Number.isFinite(t)) continue;
+      const uid = m.user_id ? String(m.user_id) : '';
+      const nm = safeText((m as { sender_name?: unknown }).sender_name ?? (m as { actor_name?: unknown }).actor_name, '');
+      if (uid) byUser.set(uid, Math.max(byUser.get(uid) ?? 0, t));
+      if (nm) byName.set(nm, Math.max(byName.get(nm) ?? 0, t));
+    }
+    return { byUser, byName };
+  }, [messages]);
+
+  function lastMsgAt(inv: InviteRow): number | null {
+    const uid = inv.user_id ? String(inv.user_id) : '';
+    const nm = safeText(inv.display_name, '');
+    const t = (uid && lastMsgByKey.byUser.get(uid)) || (nm && lastMsgByKey.byName.get(nm)) || 0;
+    return t || null;
+  }
+
+  const sortedInvites = useMemo(() => {
+    return [...invites].sort((a, b) => {
+      const oa = STATUS_META[statusOf(a, now)].order;
+      const ob = STATUS_META[statusOf(b, now)].order;
+      if (oa !== ob) return oa - ob;
+      const ta = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0;
+      const tb = b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0;
+      return tb - ta; // most recent first
+    });
+  }, [invites, now]);
+
+  const totalCount = invites.filter((i) => i.enabled).length;
+  const onlineCount = invites.filter((i) => statusOf(i, now) === 'online').length;
 
   async function handleRevoke(inv: InviteRow) {
     const name = safeText(inv.display_name, '이 직원');
     if (!window.confirm(`"${name}"님을 내보낼까요?\n내보내면 더 이상 채팅에 참여할 수 없습니다.`)) return;
-    await fetch(STAFF_INVITES_URL, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: inv.id, action: 'revoke' })
-    });
-    void load();
+    // Optimistic: flip to 내보냄 immediately, don't wait for refetch.
+    setInvites((prev) => prev.map((i) => (i.id === inv.id ? { ...i, enabled: false } : i)));
+    logEvent(`${name} 내보냄`);
+    try {
+      await fetch(STAFF_INVITES_URL, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: inv.id, action: 'revoke' })
+      });
+    } finally {
+      void load({ quiet: true });
+    }
   }
 
   async function handleRotateEntry() {
@@ -138,6 +256,7 @@ export default function StaffInvitePanel({
       if (json?.ok && json?.data?.url) {
         setEntryUrl(json.data.url);
         setShowQr(true);
+        logEvent('QR 재발급');
       }
     } finally {
       setRotatingEntry(false);
@@ -146,22 +265,32 @@ export default function StaffInvitePanel({
 
   async function handleTest(inv: InviteRow) {
     const ch = testChannelRef.current;
-    if (!ch) return;
+    if (!ch || testState[inv.id]) return; // ignore double-clicks while in progress
+    const name = safeText(inv.display_name, '직원');
+    setTestState((s) => ({ ...s, [inv.id]: 'sending' }));
     try {
       await ch.send({
         type: 'broadcast',
         event: STAFF_TEST_EVENT,
-        payload: {
-          target_invite_id: inv.id,
-          target_name: safeText(inv.display_name, '직원'),
-          text: '테스트입니다.'
-        }
+        payload: { target_invite_id: inv.id, target_name: name, text: '테스트입니다.' }
       });
-      setTestedId(inv.id);
-      setTimeout(() => setTestedId((cur) => (cur === inv.id ? null : cur)), 2500);
+      setTestState((s) => ({ ...s, [inv.id]: 'done' }));
+      logEvent(`${name}에게 테스트 전송`);
     } catch {
-      /* ignore — operator can retry */
+      setTestState((s) => {
+        const n = { ...s };
+        delete n[inv.id];
+        return n;
+      });
+      return;
     }
+    setTimeout(() => {
+      setTestState((s) => {
+        const n = { ...s };
+        delete n[inv.id];
+        return n;
+      });
+    }, 2000);
   }
 
   async function copyLink() {
@@ -176,7 +305,9 @@ export default function StaffInvitePanel({
   }
 
   const btnBase =
-    'inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50';
+    'inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+
+  const hasInvites = invites.length > 0;
 
   const body = (
     <>
@@ -229,91 +360,132 @@ export default function StaffInvitePanel({
       </div>
 
       {loadError ? (
-        <p className="text-xs text-rose-600" role="alert">
+        <p className="mt-2 text-xs text-rose-600" role="alert">
           {loadError}
           <button type="button" onClick={() => void load()} className="ml-2 underline">
             다시 시도
           </button>
         </p>
       ) : null}
-      {loading && invites.length === 0 ? (
-        <p className="text-xs text-gray-500">불러오는 중…</p>
-      ) : null}
+      {loading && !hasInvites ? <p className="mt-2 text-xs text-gray-500">불러오는 중…</p> : null}
 
-      {!loading && invites.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-6 text-center text-sm text-gray-500">
-          아직 직원이 없어요.
-          <br />위 <span className="font-semibold text-emerald-700">QR</span>을 직원 휴대폰으로 찍게 해주세요.
+      {!loading && !hasInvites ? (
+        <div className="mt-2 rounded-xl border border-dashed border-gray-300 bg-white px-3 py-6 text-center text-sm text-gray-500">
+          아직 참여한 직원이 없습니다.
+          <br />
+          <span className="font-semibold text-emerald-700">QR을 스캔하여 입장</span>하세요.
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {invites.map((inv) => {
-          const s = statusOf(inv);
-          const meta = STATUS_META[s];
-          const name = safeText(inv.display_name, '직원');
-          const removed = s === 'removed';
-          return (
-            <div
-              key={inv.id}
-              className={`rounded-xl border p-3 ${
-                removed ? 'border-gray-200 bg-gray-50 opacity-70' : 'border-gray-200 bg-white'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span aria-hidden className="text-base">{meta.dot}</span>
-                  <span className="truncate text-sm font-bold text-gray-900">{name}</span>
+      {hasInvites ? (
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {sortedInvites.map((inv) => {
+            const s = statusOf(inv, now);
+            const meta = STATUS_META[s];
+            const name = safeText(inv.display_name, '직원');
+            const removed = s === 'removed';
+            const ts = testState[inv.id];
+            const lastMsg = lastMsgAt(inv);
+            return (
+              <div
+                key={inv.id}
+                className={`rounded-xl border p-3 ${
+                  removed ? 'border-gray-200 bg-gray-50 opacity-70' : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span aria-hidden className="text-base">{meta.dot}</span>
+                    <span className="truncate text-sm font-bold text-gray-900">{name}</span>
+                  </div>
+                  <span className={`shrink-0 text-xs font-bold ${meta.cls}`}>{meta.label}</span>
                 </div>
-                <span className={`shrink-0 text-xs font-bold ${meta.cls}`}>{meta.label}</span>
+
+                <div className="mt-1.5 text-sm text-gray-700">{langLabel(inv.spoken_lang)}</div>
+
+                <div className="mt-2 flex gap-4">
+                  <div>
+                    <div className="text-[11px] text-gray-400">최근 접속</div>
+                    <div className="text-sm font-semibold text-gray-800">
+                      {formatRelativeKST(inv.last_seen_at)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-gray-400">마지막 메시지</div>
+                    <div className="text-sm text-gray-500">
+                      {lastMsg ? formatRelativeKST(new Date(lastMsg)) : '없음'}
+                    </div>
+                  </div>
+                </div>
+
+                {!removed ? (
+                  <div className="mt-2.5 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={Boolean(ts)}
+                      onClick={() => void handleTest(inv)}
+                      className={`${btnBase} flex-1 border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100`}
+                    >
+                      {ts === 'sending' ? '전송중…' : ts === 'done' ? '전송 완료 ✓' : '🔔 테스트'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleRevoke(inv)}
+                      className={`${btnBase} flex-1 border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100`}
+                    >
+                      ❌ 내보내기
+                    </button>
+                  </div>
+                ) : null}
               </div>
+            );
+          })}
+        </div>
+      ) : null}
 
-              <div className="mt-1.5 text-sm text-gray-700">{langLabel(inv.spoken_lang)}</div>
-
-              <div className="mt-2">
-                <div className="text-[11px] text-gray-400">최근 접속</div>
-                <div className="text-sm font-semibold text-gray-800">
-                  {formatRelativeKST(inv.last_seen_at)}
-                </div>
-              </div>
-
-              {!removed ? (
-                <div className="mt-2.5 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleTest(inv)}
-                    className={`${btnBase} flex-1 border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100`}
-                  >
-                    {testedId === inv.id ? '보냈어요 ✓' : '🔔 테스트'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleRevoke(inv)}
-                    className={`${btnBase} flex-1 border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100`}
-                  >
-                    ❌ 내보내기
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
+      {/* ── 최근 활동 (관리자 운영 로그) ─────────────────────── */}
+      {events.length > 0 ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowLog((v) => !v)}
+            className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-xs font-semibold text-gray-500 hover:text-gray-700"
+            aria-expanded={showLog}
+          >
+            <span>최근 활동 ({events.length})</span>
+            <span aria-hidden>{showLog ? '▼' : '▶'}</span>
+          </button>
+          {showLog ? (
+            <ul className="mt-1 space-y-1 rounded-lg border border-gray-200 bg-white p-2">
+              {events.map((e, i) => (
+                <li key={`${e.ts}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate text-gray-700">{e.text}</span>
+                  <span className="shrink-0 text-gray-400">{formatRelativeKST(new Date(e.ts))}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 
   // Collapsible header used inside the /chat surface.
   if (collapsible) {
-    const countLabel = loading && invites.length === 0 ? '…' : String(participantCount);
     return (
       <div className="shrink-0 border-b border-gray-200 bg-gray-50 px-3 py-2">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm font-bold text-gray-900 hover:bg-gray-100"
+          className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-gray-100"
           aria-expanded={open}
         >
-          <span>👥 참여자 관리 ({countLabel}명)</span>
+          <span className="flex flex-wrap items-baseline gap-x-2 text-sm font-bold text-gray-900">
+            <span>👥 참여자 관리</span>
+            <span className="text-xs font-normal text-gray-500">
+              {loading && !hasInvites ? '…' : `${totalCount}명`} · 🟢 {onlineCount}명 온라인
+            </span>
+          </span>
           <span aria-hidden className="text-gray-400">{open ? '▼' : '▶'}</span>
         </button>
         {open ? (
