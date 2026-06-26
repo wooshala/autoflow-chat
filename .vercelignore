@@ -1,0 +1,8 @@
+# Vercel builds only the Next.js app. The Tauri desktop shell (src-tauri) is a
+# multi-GB Rust build tree and irrelevant to the web deploy — exclude it.
+src-tauri
+
+# Local analysis artifacts (not part of the web app)
+analyze_sheet.py
+ota_analysis.py
+sheet_export.csv

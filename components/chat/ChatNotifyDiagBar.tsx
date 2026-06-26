@@ -1,6 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { CHAT_CLIENT_REV } from '@/lib/chat/chatClientRev';
+import {
+  NOTIFY_SOUND_OPTIONS,
+  getNotifySoundKey,
+  setNotifySoundKey,
+  playNotifySoundPreview,
+  type NotifySoundKey
+} from '@/lib/chat/notifySound';
 import {
   testBrowserOsNotification,
   testBrowserOsNotificationPlain,
@@ -18,6 +26,27 @@ type Props = {
 export default function ChatNotifyDiagBar({ onRequestPermission }: Props) {
   const soundUnlocked = useNotificationAudioUnlock();
   const { permission, visibilityState, refresh } = useChatNotifyDiagState();
+
+  const [soundKey, setSoundKey] = useState<NotifySoundKey>('default');
+  useEffect(() => {
+    setSoundKey(getNotifySoundKey());
+  }, []);
+
+  const onSelectSound = (key: NotifySoundKey) => {
+    setSoundKey(key);
+    setNotifySoundKey(key);
+  };
+
+  const onTestSound = () => {
+    const native = (typeof window !== 'undefined' ? (window as any).AutoFlowNative : undefined) as
+      | { playSound?: (k: string) => void }
+      | undefined;
+    if (native && typeof native.playSound === 'function') {
+      native.playSound(soundKey); // Tauri: test the actual native sound path
+    } else {
+      playNotifySoundPreview(soundKey); // plain browser: web audio preview
+    }
+  };
 
   const runSoundTest = () => {
     void testLoudNotificationSound().then(() => refresh());
@@ -74,6 +103,31 @@ export default function ChatNotifyDiagBar({ onRequestPermission }: Props) {
           <span className="text-amber-400/80">notifyGain</span>{' '}
           <span className="font-mono font-semibold text-white">{NOTIFY_BEEP_GAIN}</span>
         </div>
+      </div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label htmlFor="notify-sound-select" className="font-semibold text-amber-200">
+          알림음 선택
+        </label>
+        <select
+          id="notify-sound-select"
+          value={soundKey}
+          onChange={(e) => onSelectSound(e.target.value as NotifySoundKey)}
+          className="rounded border border-amber-400/70 bg-amber-900/60 px-2 py-1 font-semibold text-amber-50"
+        >
+          {NOTIFY_SOUND_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key} className="text-black">
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={onTestSound}
+          className="rounded border border-amber-400/70 bg-amber-800/60 px-2.5 py-1 font-semibold text-amber-50 hover:bg-amber-700/70"
+        >
+          테스트 재생
+        </button>
+        <span className="text-[10px] text-amber-300/80">선택값은 자동 저장(localStorage)</span>
       </div>
       <div className="flex flex-wrap gap-2">
         <button

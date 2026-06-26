@@ -41,6 +41,20 @@ function photoStatusLabel(msg: ChatMessage, displayPrimary: string): string | nu
   return stripped || primary;
 }
 
+// The room badge (🏠 {room}호) already shows the room number, and inbound
+// messages often start with the same room (e.g. "301 짐있음"). Drop a leading
+// "{room}" / "{room}호" from the body so the room is not displayed twice
+// ("301 301 짐있음" → "301 짐있음"). Render-time only; the stored text is intact.
+function stripDuplicateRoomPrefix(text: string, roomNo?: string | null): string {
+  const t = String(text || '');
+  const room = String(roomNo || '').trim();
+  if (!room) return t;
+  const esc = room.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^\\s*${esc}\\s*호?\\s*[)\\].:·\\-]?\\s*`);
+  const stripped = t.replace(re, '');
+  return stripped.trim() ? stripped : t;
+}
+
 export default function ChatMessages({
   messages,
   currentUserId,
@@ -67,6 +81,7 @@ export default function ChatMessages({
         const isDeleted = Boolean(msg.is_deleted);
         const urgent = isUrgentMessage(msg);
         const statusLabel = photoStatusLabel(msg, displayPrimary);
+        const displayBody = stripDuplicateRoomPrefix(displayPrimary, msg.room_no);
         const isImageOnly =
           !isDeleted && Boolean(msg.image_url) && !statusLabel && isGenericPhotoCaption(displayPrimary || msg.message || '');
         const isSystemEvent = isMaintenanceSystemMessage(msg, msgText);
@@ -215,7 +230,7 @@ export default function ChatMessages({
                             urgent ? 'font-bold' : 'font-medium'
                           } ${isPc ? 'text-sm' : 'text-base'}`}
                         >
-                          {displayPrimary}
+                          {displayBody}
                         </div>
                       ) : null}
                       {displaySecondary ? (
@@ -231,7 +246,7 @@ export default function ChatMessages({
                           urgent ? 'font-bold' : 'font-medium'
                         } ${isPc ? 'text-sm' : 'text-base'}`}
                       >
-                        {displayPrimary}
+                        {displayBody}
                       </div>
                       {displaySecondary ? (
                         <div className="mt-1 whitespace-pre-wrap break-words text-[11px] text-gray-500 opacity-80">
