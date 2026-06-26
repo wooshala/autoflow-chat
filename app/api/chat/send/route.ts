@@ -3,6 +3,7 @@ import { sendStaffPushAfterMessage } from '@/lib/push/sendStaffPushAfterMessage'
 import { buildChatTranslations } from '@/lib/chat/translateMessageForChat';
 import { parseSendPriority } from '@/lib/chat/messagePriority';
 import { emitLatency } from '@/lib/chat/latencyTrace';
+import { waitUntil } from '@vercel/functions';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
 import { uploadImage } from '@/lib/services/upload';
@@ -366,6 +367,83 @@ async function runAiPostProcess(input: {
   }
 }
 
+/**
+ * Translate AFTER the original message is already inserted + responded. UPDATEs
+ * the row so receivers merge the translation into the existing message via
+ * realtime UPDATE (no duplicate row). Never blocks the send path.
+ */
+async function runTranslationPostProcess(input: {
+  messageId: string;
+  message: string;
+  sender_side: 'pc' | 'mobile' | null;
+  room_no: string | null;
+  client_nonce: string | null;
+  source: string;
+  requestStarted: number;
+}) {
+  const { messageId, message, sender_side, room_no, client_nonce, source, requestStarted } = input;
+  if (!message.trim()) return;
+  const started = Date.now();
+  try {
+    const translation = await buildChatTranslations(message, sender_side);
+    const translationDoneAt = Date.now();
+    const has_translation = Boolean(translation.translated_text);
+    emitLatency('TRANSLATION_DONE', {
+      message_id: messageId,
+      client_nonce,
+      sender_side,
+      room: room_no,
+      source,
+      has_translation,
+      elapsed_ms: translationDoneAt - started,
+      since_request_ms: translationDoneAt - requestStarted,
+      ts: translationDoneAt
+    });
+    await updateChatMessage({
+      messageId,
+      original_lang: translation.original_lang,
+      translated_text: translation.translated_text,
+      back_translated_text: translation.back_translated_text
+    });
+    const updatedAt = Date.now();
+    console.log('[CHAT_TRANSLATION_SAVED]', {
+      message_id: messageId,
+      original_lang: translation.original_lang,
+      has_translated_ru: Boolean(translation.translated_text?.ru),
+      has_translated_ko: Boolean(translation.translated_text?.ko),
+      has_back_ko: Boolean(translation.back_translated_text?.ko),
+      has_back_ru: Boolean(translation.back_translated_text?.ru)
+    });
+    emitLatency('TRANSLATION_UPDATED', {
+      message_id: messageId,
+      client_nonce,
+      sender_side,
+      room: room_no,
+      source,
+      has_translation,
+      elapsed_ms: updatedAt - started,
+      update_ms: updatedAt - translationDoneAt,
+      ts: updatedAt
+    });
+  } catch (e: any) {
+    emitLatency('TRANSLATION_FAILED', {
+      message_id: messageId,
+      client_nonce,
+      sender_side,
+      room: room_no,
+      source,
+      has_translation: false,
+      elapsed_ms: Date.now() - started,
+      error: e?.message ?? String(e),
+      ts: Date.now()
+    });
+    console.error('[CHAT_TRANSLATION_POSTPROCESS_FAILED]', {
+      message_id: messageId,
+      error: e?.message ?? String(e)
+    });
+  }
+}
+
 export async function POST(req: NextRequest) {
   const requestStarted = Date.now();
   const apiReceivedAt = requestStarted;
@@ -378,7 +456,7 @@ export async function POST(req: NextRequest) {
     const client_send_ts_raw = Number(formData.get('client_send_ts'));
     const client_send_ts = Number.isFinite(client_send_ts_raw) && client_send_ts_raw > 0 ? client_send_ts_raw : null;
     if (client_nonce) {
-      console.log('[CHAT_SEND_API_RECEIVED]', { nonce: client_nonce, ts: apiReceivedAt });
+      console.log('[CHAT_SEND_API_RECEIVED]', { client_nonce, ts: apiReceivedAt });
     }
 
     const ticket_id = String(formData.get('ticket_id') || '') || null;
@@ -444,6 +522,7 @@ export async function POST(req: NextRequest) {
     });
 
     console.log('[CHAT_SEND_INPUT]', {
+      client_nonce,
       user_id: user_id || null,
       user_id_valid: isUuid(user_id),
       room_no: room_no || null,
@@ -462,30 +541,12 @@ export async function POST(req: NextRequest) {
     }
 
     const latSource = sender_side === 'pc' ? 'pc' : 'staff';
-    // ── Latency: translation is two sequential OpenAI calls (forward + back) and
-    // is awaited BEFORE the DB insert + response, so it gates the realtime event
-    // the receiver waits on. Measure it explicitly.
-    const translationStarted = Date.now();
-    const translation =
-      message.trim() ? await buildChatTranslations(message || '', sender_side) : {
-        original_lang: '',
-        translated_text: null,
-        back_translated_text: null
-      };
-    const translationDoneAt = Date.now();
-    const has_translation = Boolean(translation.translated_text);
-    emitLatency('TRANSLATION_DONE', {
-      client_nonce,
-      sender_side,
-      room: room_no,
-      source: latSource,
-      has_translation,
-      // server-local duration of the (blocking) translation step
-      elapsed_ms: translationDoneAt - translationStarted,
-      translation_ms: translationDoneAt - translationStarted,
-      since_request_ms: translationDoneAt - requestStarted,
-      ts: translationDoneAt
-    });
+    // ── Latency fix: insert the ORIGINAL message immediately (NO translation) so
+    // the realtime INSERT reaches the receiver right away. Translation (two
+    // sequential OpenAI calls, ~2-4s) is moved to an async post-process that
+    // UPDATEs the row; receivers merge it into the same message via realtime
+    // UPDATE (mergeChatMessageRow). This unblocks both the API response and the
+    // receiver's realtime arrival.
     const insertStarted = Date.now();
     const saved = await createChatMessage({
       ticket_id,
@@ -500,21 +561,14 @@ export async function POST(req: NextRequest) {
       message_type: image instanceof File ? 'image' : 'text',
       image_url: image_url || null,
       image_storage_path: image_storage_path || null,
-      original_lang: translation.original_lang,
-      translated_text: translation.translated_text,
-      back_translated_text: translation.back_translated_text
+      original_lang: '',
+      translated_text: null,
+      back_translated_text: null
     });
-    console.log('[CHAT_TRANSLATION_SAVED]', {
-      message_id: saved.id,
-      original_lang: translation.original_lang,
-      has_translated_ru: Boolean(translation.translated_text?.ru),
-      has_translated_ko: Boolean(translation.translated_text?.ko),
-      has_back_ko: Boolean(translation.back_translated_text?.ko),
-      has_back_ru: Boolean(translation.back_translated_text?.ru)
-    });
+    const has_translation = false; // translation arrives later via async UPDATE
     const dbInsertedAt = Date.now();
     console.log('[CHAT_SEND_DB_INSERTED]', {
-      nonce: client_nonce,
+      client_nonce,
       message_id: saved.id,
       ts: dbInsertedAt,
       db_insert_ms: dbInsertedAt - insertStarted
@@ -526,14 +580,47 @@ export async function POST(req: NextRequest) {
       room: room_no,
       source: latSource,
       has_translation,
-      // server-local cumulative from request arrival (incl. translation)
+      // server-local cumulative from request arrival (no longer includes translation)
       elapsed_ms: dbInsertedAt - requestStarted,
       db_insert_ms: dbInsertedAt - insertStarted,
-      translation_ms: translationDoneAt - translationStarted,
       // cross-machine cumulative from the user's click (skew caveat)
       since_click_ms: client_send_ts ? dbInsertedAt - client_send_ts : null,
       ts: dbInsertedAt
     });
+
+    // Async translation (non-blocking): UPDATEs the row after response; receivers
+    // merge it into the same message via realtime UPDATE. Does NOT block send.
+    if (message.trim()) {
+      emitLatency('TRANSLATION_QUEUED', {
+        message_id: saved.id,
+        client_nonce,
+        sender_side,
+        room: room_no,
+        source: latSource,
+        has_translation: false,
+        elapsed_ms: Date.now() - requestStarted,
+        ts: Date.now()
+      });
+      // waitUntil keeps the serverless function alive until translation finishes
+      // (AFTER the response is sent) so the UPDATE reliably lands on Vercel.
+      waitUntil(
+        runTranslationPostProcess({
+          messageId: saved.id,
+          message,
+          sender_side,
+          room_no,
+          client_nonce,
+          source: latSource,
+          requestStarted
+        }).catch((e: any) => {
+          console.error('[CHAT_TRANSLATION_POSTPROCESS_FATAL]', {
+            message_id: saved.id,
+            error: e?.message ?? String(e)
+          });
+        })
+      );
+    }
+
     if (DEBUG_VERBOSE) {
       console.log('[CHAT_MESSAGE_INSERTED]', {
         id: saved.id,
@@ -639,7 +726,7 @@ export async function POST(req: NextRequest) {
 
     const apiRespondedAt = Date.now();
     console.log('[CHAT_SEND_API_RESPONDED]', {
-      nonce: client_nonce,
+      client_nonce,
       message_id: saved.id,
       elapsed_ms: apiRespondedAt - requestStarted,
       ts: apiRespondedAt
@@ -651,9 +738,8 @@ export async function POST(req: NextRequest) {
       room: room_no,
       source: latSource,
       has_translation,
-      // total server processing time (translation + insert + bookkeeping)
+      // total server processing time (insert + bookkeeping; translation is async now)
       elapsed_ms: apiRespondedAt - requestStarted,
-      translation_ms: translationDoneAt - translationStarted,
       since_click_ms: client_send_ts ? apiRespondedAt - client_send_ts : null,
       ts: apiRespondedAt
     });
@@ -661,16 +747,21 @@ export async function POST(req: NextRequest) {
       message_id: saved.id,
       api_total_ms: apiRespondedAt - requestStarted
     });
-    const responsePayload = { ok: true as const, data: { message: saved } };
+    const responseData = {
+      message: saved,
+      ...(client_nonce ? { client_nonce } : {})
+    };
+    const responsePayload = { ok: true as const, data: responseData };
     console.log('[CHAT_SEND_RESPONSE_BODY]', JSON.stringify(responsePayload, null, 2));
     console.log('[CHAT_SEND_RESPONSE_SHAPE]', {
       ok: responsePayload.ok,
       hasData: responsePayload.data != null,
       dataKeys: Object.keys(responsePayload.data),
       nestedMessageId: saved?.id ?? null,
-      nestedMessageHasId: Boolean(saved?.id)
+      nestedMessageHasId: Boolean(saved?.id),
+      client_nonce: client_nonce ?? null
     });
-    return jsonOk({ message: saved });
+    return jsonOk(responseData);
   } catch (error: any) {
     console.error('[CHAT_SEND_ERROR]', error);
     console.error('[CHAT_SEND_ERROR]', {

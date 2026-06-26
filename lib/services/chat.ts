@@ -314,8 +314,11 @@ export async function updateChatMessage(input: {
   ticket_id?: string | null;
   duplicate_ticket_id?: string | null;
   ai_action?: AiAction;
+  original_lang?: string;
+  translated_text?: ChatMessage['translated_text'];
+  back_translated_text?: ChatMessage['back_translated_text'];
 }): Promise<void> {
-  const { messageId, room_no, ticket_id, duplicate_ticket_id, ai_action } = input;
+  const { messageId, room_no, ticket_id, duplicate_ticket_id, ai_action, original_lang, translated_text, back_translated_text } = input;
   if (!messageId) return;
 
   const patch: Partial<ChatMessage> = {};
@@ -323,6 +326,9 @@ export async function updateChatMessage(input: {
   if (ticket_id !== undefined) patch.ticket_id = ticket_id;
   if (duplicate_ticket_id !== undefined) patch.duplicate_ticket_id = duplicate_ticket_id;
   if (ai_action !== undefined) patch.ai_action = ai_action;
+  if (original_lang !== undefined) patch.original_lang = original_lang;
+  if (translated_text !== undefined) patch.translated_text = translated_text;
+  if (back_translated_text !== undefined) patch.back_translated_text = back_translated_text;
   if (Object.keys(patch).length === 0) return;
 
   if (IS_MOCK || !supabaseAdmin) {
@@ -340,6 +346,18 @@ export async function updateChatMessage(input: {
     .eq('id', messageId);
 
   if (!error) return;
+  // Some DBs may not have the back_translated_text column — retry without it.
+  if (back_translated_text !== undefined && String(error.message || '').includes('back_translated_text')) {
+    const { back_translated_text: _omitBack, ...retryPatch } = patch as any;
+    if (Object.keys(retryPatch).length > 0) {
+      const { error: retryErr } = await supabaseAdmin
+        .from('chat_messages')
+        .update(retryPatch)
+        .eq('id', messageId);
+      if (retryErr) throw retryErr;
+    }
+    return;
+  }
   if (
     duplicate_ticket_id !== undefined &&
     String(error.message || '').includes('duplicate_ticket_id')

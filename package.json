@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
+    "@vercel/functions": "^3.7.3",
     "date-fns": "^3.3.1",
     "emoji-picker-react": "^4.19.1",
     "next": "14.2.0",

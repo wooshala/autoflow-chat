@@ -9,6 +9,8 @@
 // elapsed_ms is measured PER SURFACE against that surface's own clock (skew-free
 // within a machine). Cross-machine gaps are read from absolute `ts` values.
 
+import { lookupClientNonceForMessage } from '@/lib/chat/sendTrace';
+
 export type LatencyStage =
   | 'SEND_CLICK'
   | 'API_START'
@@ -17,7 +19,10 @@ export type LatencyStage =
   | 'LOCAL_RENDERED'
   | 'REALTIME_RECEIVED'
   | 'REMOTE_RENDERED'
+  | 'TRANSLATION_QUEUED'
   | 'TRANSLATION_DONE'
+  | 'TRANSLATION_UPDATED'
+  | 'TRANSLATION_FAILED'
   | 'AI_DONE';
 
 export type LatencyFields = {
@@ -169,10 +174,12 @@ export function latRealtimeReceived(p: {
 }): void {
   const ts = Date.now();
   recvAtByMsgId.set(p.message_id, ts);
+  const client_nonce = lookupClientNonceForMessage(p.message_id);
   const createdMs = p.created_at ? Date.parse(p.created_at) : NaN;
   const elapsed_from_created_ms = Number.isFinite(createdMs) ? ts - createdMs : null;
   emitLatency('REALTIME_RECEIVED', {
     message_id: p.message_id,
+    client_nonce: client_nonce ?? null,
     sender_side: p.sender_side,
     receiver_side: self.side,
     room: p.room,
