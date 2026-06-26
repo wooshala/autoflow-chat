@@ -114,6 +114,20 @@ export interface StaffInvite {
   enabled: boolean;
   created_at: string;
   last_seen_at: string | null;
+  revoked_at?: string | null;
+  device_key?: string | null;
+  /** Work status (operational). Optional until the DB migration is applied. */
+  current_status?: string | null;
+  status_updated_at?: string | null;
+}
+
+export interface StaffEntryInvite {
+  id: string;
+  site_id: string;
+  token: string;
+  status: 'active' | 'revoked';
+  created_at: string;
+  revoked_at: string | null;
 }
 
 export interface ChatMessage {

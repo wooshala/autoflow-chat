@@ -5,6 +5,13 @@ import { fetchEnvelope } from '@/lib/api/envelope';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { STAFF_ENTRY_INVITE_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
 import { formatRelativeKST } from '@/lib/formatKST';
+import {
+  STAFF_WORK_STATUS_OPTIONS,
+  STAFF_STATUS_CHANNEL,
+  STAFF_STATUS_EVENT,
+  staffWorkStatusMeta,
+  type StaffWorkStatus
+} from '@/lib/chat/staffStatus';
 import type { ChatMessage, StaffInvite } from '@/lib/types';
 
 type InviteRow = StaffInvite & { url?: string };
@@ -104,6 +111,7 @@ export default function StaffInvitePanel({
   const [events, setEvents] = useState<StaffEvent[]>([]);
 
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const prevStatusRef = useRef<Map<string, string>>(new Map());
   const seededRef = useRef(false);
 
   // Supabase channel used only to SEND the per-staff test ping.
@@ -142,9 +150,11 @@ export default function StaffInvitePanel({
   const applyInvites = useCallback(
     (next: InviteRow[]) => {
       setInvites(next);
-      const enabledIds = next.filter((i) => i.enabled).map((i) => String(i.id));
       if (!seededRef.current) {
-        enabledIds.forEach((id) => seenIdsRef.current.add(id));
+        for (const inv of next) {
+          if (inv.enabled) seenIdsRef.current.add(String(inv.id));
+          prevStatusRef.current.set(String(inv.id), staffWorkStatusMeta(inv.current_status).key);
+        }
         seededRef.current = true;
         return;
       }
@@ -153,6 +163,14 @@ export default function StaffInvitePanel({
         if (inv.enabled && !seenIdsRef.current.has(id)) {
           seenIdsRef.current.add(id);
           logEvent(`${safeText(inv.display_name, '직원')} 입장`);
+        }
+        if (inv.enabled) {
+          const nextStatus = staffWorkStatusMeta(inv.current_status).key;
+          const prev = prevStatusRef.current.get(id);
+          if (prev && prev !== nextStatus) {
+            logEvent(`${safeText(inv.display_name, '직원')} → ${staffWorkStatusMeta(nextStatus).label}`);
+          }
+          prevStatusRef.current.set(id, nextStatus);
         }
       }
     },
@@ -189,6 +207,20 @@ export default function StaffInvitePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Instant refresh when any staff changes their work status (broadcast ping).
+  useEffect(() => {
+    const ch = supabase.channel(STAFF_STATUS_CHANNEL, { config: { broadcast: {} } });
+    ch.on('broadcast', { event: STAFF_STATUS_EVENT }, () => void load({ quiet: true }));
+    ch.subscribe();
+    return () => {
+      try {
+        supabase.removeChannel(ch);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [supabase, load]);
+
   // Per-staff last message time, derived from loaded messages (mobile senders).
   const lastMsgByKey = useMemo(() => {
     const byUser = new Map<string, number>();
@@ -213,13 +245,20 @@ export default function StaffInvitePanel({
   }
 
   const sortedInvites = useMemo(() => {
+    // Primary: work status (available→cleaning→break→outside→off_duty→removed).
+    const wsOrder = (inv: InviteRow) => (inv.enabled ? staffWorkStatusMeta(inv.current_status).order : 5);
     return [...invites].sort((a, b) => {
-      const oa = STATUS_META[statusOf(a, now)].order;
-      const ob = STATUS_META[statusOf(b, now)].order;
-      if (oa !== ob) return oa - ob;
+      const wa = wsOrder(a);
+      const wb = wsOrder(b);
+      if (wa !== wb) return wa - wb;
+      // Secondary: online → away → offline.
+      const ta2 = STATUS_META[statusOf(a, now)].order;
+      const tb2 = STATUS_META[statusOf(b, now)].order;
+      if (ta2 !== tb2) return ta2 - tb2;
+      // Tertiary: most recently seen first.
       const ta = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0;
       const tb = b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0;
-      return tb - ta; // most recent first
+      return tb - ta;
     });
   }, [invites, now]);
 
@@ -237,6 +276,20 @@ export default function StaffInvitePanel({
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: inv.id, action: 'revoke' })
+      });
+    } finally {
+      void load({ quiet: true });
+    }
+  }
+
+  async function handleSetStatus(inv: InviteRow, status: StaffWorkStatus) {
+    // Optimistic; the status-change log fires on the subsequent quiet reload.
+    setInvites((prev) => prev.map((i) => (i.id === inv.id ? { ...i, current_status: status } : i)));
+    try {
+      await fetch(STAFF_INVITES_URL, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: inv.id, action: 'set_status', status })
       });
     } finally {
       void load({ quiet: true });
@@ -386,6 +439,7 @@ export default function StaffInvitePanel({
             const removed = s === 'removed';
             const ts = testState[inv.id];
             const lastMsg = lastMsgAt(inv);
+            const wsMeta = staffWorkStatusMeta(inv.current_status);
             return (
               <div
                 key={inv.id}
@@ -400,6 +454,13 @@ export default function StaffInvitePanel({
                   </div>
                   <span className={`shrink-0 text-xs font-bold ${meta.cls}`}>{meta.label}</span>
                 </div>
+
+                {!removed ? (
+                  <div className="mt-1 flex items-center gap-1.5 text-sm font-bold text-gray-800">
+                    <span aria-hidden>{wsMeta.icon}</span>
+                    <span>{wsMeta.label}</span>
+                  </div>
+                ) : null}
 
                 <div className="mt-1.5 text-sm text-gray-700">{langLabel(inv.spoken_lang)}</div>
 
@@ -417,6 +478,24 @@ export default function StaffInvitePanel({
                     </div>
                   </div>
                 </div>
+
+                {!removed ? (
+                  <div className="mt-2">
+                    <label className="text-[11px] text-gray-400">상태 변경 (관리자)</label>
+                    <select
+                      value={wsMeta.key}
+                      onChange={(e) => void handleSetStatus(inv, e.target.value as StaffWorkStatus)}
+                      className="mt-0.5 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-700"
+                      aria-label={`${name} 상태 변경`}
+                    >
+                      {STAFF_WORK_STATUS_OPTIONS.map((o) => (
+                        <option key={o.key} value={o.key}>
+                          {o.icon} {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
 
                 {!removed ? (
                   <div className="mt-2.5 flex gap-2">

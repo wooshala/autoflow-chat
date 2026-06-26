@@ -26,6 +26,15 @@ import {
 } from '@/lib/chat/sendTrace';
 import { latApiResponded, latApiStart, latSendClick, setLatencySelf } from '@/lib/chat/latencyTrace';
 import {
+  STAFF_WORK_STATUS_OPTIONS,
+  STAFF_STATUS_STORAGE_KEY,
+  STAFF_STATUS_CHANNEL,
+  STAFF_STATUS_EVENT,
+  normalizeStaffWorkStatus,
+  staffWorkStatusMeta,
+  type StaffWorkStatus
+} from '@/lib/chat/staffStatus';
+import {
   canShowBrowserNotification,
   isBrowserNotificationSupported,
   showBrowserNotification
@@ -257,6 +266,64 @@ function StaffChatPageInner() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, inviteSession?.inviteId, soundEnabled, staffSession.spokenLang, staffSession.role, locale]);
+
+  // ── Staff work status (현재 상태) ──────────────────────────────
+  const [currentStatus, setCurrentStatus] = useState<StaffWorkStatus>('available');
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(STAFF_STATUS_STORAGE_KEY);
+      if (v) setCurrentStatus(normalizeStaffWorkStatus(v));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const statusChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  useEffect(() => {
+    const ch = supabase.channel(STAFF_STATUS_CHANNEL, { config: { broadcast: { ack: false } } });
+    ch.subscribe();
+    statusChannelRef.current = ch;
+    return () => {
+      try {
+        supabase.removeChannel(ch);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [supabase]);
+  const changeStatus = useCallback(
+    async (next: StaffWorkStatus) => {
+      setCurrentStatus(next);
+      try {
+        window.localStorage.setItem(STAFF_STATUS_STORAGE_KEY, next);
+      } catch {
+        /* ignore */
+      }
+      const id = inviteSession?.inviteId ? String(inviteSession.inviteId) : null;
+      if (id) {
+        try {
+          await fetch(STAFF_INVITES_URL, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, action: 'set_status', status: next })
+          });
+          try {
+            statusChannelRef.current?.send({
+              type: 'broadcast',
+              event: STAFF_STATUS_EVENT,
+              payload: { id }
+            });
+          } catch {
+            /* ignore */
+          }
+        } catch {
+          /* ignore — local state already updated */
+        }
+      }
+      const meta = staffWorkStatusMeta(next);
+      setToast({ kind: 'ok', msg: `${meta.icon} ${meta.label}` });
+    },
+    [inviteSession?.inviteId, supabase]
+  );
 
   const { messages, setMessages, loadFull, initialHydrationComplete, initialLoadStatus } = useChatLoader({
     loadingRef: isLoadingRef,
@@ -1373,6 +1440,21 @@ function StaffChatPageInner() {
     >
       {/* 상단: 언어 · 소리 · 알림 */}
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+        <div className="mx-auto mb-1 flex max-w-md items-center gap-2">
+          <span className="shrink-0 text-[11px] font-semibold text-gray-500">현재 상태</span>
+          <select
+            value={currentStatus}
+            onChange={(e) => void changeStatus(e.target.value as StaffWorkStatus)}
+            className="flex-1 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm font-bold text-gray-800"
+            aria-label="현재 상태 선택"
+          >
+            {STAFF_WORK_STATUS_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.icon} {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
         {!notificationAudioUnlocked && soundEnabled ? (
           <div className="mx-auto mb-1 max-w-md">
             <button
