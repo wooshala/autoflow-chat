@@ -7,6 +7,7 @@ import { fetchEnvelope } from '@/lib/api/envelope';
 import { TIMEOUT_MS_DASHBOARD } from '@/lib/api/timeouts';
 import { resolveChatSendUserId } from '@/lib/auth';
 import { createTaggedLogger } from '@/lib/logger';
+import { formatKST } from '@/lib/formatKST';
 
 const tlog = createTaggedLogger('[TICKET_DETAIL]');
 
@@ -155,7 +156,7 @@ export function TicketDetailPanel({ ticket, onStatusUpdated }: TicketDetailPanel
       <div className="mt-4 space-y-3 text-sm">
         <div className="grid grid-cols-3 gap-2">
           <div className="col-span-1 text-xs font-semibold text-gray-500">생성시각</div>
-          <div className="col-span-2 text-xs text-gray-700 font-mono">{String(ticket.created_at || '').replace('T', ' ').replace('Z', '')}</div>
+          <div className="col-span-2 text-xs text-gray-700 font-mono">{ticket.created_at ? formatKST(ticket.created_at) : '-'}</div>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="col-span-1 text-xs font-semibold text-gray-500">room_no</div>

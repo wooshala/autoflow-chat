@@ -1,5 +1,6 @@
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
+import { formatKST } from "@/lib/formatKST";
 import { getTicket as getMaintenanceTicket } from "@/lib/services/maintenance";
 import { listChatMessagesByTicket } from "@/lib/services/chat";
 
@@ -30,7 +31,7 @@ export default async function MaintenanceDetailPage({ params }: PageProps) {
         <p><strong>설명:</strong> {ticket.description || '-'}</p>
         <p><strong>상태:</strong> {ticket.status}</p>
         <p><strong>생성자:</strong> {ticket.creator?.name || ticket.created_by}</p>
-        <p><strong>생성일:</strong> {ticket.created_at}</p>
+        <p><strong>생성일:</strong> {ticket.created_at ? formatKST(ticket.created_at) : '-'}</p>
       </div>
 
       <div style={{ marginTop: 24 }}>

@@ -8,6 +8,7 @@ import { fetchEnvelope } from '@/lib/api/envelope';
 import { CHAT_LIST_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import { TIMEOUT_MS_CHAT_LIST, TIMEOUT_MS_CHAT_SEND } from '@/lib/api/timeouts';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
+import { formatKSTShort, formatKSTTime } from '@/lib/formatKST';
 
 type CardStatus = 'new' | 'checked' | 'done';
 type WorkKind =
@@ -255,31 +256,8 @@ async function sendFrontMessage(input: {
   return { ok: true, savedId: saved.id };
 }
 
-function formatTimeKST(iso: string) {
-  try {
-    return new Date(iso).toLocaleString('ko-KR', {
-      timeZone: 'Asia/Seoul',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function formatShortClockKST(iso: string) {
-  try {
-    return new Date(iso).toLocaleTimeString('ko-KR', {
-      timeZone: 'Asia/Seoul',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return '';
-  }
-}
+const formatTimeKST = formatKSTShort;
+const formatShortClockKST = formatKSTTime;
 
 function CardHandlerMeta({ card }: { card: WorkCard }) {
   const lines: { key: string; text: string }[] = [];

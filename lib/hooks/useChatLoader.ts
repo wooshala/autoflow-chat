@@ -36,6 +36,8 @@ export type UseChatLoaderOptions = {
   initialListLimit?: number;
   /** Delta (since) list limit (default 40). */
   deltaListLimit?: number;
+  /** Staff-chat: log [STAFF_CHAT_API_MESSAGES] / [STAFF_CHAT_SET_MESSAGES] and replace list on full load. */
+  staffTimelineMode?: boolean;
 };
 
 export function useChatLoader(options?: UseChatLoaderOptions) {
@@ -44,6 +46,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const listTimeoutMs = options?.listTimeoutMs ?? TIMEOUT_MS_CHAT_LIST;
   const initialListLimit = options?.initialListLimit ?? 50;
   const deltaListLimit = options?.deltaListLimit ?? 40;
+  const staffTimelineMode = options?.staffTimelineMode ?? false;
 
   const isMountedRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -102,6 +105,21 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         }
 
         const nextMessages = Array.isArray(result.data.messages) ? result.data.messages : null;
+
+        if (staffTimelineMode && nextMessages) {
+          const mobile = nextMessages.filter((m) => m.sender_side === 'mobile').length;
+          const pc = nextMessages.filter((m) => m.sender_side === 'pc').length;
+          console.log('[STAFF_CHAT_API_MESSAGES]', {
+            source,
+            count: nextMessages.length,
+            mobile_count: mobile,
+            pc_count: pc,
+            limit: opts?.since ? deltaListLimit : initialListLimit,
+            since: opts?.since ?? null,
+            user_filter: 'none'
+          });
+        }
+
         if (DEBUG_VERBOSE && nextMessages) {
           const last5 = nextMessages.slice(-5).map((m: any) => ({
             id: m?.id ?? null,
@@ -122,7 +140,27 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         const stillCurrent = mySeq === loadSeqRef.current && !controller.signal.aborted && isMountedRef.current;
         if (stillCurrent) {
           if (nextMessages) {
+            const isFullLoad = !opts?.since;
             setMessages((prev) => {
+              if (staffTimelineMode && isFullLoad) {
+                const replaced = sortMessagesAsc(
+                  nextMessages
+                    .filter((m) => m?.id)
+                    .map((m) => normalizeChatMessageFields(m))
+                );
+                const droppedNoId = nextMessages.length - replaced.length;
+                console.log('[STAFF_CHAT_SET_MESSAGES]', {
+                  source,
+                  mode: 'replace_full',
+                  count: replaced.length,
+                  api_count: nextMessages.length,
+                  dropped_missing_id: droppedNoId,
+                  before_count: prev.length,
+                  user_filter: 'none'
+                });
+                return replaced;
+              }
+
               const byId = new Map<string, ChatMessage>();
               const prevIds = new Set<string>();
               prev.forEach((m) => {
@@ -145,6 +183,17 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
                 }
               });
               const merged = sortMessagesAsc(Array.from(byId.values()));
+              if (staffTimelineMode) {
+                console.log('[STAFF_CHAT_SET_MESSAGES]', {
+                  source,
+                  mode: 'merge',
+                  count: merged.length,
+                  api_count: nextMessages.length,
+                  before_count: prev.length,
+                  added_count: added.length,
+                  user_filter: 'none'
+                });
+              }
               log.debug('[SET_MESSAGES_MERGED_LAST_IDS]', {
                 source,
                 before_count: prev.length,
@@ -253,7 +302,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         }
       }
     },
-    [loadingRef, listTimeoutMs, initialListLimit, deltaListLimit]
+    [loadingRef, listTimeoutMs, initialListLimit, deltaListLimit, staffTimelineMode]
   );
 
   const loadFull = useCallback(async (source: string) => load(source, { mode: 'full' }), [load]);

@@ -67,11 +67,13 @@ export function mapIntentIssueTypeToKo(issueType: IntentIssueType): MappedIssueT
 }
 
 export async function parseMessage(message: string, recentMessages: string[]): Promise<AiParseResult | null> {
+  const modelName = 'gpt-4.1-mini';
   console.log('[AI_OPENAI_STATUS]', {
     hasOpenAI: Boolean(openai),
     messagePreview: String(message || '').slice(0, 40),
     recentCount: recentMessages.length
   });
+  console.log('[OPENAI_MODEL]', modelName);
   if (!openai) return null;
 
   const fallbackRoom = extractRoomByRule(message);
@@ -105,6 +107,11 @@ JSON으로만 답변:
     console.log('[AI_RAW_RESPONSE]', {
       output_text: res.output_text || null
     });
+    console.log('[AUTO_TICKET_FETCH_RAW_RESPONSE]', {
+      has_output: Boolean(res.output_text),
+      output_text: res.output_text || null,
+      usage: (res as any).usage ?? null,
+    });
 
     const parsed = JSON.parse(unwrapJsonText(res.output_text || '{}')) as Partial<AiParseResult>;
     const issueType = asIntentIssueType(parsed.issue_type);
@@ -132,8 +139,12 @@ JSON으로만 답변:
     return finalResult;
   } catch (error: any) {
     console.error('[AI_PARSE_ERROR]', {
-      error: error?.message || String(error)
+      message: error?.message ?? String(error),
+      status: error?.status ?? null,
+      code: error?.code ?? null,
+      type: error?.type ?? null,
+      stack: error?.stack ?? null,
     });
-    return null;
+    throw error;
   }
 }

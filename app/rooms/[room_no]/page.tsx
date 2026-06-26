@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import type { TimelineEvent, TimelineSourceType, TimelineSeverity } from '@/lib/types';
+import { formatKSTShort } from '@/lib/formatKST';
 
 // ── filter types ──────────────────────────────────────────────────────────────
 
@@ -65,11 +66,7 @@ const SEVERITY_DOT: Record<TimelineSeverity, string> = {
   normal: 'bg-gray-300',
 };
 
-function formatTime(iso: string) {
-  const d   = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+const formatTime = formatKSTShort;
 
 // ── filter bar ────────────────────────────────────────────────────────────────
 

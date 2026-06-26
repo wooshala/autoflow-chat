@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { ISSUE_UI, STATUS_UI, TicketStatus } from '@/lib/types';
 import type { DashboardTicket } from '@/lib/dashboard';
+import { formatKST } from '@/lib/formatKST';
 
 function statusUi(status: string): { label: string; badge: string } {
   const s = String(status || '').toLowerCase().trim();
@@ -81,7 +82,7 @@ export function TicketTable({ tickets, loading, selectedId, onSelect }: TicketTa
                   onClick={() => onSelect(t)}
                   className={`cursor-pointer hover:bg-blue-50/30 ${isSelected ? 'bg-blue-50/60' : ''} ${t.is_delayed ? 'bg-red-50/40' : ''}`}
                 >
-                  <td className="px-4 py-2 text-xs text-gray-600 font-mono">{String(t.created_at || '').replace('T', ' ').replace('Z', '')}</td>
+                  <td className="px-4 py-2 text-xs text-gray-600 font-mono">{t.created_at ? formatKST(t.created_at) : '-'}</td>
                   <td className="px-4 py-2 text-sm font-semibold text-gray-900">{t.room_no ? `${t.room_no}호` : '-'}</td>
                   <td className="px-4 py-2">
                     <IssueBadge issue={String(t.category || '기타')} />
