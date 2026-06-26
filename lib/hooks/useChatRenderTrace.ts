@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ChatMessage } from '@/lib/types';
 import { logUiRendered } from '@/lib/chat/sendTrace';
+import { latRendered } from '@/lib/chat/latencyTrace';
 
 /** Log [CHAT_UI_RENDERED] when new message ids appear in the list. */
 export function useChatRenderTrace(messages: ChatMessage[], enabled = true) {
@@ -23,6 +24,7 @@ export function useChatRenderTrace(messages: ChatMessage[], enabled = true) {
       if (seenRef.current.has(id)) continue;
       seenRef.current.add(id);
       logUiRendered(id);
+      latRendered(id); // [CHAT_LATENCY_LOCAL_RENDERED] / [CHAT_LATENCY_REMOTE_RENDERED]
     }
   }, [messages, enabled]);
 }

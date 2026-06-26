@@ -24,6 +24,7 @@ import {
   logSendClick,
   registerMessageIdForNonce
 } from '@/lib/chat/sendTrace';
+import { latApiResponded, latApiStart, latSendClick, setLatencySelf } from '@/lib/chat/latencyTrace';
 import { unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
 import { useNotificationAudioUnlock } from '@/lib/hooks/useNotificationAudioUnlock';
 import { useChatRenderTrace } from '@/lib/hooks/useChatRenderTrace';
@@ -231,6 +232,9 @@ export default function ChatPage() {
   }, []);
 
   useChatRenderTrace(messages, initialHydrationComplete);
+  useEffect(() => {
+    setLatencySelf(getDeviceSide(), 'pc');
+  }, []);
 
   const isNearBottom = () => {
     const el = listRef.current;
@@ -323,7 +327,9 @@ export default function ChatPage() {
     setSubmitting(true);
     const optimisticId = `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const clientNonce = createClientNonce();
+    const clientSendTs = Date.now();
     logSendClick(clientNonce);
+    latSendClick({ client_nonce: clientNonce, sender_side: getDeviceSide(), room: roomNo || null, source: 'pc' });
     const optimisticMessage: ChatMessage = {
       id: optimisticId,
       user_id: chatSendUserId,
@@ -352,6 +358,7 @@ export default function ChatPage() {
       fd.append('message', text.trim());
       fd.append('client_request_id', clientRequestId);
       fd.append('client_nonce', clientNonce);
+      fd.append('client_send_ts', String(clientSendTs));
       fd.append('client_device_id', deviceId);
       fd.append('sender_side', getDeviceSide());
       fd.append('priority', urgentMode ? 'urgent' : 'normal');
@@ -365,6 +372,7 @@ export default function ChatPage() {
         fd.append('image', photo);
       }
 
+      latApiStart(clientNonce);
       const sendResult = await fetchEnvelope<{ message: ChatMessage }>(CHAT_SEND_URL, {
         method: 'POST',
         body: fd,
@@ -409,6 +417,7 @@ export default function ChatPage() {
       });
       registerMessageIdForNonce(clientNonce, String(saved.id));
       logSendApiResponded(clientNonce, String(saved.id), saved.created_at);
+      latApiResponded(clientNonce, String(saved.id), Boolean((saved as any)?.translated_text));
       setMessages((prev) => prev.map((m) => (m.id === optimisticId ? ({ ...m, ...saved } as ChatMessage) : m)));
       clearInput();
       setUrgentMode(false);

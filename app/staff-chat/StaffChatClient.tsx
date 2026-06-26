@@ -24,6 +24,7 @@ import {
   logSendClick,
   registerMessageIdForNonce
 } from '@/lib/chat/sendTrace';
+import { latApiResponded, latApiStart, latSendClick, setLatencySelf } from '@/lib/chat/latencyTrace';
 import {
   canShowBrowserNotification,
   isBrowserNotificationSupported,
@@ -449,6 +450,9 @@ function StaffChatPageInner() {
   }, [listPhase, initialHydrationComplete, staffKey, sessionUser]);
 
   useChatRenderTrace(messages, initialHydrationComplete);
+  useEffect(() => {
+    setLatencySelf('mobile', 'staff');
+  }, []);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -886,7 +890,9 @@ function StaffChatPageInner() {
       }
 
       const nonce = createClientNonce();
+      const clientSendTs = Date.now();
       logSendClick(nonce);
+      latSendClick({ client_nonce: nonce, sender_side: 'mobile', room: r || null, source: 'staff' });
       setSending(true);
       setToast(null);
       staffChatLog('STAFF_CHAT_SEND_API_START', {
@@ -907,10 +913,12 @@ function StaffChatPageInner() {
         if (phraseKey) fd.append('phrase_key', phraseKey);
         if (r) fd.append('room_no', r);
         fd.append('client_nonce', nonce);
+        fd.append('client_send_ts', String(clientSendTs));
         fd.append('client_request_id', nonce);
         fd.append('client_device_id', `staff-chat-${staffKey}`);
         if (image) fd.append('image', image);
 
+        latApiStart(nonce);
         const res = await fetchEnvelope<{ message: ChatMessage }>(CHAT_SEND_URL, {
           method: 'POST',
           body: fd,
@@ -937,6 +945,7 @@ function StaffChatPageInner() {
         });
         registerMessageIdForNonce(nonce, String(saved.id));
         logSendApiResponded(nonce, String(saved.id), saved.created_at);
+        latApiResponded(nonce, String(saved.id), Boolean((saved as any)?.translated_text));
         setStaffMessages((prev) => {
           if (prev.some((m) => String(m.id) === String(saved.id))) return prev;
           return [...prev, saved].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));

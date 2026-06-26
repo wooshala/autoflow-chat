@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { sendStaffPushAfterMessage } from '@/lib/push/sendStaffPushAfterMessage';
 import { buildChatTranslations } from '@/lib/chat/translateMessageForChat';
 import { parseSendPriority } from '@/lib/chat/messagePriority';
+import { emitLatency } from '@/lib/chat/latencyTrace';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
 import { uploadImage } from '@/lib/services/upload';
@@ -347,9 +348,20 @@ async function runAiPostProcess(input: {
       error: error?.message || String(error)
     });
   } finally {
+    const aiDoneAt = Date.now();
     console.log('[AI_ASYNC_PROCESS_DONE]', {
       message_id: saved.id,
-      duration_ms: Date.now() - started
+      duration_ms: aiDoneAt - started
+    });
+    emitLatency('AI_DONE', {
+      message_id: saved.id,
+      sender_side: (saved as any)?.sender_side ?? null,
+      room: (saved as any)?.room_no ?? null,
+      source: (saved as any)?.sender_side === 'pc' ? 'pc' : 'staff',
+      has_translation: Boolean((saved as any)?.translated_text),
+      // async post-process duration (does NOT block send/response)
+      elapsed_ms: aiDoneAt - started,
+      ts: aiDoneAt
     });
   }
 }
@@ -363,6 +375,8 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
 
     const client_nonce = String(formData.get('client_nonce') || formData.get('client_request_id') || '').trim() || null;
+    const client_send_ts_raw = Number(formData.get('client_send_ts'));
+    const client_send_ts = Number.isFinite(client_send_ts_raw) && client_send_ts_raw > 0 ? client_send_ts_raw : null;
     if (client_nonce) {
       console.log('[CHAT_SEND_API_RECEIVED]', { nonce: client_nonce, ts: apiReceivedAt });
     }
@@ -447,12 +461,31 @@ export async function POST(req: NextRequest) {
       return jsonErr('INVALID_USER_ID', '전송에 실패했습니다. 관리자 설정이 필요합니다.', 400);
     }
 
+    const latSource = sender_side === 'pc' ? 'pc' : 'staff';
+    // ── Latency: translation is two sequential OpenAI calls (forward + back) and
+    // is awaited BEFORE the DB insert + response, so it gates the realtime event
+    // the receiver waits on. Measure it explicitly.
+    const translationStarted = Date.now();
     const translation =
       message.trim() ? await buildChatTranslations(message || '', sender_side) : {
         original_lang: '',
         translated_text: null,
         back_translated_text: null
       };
+    const translationDoneAt = Date.now();
+    const has_translation = Boolean(translation.translated_text);
+    emitLatency('TRANSLATION_DONE', {
+      client_nonce,
+      sender_side,
+      room: room_no,
+      source: latSource,
+      has_translation,
+      // server-local duration of the (blocking) translation step
+      elapsed_ms: translationDoneAt - translationStarted,
+      translation_ms: translationDoneAt - translationStarted,
+      since_request_ms: translationDoneAt - requestStarted,
+      ts: translationDoneAt
+    });
     const insertStarted = Date.now();
     const saved = await createChatMessage({
       ticket_id,
@@ -485,6 +518,21 @@ export async function POST(req: NextRequest) {
       message_id: saved.id,
       ts: dbInsertedAt,
       db_insert_ms: dbInsertedAt - insertStarted
+    });
+    emitLatency('DB_INSERTED', {
+      message_id: saved.id,
+      client_nonce,
+      sender_side,
+      room: room_no,
+      source: latSource,
+      has_translation,
+      // server-local cumulative from request arrival (incl. translation)
+      elapsed_ms: dbInsertedAt - requestStarted,
+      db_insert_ms: dbInsertedAt - insertStarted,
+      translation_ms: translationDoneAt - translationStarted,
+      // cross-machine cumulative from the user's click (skew caveat)
+      since_click_ms: client_send_ts ? dbInsertedAt - client_send_ts : null,
+      ts: dbInsertedAt
     });
     if (DEBUG_VERBOSE) {
       console.log('[CHAT_MESSAGE_INSERTED]', {
@@ -594,6 +642,19 @@ export async function POST(req: NextRequest) {
       nonce: client_nonce,
       message_id: saved.id,
       elapsed_ms: apiRespondedAt - requestStarted,
+      ts: apiRespondedAt
+    });
+    emitLatency('API_RESPONDED', {
+      message_id: saved.id,
+      client_nonce,
+      sender_side,
+      room: room_no,
+      source: latSource,
+      has_translation,
+      // total server processing time (translation + insert + bookkeeping)
+      elapsed_ms: apiRespondedAt - requestStarted,
+      translation_ms: translationDoneAt - translationStarted,
+      since_click_ms: client_send_ts ? apiRespondedAt - client_send_ts : null,
       ts: apiRespondedAt
     });
     console.log('[CHAT_SEND_RESPONSE_RETURNED]', {

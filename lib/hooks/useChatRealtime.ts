@@ -3,6 +3,7 @@ import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
 import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
 import { logRealtimeReceived } from '@/lib/chat/sendTrace';
+import { latRealtimeReceived } from '@/lib/chat/latencyTrace';
 
 function sortMessagesAsc(items: ChatMessage[]): ChatMessage[] {
   return [...items].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
@@ -110,6 +111,13 @@ export function useChatRealtime({
           has_translated_ru: Boolean((row as any)?.translated_text?.ru)
         });
         logRealtimeReceived(String(row.id), row.room_no ?? null, row.sender_side ?? null);
+        latRealtimeReceived({
+          message_id: String(row.id),
+          sender_side: row.sender_side ?? null,
+          room: row.room_no ?? null,
+          has_translation: Boolean((row as any)?.translated_text),
+          created_at: (row as any)?.created_at ?? null
+        });
         onRowEvent?.({ id: String(row.id), type: 'INSERT' });
         upsertMessageRow(normalizeChatMessageFields(row));
       })
