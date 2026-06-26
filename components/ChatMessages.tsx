@@ -82,6 +82,9 @@ export default function ChatMessages({
         const urgent = isUrgentMessage(msg);
         const statusLabel = photoStatusLabel(msg, displayPrimary);
         const displayBody = stripDuplicateRoomPrefix(displayPrimary, msg.room_no);
+        const displaySecondaryBody = displaySecondary
+          ? stripDuplicateRoomPrefix(displaySecondary, msg.room_no)
+          : displaySecondary;
         const isImageOnly =
           !isDeleted && Boolean(msg.image_url) && !statusLabel && isGenericPhotoCaption(displayPrimary || msg.message || '');
         const isSystemEvent = isMaintenanceSystemMessage(msg, msgText);
@@ -235,7 +238,7 @@ export default function ChatMessages({
                       ) : null}
                       {displaySecondary ? (
                         <div className="mt-1 whitespace-pre-wrap break-words text-[11px] text-gray-500 opacity-80">
-                          {displaySecondary}
+                          {displaySecondaryBody}
                         </div>
                       ) : null}
                     </>
@@ -250,7 +253,7 @@ export default function ChatMessages({
                       </div>
                       {displaySecondary ? (
                         <div className="mt-1 whitespace-pre-wrap break-words text-[11px] text-gray-500 opacity-80">
-                          {displaySecondary}
+                          {displaySecondaryBody}
                         </div>
                       ) : null}
                     </div>

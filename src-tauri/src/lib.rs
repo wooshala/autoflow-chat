@@ -3,7 +3,7 @@
 // layer only: native OS notification, loud WAV, system tray, window focus.
 // The web app at https://autoflow-mvp.vercel.app/chat is loaded unchanged.
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{
     image::Image,
@@ -167,10 +167,20 @@ pub fn run() {
             let reachable = server_reachable();
             log::info!("[AUTOFLOW_BOOT] reachable={}", reachable);
 
+            // Cache-bust the page HTML per launch so a freshly deployed /chat
+            // (web fixes) always loads — WebView2 otherwise serves a stale
+            // cached bundle. Hashed static chunks remain cacheable; only the
+            // HTML document URL changes. The query param is ignored by routing.
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let chat_url = format!("{}?afts={}", REMOTE_CHAT_URL, ts);
+
             let win = WebviewWindowBuilder::new(
                 &handle,
                 "main",
-                WebviewUrl::External(REMOTE_CHAT_URL.parse().unwrap()),
+                WebviewUrl::External(chat_url.parse().unwrap()),
             )
             .title("AutoFlow")
             .inner_size(1200.0, 850.0)
