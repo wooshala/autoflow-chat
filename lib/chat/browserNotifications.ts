@@ -17,6 +17,20 @@ export function canShowBrowserNotification(): boolean {
   return isBrowserNotificationSupported() && Notification.permission === 'granted';
 }
 
+function notifyContext() {
+  return {
+    permission:
+      isBrowserNotificationSupported() && typeof window !== 'undefined'
+        ? Notification.permission
+        : 'unsupported',
+    visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+    hasFocus:
+      typeof document !== 'undefined' && typeof document.hasFocus === 'function'
+        ? document.hasFocus()
+        : null
+  };
+}
+
 export async function showBrowserNotification(params: {
   title: string;
   body?: string;
@@ -26,38 +40,91 @@ export async function showBrowserNotification(params: {
   messageId?: string;
   source?: string;
 }): Promise<boolean> {
-  const permission =
-    isBrowserNotificationSupported() && typeof window !== 'undefined'
-      ? Notification.permission
-      : 'unsupported';
+  const ctx = notifyContext();
 
   console.log('[CHAT_BROWSER_NOTIFY_ATTEMPT]', {
-    permission,
+    channel: 'os_notification',
+    ...ctx,
     title: params.title,
     bodyPreview: String(params.body || '').slice(0, 80),
     tag: params.tag ?? null,
+    tagOmitted: params.tag == null || params.tag === '',
     silent: params.silent ?? false,
-    visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+    requireInteraction: params.requireInteraction ?? false,
     messageId: params.messageId ?? null,
     source: params.source ?? null
   });
 
   if (!canShowBrowserNotification()) {
     console.log('[CHAT_BROWSER_NOTIFY_FAILED]', {
-      permission,
-      reason: permission === 'denied' ? 'permission_denied' : 'permission_not_granted'
+      channel: 'os_notification',
+      ...ctx,
+      reason: ctx.permission === 'denied' ? 'permission_denied' : 'permission_not_granted'
     });
     return false;
   }
 
   try {
-    const n = new Notification(params.title, {
+    const options: NotificationOptions = {
       body: params.body,
-      tag: params.tag,
       requireInteraction: params.requireInteraction ?? false,
       silent: params.silent ?? false
+    };
+    if (params.tag != null && params.tag !== '') {
+      options.tag = params.tag;
+    }
+
+    const n = new Notification(params.title, options);
+
+    console.log('[CHAT_BROWSER_NOTIFY_CREATED]', {
+      channel: 'os_notification',
+      ...ctx,
+      title: params.title,
+      tag: options.tag ?? null,
+      messageId: params.messageId ?? null,
+      source: params.source ?? null
     });
+
+    n.onshow = () => {
+      console.log('[CHAT_BROWSER_NOTIFY_SHOW]', {
+        channel: 'os_notification',
+        ...notifyContext(),
+        title: params.title,
+        tag: options.tag ?? null,
+        messageId: params.messageId ?? null,
+        source: params.source ?? null
+      });
+    };
+
+    n.onclose = () => {
+      console.log('[CHAT_BROWSER_NOTIFY_CLOSE]', {
+        channel: 'os_notification',
+        title: params.title,
+        tag: options.tag ?? null,
+        messageId: params.messageId ?? null,
+        source: params.source ?? null
+      });
+    };
+
+    n.onerror = (event: Event) => {
+      console.log('[CHAT_BROWSER_NOTIFY_ERROR]', {
+        channel: 'os_notification',
+        title: params.title,
+        tag: options.tag ?? null,
+        messageId: params.messageId ?? null,
+        source: params.source ?? null,
+        eventType: event?.type ?? 'error'
+      });
+    };
+
     n.onclick = () => {
+      console.log('[CHAT_BROWSER_NOTIFY_CLICK]', {
+        channel: 'os_notification',
+        title: params.title,
+        tag: options.tag ?? null,
+        messageId: params.messageId ?? null,
+        source: params.source ?? null
+      });
       try {
         window.focus();
         n.close();
@@ -65,11 +132,23 @@ export async function showBrowserNotification(params: {
         /* ignore */
       }
     };
-    console.log('[CHAT_BROWSER_NOTIFY_OK]', { permission, tag: params.tag ?? null });
+
+    console.log('[CHAT_BROWSER_NOTIFY_OK]', {
+      channel: 'os_notification',
+      ...ctx,
+      tag: options.tag ?? null,
+      messageId: params.messageId ?? null,
+      source: params.source ?? null,
+      note: 'constructor_ok; await NOTIFY_SHOW for OS display'
+    });
     return true;
   } catch (err: unknown) {
     const error = err instanceof Error ? { name: err.name, message: err.message } : { message: String(err) };
-    console.log('[CHAT_BROWSER_NOTIFY_FAILED]', { permission, ...error });
+    console.log('[CHAT_BROWSER_NOTIFY_FAILED]', {
+      channel: 'os_notification',
+      ...ctx,
+      ...error
+    });
     return false;
   }
 }

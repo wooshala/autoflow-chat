@@ -3,6 +3,7 @@
 import { CHAT_CLIENT_REV } from '@/lib/chat/chatClientRev';
 import {
   testBrowserOsNotification,
+  testBrowserOsNotificationPlain,
   testHiddenNotifySimulation,
   testLoudNotificationSound
 } from '@/lib/chat/chatNotifyDiag';
@@ -20,6 +21,14 @@ export default function ChatNotifyDiagBar({ onRequestPermission }: Props) {
 
   const runSoundTest = () => {
     void testLoudNotificationSound().then(() => refresh());
+  };
+
+  const runBrowserPlainTest = () => {
+    if (permission === 'default' && onRequestPermission) {
+      onRequestPermission();
+      return;
+    }
+    void testBrowserOsNotificationPlain().then(() => refresh());
   };
 
   const runBrowserTest = () => {
@@ -76,10 +85,17 @@ export default function ChatNotifyDiagBar({ onRequestPermission }: Props) {
         </button>
         <button
           type="button"
+          onClick={runBrowserPlainTest}
+          className="rounded border border-emerald-400/70 bg-emerald-950/60 px-2.5 py-1 font-semibold text-emerald-100 hover:bg-emerald-900/70"
+        >
+          OS 알림 테스트 (tag 없음)
+        </button>
+        <button
+          type="button"
           onClick={runBrowserTest}
           className="rounded border border-sky-400/70 bg-sky-950/60 px-2.5 py-1 font-semibold text-sky-100 hover:bg-sky-900/70"
         >
-          브라우저 OS 알림 테스트
+          브라우저 OS 알림 테스트 (tag 있음)
         </button>
         <button
           type="button"
@@ -90,8 +106,8 @@ export default function ChatNotifyDiagBar({ onRequestPermission }: Props) {
         </button>
       </div>
       <p className="mt-1.5 text-[10px] leading-snug text-amber-300/90">
-        수동 버튼 실패 → 권한/Windows 알림/오디오 문제. 수동 성공 + 메시지 실패 → useChatNotifications hidden
-        분기 문제. 콘솔에서 [CHAT_SOUND_*] / [CHAT_BROWSER_NOTIFY_*] / [CHAT_NOTIFY_RECEIVED] 확인.
+        수동 OS: [CHAT_BROWSER_NOTIFY_CREATED] → [CHAT_BROWSER_NOTIFY_SHOW]. in-app: [CHAT_INAPP_TOAST_SHOW] only.
+        CREATED만 있고 SHOW 없음 → 브라우저 미표시. tag 없음 버튼으로 tag replace 여부 확인.
       </p>
     </section>
   );

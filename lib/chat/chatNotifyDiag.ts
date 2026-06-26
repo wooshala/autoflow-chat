@@ -55,6 +55,33 @@ export async function testLoudNotificationSound(): Promise<boolean> {
   return ok;
 }
 
+/** Manual: tag-less OS notification — Windows toast diagnosis. */
+export async function testBrowserOsNotificationPlain(): Promise<boolean> {
+  const base = diagBase();
+  console.log('[CHAT_DIAG_BROWSER_NOTIFY_PLAIN_START]', {
+    channel: 'os_notification',
+    tag: null,
+    ...base
+  });
+
+  const ok = await showBrowserNotification({
+    title: 'AutoFlow OS 알림 테스트',
+    body: '이 알림이 Windows 오른쪽 아래에 떠야 합니다',
+    requireInteraction: true,
+    silent: false,
+    source: 'diag_os_plain_no_tag'
+  });
+
+  if (!ok) {
+    console.log('[CHAT_BROWSER_NOTIFY_FAILED]', {
+      source: 'diag_os_plain_no_tag',
+      channel: 'os_notification',
+      ...base
+    });
+  }
+  return ok;
+}
+
 /** Manual: verify browser OS notification independent of message receive path. */
 export async function testBrowserOsNotification(): Promise<boolean> {
   const base = diagBase();

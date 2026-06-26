@@ -1,11 +1,15 @@
-/** Tab/window is visible — in-app toast + beep (P0 foreground path). */
+/** User is actively viewing this tab — in-app toast + beep (P0 foreground path). */
 export function isInAppForegroundVisible(): boolean {
   if (typeof document === 'undefined') return false;
-  return !document.hidden && document.visibilityState === 'visible';
+  if (document.hidden || document.visibilityState !== 'visible') return false;
+  if (typeof document.hasFocus === 'function') return document.hasFocus();
+  return true;
 }
 
-/** Hidden tab / screen off — rely on OS notification (native FCM on mobile). */
+/** Focus lost, hidden tab, or screen off — OS notification path (P0). */
 export function isOsBackgroundLike(): boolean {
   if (typeof document === 'undefined') return true;
-  return document.hidden || document.visibilityState !== 'visible';
+  if (document.hidden || document.visibilityState !== 'visible') return true;
+  if (typeof document.hasFocus === 'function') return !document.hasFocus();
+  return false;
 }

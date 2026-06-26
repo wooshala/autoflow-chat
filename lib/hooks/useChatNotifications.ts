@@ -270,6 +270,14 @@ export function useChatNotifications({
         const next = [...prev, entry];
         return next.slice(-MAX_TOASTS);
       });
+      console.log('[CHAT_INAPP_TOAST_SHOW]', {
+        channel: 'in_app_toast',
+        messageId: entry.messageId,
+        key,
+        bodyPreview: entry.body.slice(0, 80),
+        tone: entry.tone,
+        note: 'page overlay only — NOT Windows OS notification'
+      });
       if (DEBUG_NOTIFY) log.info('[CHAT_NOTIFY_TOAST_PUSH]', { messageId: entry.messageId, key });
       const tid = setTimeout(() => removeToast(key), TOAST_TTL_MS);
       toastTimersRef.current.set(key, tid);
@@ -465,10 +473,7 @@ export function useChatNotifications({
         typeof document !== 'undefined' && typeof document.hasFocus === 'function'
           ? document.hasFocus()
           : hasFocusRef.current;
-      // P0: OS notification must fire when the AutoFlow tab is not focused (user looking at
-      // Excel / another app), even though visibilityState stays 'visible'. Gate on focus, not
-      // visibility. visibilityState is kept for [NOTIFY_GATE] logging only. Shared
-      // isOsBackgroundLike() is intentionally left untouched.
+      // P0: OS notification when focus is lost (Excel / other app) or tab hidden — gate on !hasFocus().
       const isBackgroundLike =
         typeof document !== 'undefined' && typeof document.hasFocus === 'function'
           ? !document.hasFocus()
@@ -560,6 +565,13 @@ export function useChatNotifications({
         });
       }
       if (channels.showToast) {
+        console.log('[CHAT_INAPP_TOAST_DECISION]', {
+          channel: 'in_app_toast',
+          messageId: id,
+          isBackgroundLike,
+          hasFocus,
+          visibilityState: typeof document !== 'undefined' ? document.visibilityState : null
+        });
         pushToast({
           messageId: id,
           body: toastBody,
@@ -668,8 +680,7 @@ export function useChatNotifications({
 
       // Diagnostic-only: dump every gate value AT the actual OS-notification branch.
       // shouldShowBrowserNotification mirrors the real fire condition (willBrowserNotify),
-      // i.e. isBackgroundLike (document.hidden || visibilityState !== 'visible')
-      //      && permission === 'granted' && !browserDedupeHit.
+      // i.e. isBackgroundLike (!document.hasFocus()) && permission === 'granted' && !browserDedupeHit.
       const shouldShowBrowserNotification = willBrowserNotify;
       console.log('[NOTIFY_GATE]', {
         messageId: id,
@@ -692,14 +703,22 @@ export function useChatNotifications({
           flags: classification.flags,
           textPreview: preview.slice(0, 80)
         });
+        console.log('[CHAT_BROWSER_NOTIFY_DECISION]', {
+          channel: 'os_notification',
+          messageId: id,
+          title,
+          tag: null,
+          isBackgroundLike,
+          hasFocus,
+          visibilityState
+        });
         void showBrowserNotification({
           title,
           body,
-          tag: id,
           requireInteraction: tone === 'urgent',
           silent: false,
           messageId: id,
-          source: 'message_receive_hidden'
+          source: 'message_receive_os'
         }).then((ok) => {
           if (ok) {
             notifiedBrowserIdsRef.current.add(id);
