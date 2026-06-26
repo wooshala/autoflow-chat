@@ -40,24 +40,15 @@ function safeText(v: unknown, fallback: string): string {
   return fallback;
 }
 
-function roleIcon(role: unknown): string {
-  const r = safeText(role, '').toLowerCase();
-  if (/clean|house|maid|청소/.test(r)) return '🧹';
-  if (/front|recept|desk|프론트/.test(r)) return '🛎️';
-  if (/manage|admin|관리|매니저|사장/.test(r)) return '👔';
-  if (/engineer|maint|설비|시설/.test(r)) return '🔧';
-  return '👤';
-}
-
 function langLabel(lang: unknown): string {
   const l = safeText(lang, '').toLowerCase();
-  if (!l) return '언어 미설정';
-  if (l.startsWith('ko')) return '한국어';
-  if (l.startsWith('ru')) return '러시아어';
-  if (l.startsWith('en')) return '영어';
-  if (l.startsWith('vi')) return '베트남어';
-  if (l.startsWith('zh')) return '중국어';
-  return safeText(lang, '언어 미설정');
+  if (!l) return '🌐 언어 미설정';
+  if (l.startsWith('ko')) return '🇰🇷 한국어';
+  if (l.startsWith('ru')) return '🇷🇺 러시아어';
+  if (l.startsWith('en')) return '🇺🇸 영어';
+  if (l.startsWith('vi')) return '🇻🇳 베트남어';
+  if (l.startsWith('zh')) return '🇨🇳 중국어';
+  return `🌐 ${safeText(lang, '언어 미설정')}`;
 }
 
 type StatusKind = 'online' | 'offline' | 'removed';
@@ -77,7 +68,7 @@ export default function StaffInvitePanel({
   defaultOpen = true
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
-  const [showQr, setShowQr] = useState(false);
+  const [showQr, setShowQr] = useState(true);
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [entryUrl, setEntryUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -189,10 +180,28 @@ export default function StaffInvitePanel({
 
   const body = (
     <>
-      {/* ── QR: 새 직원 추가 (가장 위) ─────────────────────────── */}
+      {/* ── 직원 초대 (QR, 가장 위) ─────────────────────────── */}
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-        <div className="mb-2 text-sm font-bold text-emerald-900">새 직원 추가</div>
-        <div className="flex flex-wrap gap-2">
+        <div className="mb-2 text-sm font-bold text-emerald-900">직원 초대</div>
+        {showQr ? (
+          <div className="flex flex-col items-center gap-2">
+            {entryUrl ? (
+              <img
+                src={qrUrl(entryUrl)}
+                alt="직원 입장 QR"
+                className="h-40 w-40 rounded-lg border border-emerald-200 bg-white p-2"
+              />
+            ) : (
+              <div className="flex h-40 w-40 items-center justify-center rounded-lg border border-emerald-200 bg-white text-xs text-gray-400">
+                QR 불러오는 중…
+              </div>
+            )}
+            <p className="text-center text-xs text-emerald-800">
+              직원 휴대폰 카메라로 이 QR을 찍으면 바로 입장합니다.
+            </p>
+          </div>
+        ) : null}
+        <div className="mt-2.5 flex flex-wrap justify-center gap-2">
           <button
             type="button"
             onClick={() => setShowQr((v) => !v)}
@@ -208,36 +217,16 @@ export default function StaffInvitePanel({
           >
             {rotatingEntry ? '재발급 중…' : 'QR 재발급'}
           </button>
+          <button
+            type="button"
+            disabled={!entryUrl}
+            onClick={() => void copyLink()}
+            className={`${btnBase} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}
+          >
+            {copied ? '복사됨 ✓' : '링크 복사'}
+          </button>
         </div>
-        {showQr ? (
-          <div className="mt-3 flex flex-col items-center gap-2">
-            {entryUrl ? (
-              <>
-                <img
-                  src={qrUrl(entryUrl)}
-                  alt="직원 입장 QR"
-                  className="h-44 w-44 rounded-lg border border-emerald-200 bg-white p-2"
-                />
-                <p className="text-center text-xs text-emerald-800">
-                  직원 휴대폰 카메라로 이 QR을 찍으면 바로 입장합니다.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void copyLink()}
-                  className={`${btnBase} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}
-                >
-                  {copied ? '복사됨 ✓' : '링크 복사'}
-                </button>
-              </>
-            ) : (
-              <p className="text-xs text-gray-500">QR을 불러오는 중…</p>
-            )}
-          </div>
-        ) : null}
       </div>
-
-      {/* ── 현재 참여자 ─────────────────────────────────────── */}
-      <div className="mt-3 mb-1.5 text-sm font-bold text-gray-800">현재 참여자</div>
 
       {loadError ? (
         <p className="text-xs text-rose-600" role="alert">
@@ -254,7 +243,7 @@ export default function StaffInvitePanel({
       {!loading && invites.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-6 text-center text-sm text-gray-500">
           아직 직원이 없어요.
-          <br />위 <span className="font-semibold text-emerald-700">QR 보기</span>를 눌러 직원에게 보여주세요.
+          <br />위 <span className="font-semibold text-emerald-700">QR</span>을 직원 휴대폰으로 찍게 해주세요.
         </div>
       ) : null}
 
@@ -271,20 +260,21 @@ export default function StaffInvitePanel({
                 removed ? 'border-gray-200 bg-gray-50 opacity-70' : 'border-gray-200 bg-white'
               }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span aria-hidden>{meta.dot}</span>
-                    <span className="text-base">{roleIcon(inv.role)}</span>
-                    <span className="truncate text-sm font-bold text-gray-900">{name}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">{langLabel(inv.spoken_lang)}</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span aria-hidden className="text-base">{meta.dot}</span>
+                  <span className="truncate text-sm font-bold text-gray-900">{name}</span>
                 </div>
-                <span className={`shrink-0 text-xs font-semibold ${meta.cls}`}>{meta.label}</span>
+                <span className={`shrink-0 text-xs font-bold ${meta.cls}`}>{meta.label}</span>
               </div>
 
-              <div className="mt-1.5 text-xs text-gray-500">
-                최근 접속 · {formatRelativeKST(inv.last_seen_at)}
+              <div className="mt-1.5 text-sm text-gray-700">{langLabel(inv.spoken_lang)}</div>
+
+              <div className="mt-2">
+                <div className="text-[11px] text-gray-400">최근 접속</div>
+                <div className="text-sm font-semibold text-gray-800">
+                  {formatRelativeKST(inv.last_seen_at)}
+                </div>
               </div>
 
               {!removed ? (
