@@ -46,3 +46,36 @@ export function formatKSTTime(date: string | Date): string {
     return String(date);
   }
 }
+
+function kstDayStamp(date: string | Date): string {
+  const ps = parts(date);
+  return `${get(ps, 'year')}-${get(ps, 'month')}-${get(ps, 'day')}`;
+}
+
+/**
+ * Human-friendly "last seen" for operators: 방금 전 / N분 전 / N시간 전 /
+ * 오늘 HH:MM / 어제 HH:MM / MM/DD HH:MM. Never shows raw timestamps.
+ */
+export function formatRelativeKST(date: string | Date | null | undefined): string {
+  if (!date) return '접속 기록 없음';
+  try {
+    const t = new Date(date).getTime();
+    if (!Number.isFinite(t)) return '접속 기록 없음';
+    const now = Date.now();
+    const diff = now - t;
+    if (diff < 0) return '방금 전';
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return '방금 전';
+    if (min < 60) return `${min}분 전`;
+    const hr = Math.floor(min / 60);
+    if (hr < 6) return `${hr}시간 전`;
+    const today = kstDayStamp(new Date(now));
+    const day = kstDayStamp(date);
+    if (day === today) return `오늘 ${formatKSTTime(date)}`;
+    const yesterday = kstDayStamp(new Date(now - 24 * 60 * 60 * 1000));
+    if (day === yesterday) return `어제 ${formatKSTTime(date)}`;
+    return formatKSTShort(date);
+  } catch {
+    return '접속 기록 없음';
+  }
+}

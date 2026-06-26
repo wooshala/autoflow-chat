@@ -73,13 +73,16 @@ import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
 import { logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
 import {
+  clearStoredInviteToken,
   inviteToSession,
   loadStoredInviteToken,
   readDeprecatedUserParamFromUrl,
+  readEntryJoinTokenFromUrl,
   readInviteTokenFromUrl,
   saveStoredInviteToken,
   type StaffInviteSession
 } from '@/lib/auth/staffInviteSession';
+import { getOrCreateStaffDeviceKey } from '@/lib/auth/staffDeviceKey';
 import { useI18n } from '@/lib/i18n/useI18n';
 import type { StaffLocale } from '@/lib/i18n/messages';
 import {
@@ -101,7 +104,7 @@ const OS_NOTIFY_BODY_MAX = 100;
 
 type ListPhase = 'loading' | 'ready' | 'error';
 type SessionSource = 'localStorage' | 'query_param' | 'invite_token' | 'none';
-type InvitePhase = 'loading' | 'ready' | 'invalid';
+type InvitePhase = 'loading' | 'ready' | 'invalid' | 'revoked' | 'join';
 
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
@@ -126,6 +129,11 @@ function StaffChatPageInner() {
   );
   const [invitePhase, setInvitePhase] = useState<InvitePhase>('loading');
   const [inviteSession, setInviteSession] = useState<StaffInviteSession | null>(null);
+  const [entryJoinToken, setEntryJoinToken] = useState<string | null>(null);
+  const [joinName, setJoinName] = useState('');
+  const [joinLang, setJoinLang] = useState<StaffLocale>('ru');
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinSubmitting, setJoinSubmitting] = useState(false);
   const [deprecatedWarned, setDeprecatedWarned] = useState(false);
   const [listPhase, setListPhase] = useState<ListPhase>('loading');
   const [listError, setListError] = useState<string | null>(null);
@@ -217,6 +225,39 @@ function StaffChatPageInner() {
   const messagesRef = useRef<ChatMessage[]>([]);
   const [realtimeReconnectToken, setRealtimeReconnectToken] = useState(0);
 
+  // Per-staff "🔔 테스트" ping from the admin participant panel. Only the targeted
+  // device (matching inviteId) plays sound + TTS. Channel/event match
+  // STAFF_TEST_CHANNEL/STAFF_TEST_EVENT in components/chat/StaffInvitePanel.tsx.
+  useEffect(() => {
+    if (!supabase) return;
+    const myInviteId = inviteSession?.inviteId ? String(inviteSession.inviteId) : null;
+    if (!myInviteId) return;
+    const ch = supabase.channel('autoflow-staff-test', { config: { broadcast: {} } });
+    ch.on('broadcast', { event: 'staff-test' }, (msg: { payload?: Record<string, unknown> }) => {
+      const p = msg?.payload;
+      if (!p || String(p.target_invite_id ?? '') !== myInviteId) return;
+      const text = typeof p.text === 'string' && p.text.trim() ? p.text : '테스트입니다.';
+      console.log('[STAFF_TEST_PING_RECEIVED]', { invite_id: myInviteId });
+      if (soundEnabled) void playNotificationTone('info', { allowHidden: true });
+      const { ttsLang } = resolveStaffTtsLangFromSession({
+        spokenLang: staffSession.spokenLang,
+        role: staffSession.role,
+        uiLocale: locale
+      });
+      runStaffTts(text, ttsLang, false, false);
+      setToast({ kind: 'ok', msg: '🔔 테스트 알림이 도착했습니다.' });
+    });
+    ch.subscribe();
+    return () => {
+      try {
+        supabase.removeChannel(ch);
+      } catch {
+        /* ignore */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, inviteSession?.inviteId, soundEnabled, staffSession.spokenLang, staffSession.role, locale]);
+
   const { messages, setMessages, loadFull, initialHydrationComplete, initialLoadStatus } = useChatLoader({
     loadingRef: isLoadingRef,
     listTimeoutMs: TIMEOUT_MS_CHAT_LIST,
@@ -248,9 +289,10 @@ function StaffChatPageInner() {
     async function bootstrapInvite() {
       const legacyUser = readDeprecatedUserParamFromUrl();
       const urlToken = readInviteTokenFromUrl();
+      const joinToken = readEntryJoinTokenFromUrl();
+      const deviceKey = getOrCreateStaffDeviceKey();
 
-      // Legacy ?user=cleaner1: sender identity only — do not block on stored invite token.
-      if (legacyUser && !urlToken) {
+      if (legacyUser && !urlToken && !joinToken) {
         setInviteSession(null);
         setDeprecatedWarned(true);
         setInvitePhase('ready');
@@ -262,14 +304,27 @@ function StaffChatPageInner() {
         return;
       }
 
+      if (joinToken) setEntryJoinToken(joinToken);
+
       const storedToken = loadStoredInviteToken();
       const token = urlToken || storedToken;
 
       if (token) {
         if (urlToken) saveStoredInviteToken(urlToken);
         try {
-          const res = await fetch(`${STAFF_INVITES_URL}?token=${encodeURIComponent(token)}`);
+          const qs = new URLSearchParams({
+            token,
+            check: 'any',
+            device_key: deviceKey
+          });
+          const res = await fetch(`${STAFF_INVITES_URL}?${qs.toString()}`);
           const json = await res.json();
+          if (json?.error === 'INVITE_REVOKED') {
+            clearStoredInviteToken();
+            setInviteSession(null);
+            setInvitePhase('revoked');
+            return;
+          }
           if (json?.ok && json?.data?.invite) {
             setInviteSession(inviteToSession(json.data.invite, json.data.userId ?? null));
             setInvitePhase('ready');
@@ -290,17 +345,100 @@ function StaffChatPageInner() {
           });
           return;
         }
+        if (joinToken) {
+          setInvitePhase('join');
+          return;
+        }
         setInvitePhase('invalid');
+        return;
+      }
+
+      if (joinToken) {
+        setInvitePhase('join');
         return;
       }
 
       if (legacyUser) {
         setDeprecatedWarned(true);
       }
-      setInvitePhase('ready');
+      setInvitePhase('invalid');
     }
     void bootstrapInvite();
   }, []);
+
+  useEffect(() => {
+    if (invitePhase !== 'ready' || !inviteSession?.token) return;
+    const token = inviteSession.token;
+
+    async function revalidateInvite() {
+      try {
+        const qs = new URLSearchParams({ token, check: 'any' });
+        const res = await fetch(`${STAFF_INVITES_URL}?${qs.toString()}`);
+        const json = await res.json();
+        if (json?.error === 'INVITE_REVOKED' || res.status === 403) {
+          clearStoredInviteToken();
+          setInviteSession(null);
+          setInvitePhase('revoked');
+        }
+      } catch {
+        /* ignore transient network errors */
+      }
+    }
+
+    const intervalId = window.setInterval(() => void revalidateInvite(), 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void revalidateInvite();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [invitePhase, inviteSession?.token]);
+
+  async function handleEntryJoin() {
+    const name = joinName.trim();
+    if (!name || !entryJoinToken) return;
+    setJoinSubmitting(true);
+    setJoinError(null);
+    try {
+      const res = await fetch(STAFF_INVITES_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'join',
+          entry_token: entryJoinToken,
+          display_name: name,
+          spoken_lang: joinLang,
+          device_key: getOrCreateStaffDeviceKey()
+        })
+      });
+      const json = await res.json();
+      if (json?.error === 'DEVICE_REVOKED') {
+        setJoinError(t('joinDeviceBlocked'));
+        return;
+      }
+      if (json?.error === 'INVALID_ENTRY_TOKEN') {
+        setJoinError(t('joinInvalidQr'));
+        return;
+      }
+      if (json?.ok && json?.data?.invite) {
+        saveStoredInviteToken(json.data.invite.token);
+        setInviteSession(inviteToSession(json.data.invite, json.data.userId ?? null));
+        setInvitePhase('ready');
+        setSessionSource('invite_token');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({}, '', '/staff-chat');
+        }
+        return;
+      }
+      setJoinError(t('joinInvalidQr'));
+    } catch {
+      setJoinError(t('sendFailed'));
+    } finally {
+      setJoinSubmitting(false);
+    }
+  }
 
   useEffect(() => {
     const param = readDeprecatedUserParamFromUrl();
@@ -889,7 +1027,7 @@ function StaffChatPageInner() {
         return false;
       }
 
-      const nonce = createClientNonce();
+      const nonce = createClientNonce('staff');
       const clientSendTs = Date.now();
       logSendClick(nonce);
       latSendClick({ client_nonce: nonce, sender_side: 'mobile', room: r || null, source: 'staff' });
@@ -899,7 +1037,7 @@ function StaffChatPageInner() {
         userId: chatSendUserId,
         actorName,
         roomNo: r,
-        nonce
+        client_nonce: nonce
       });
 
       try {
@@ -919,7 +1057,7 @@ function StaffChatPageInner() {
         if (image) fd.append('image', image);
 
         latApiStart(nonce);
-        const res = await fetchEnvelope<{ message: ChatMessage }>(CHAT_SEND_URL, {
+        const res = await fetchEnvelope<{ message: ChatMessage; client_nonce?: string }>(CHAT_SEND_URL, {
           method: 'POST',
           body: fd,
           timeoutMs: TIMEOUT_MS_CHAT_SEND
@@ -930,6 +1068,12 @@ function StaffChatPageInner() {
             error: res.error ?? null,
             message: res.message ?? null
           });
+          if (res.error === 'INVITE_REVOKED') {
+            clearStoredInviteToken();
+            setInviteSession(null);
+            setInvitePhase('revoked');
+            return false;
+          }
           setToast({ kind: 'error', msg: t('sendFailed') });
           return false;
         }
@@ -940,6 +1084,8 @@ function StaffChatPageInner() {
           return false;
         }
         staffChatLog('STAFF_CHAT_SEND_API_SUCCESS', {
+          client_nonce: nonce,
+          echoed_client_nonce: res.data?.client_nonce ?? null,
           messageId: saved.id,
           roomNo: saved.room_no ?? r
         });
@@ -1161,6 +1307,52 @@ function StaffChatPageInner() {
     return (
       <main className="flex h-[100dvh] items-center justify-center bg-[#eceff1]">
         <p className="text-sm text-gray-500">{t('loading')}</p>
+      </main>
+    );
+  }
+
+  if (invitePhase === 'revoked') {
+    return (
+      <main className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#eceff1] px-6 text-center">
+        <p className="text-lg font-bold text-rose-700">{t('revokedInvite')}</p>
+        <p className="text-sm text-gray-600">{t('revokedInviteHelp')}</p>
+      </main>
+    );
+  }
+
+  if (invitePhase === 'join') {
+    return (
+      <main className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-[#eceff1] px-6">
+        <h1 className="text-lg font-bold text-gray-900">{t('joinTitle')}</h1>
+        <input
+          value={joinName}
+          onChange={(e) => setJoinName(e.target.value)}
+          placeholder={t('joinNamePlaceholder')}
+          className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+        />
+        <div className="flex gap-2">
+          {(['ko', 'ru'] as const).map((code) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => setJoinLang(code)}
+              className={`rounded-lg border px-4 py-2 text-sm font-semibold ${
+                joinLang === code ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-300 bg-white'
+              }`}
+            >
+              {code === 'ko' ? t('langKo') : t('langRu')}
+            </button>
+          ))}
+        </div>
+        {joinError ? <p className="text-sm text-rose-600">{joinError}</p> : null}
+        <button
+          type="button"
+          disabled={!joinName.trim() || joinSubmitting}
+          onClick={() => void handleEntryJoin()}
+          className="rounded-lg bg-[#FEE500] px-6 py-2 text-sm font-bold text-gray-900 disabled:opacity-50"
+        >
+          {joinSubmitting ? t('sending') : t('joinSubmit')}
+        </button>
       </main>
     );
   }
