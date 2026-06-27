@@ -28,6 +28,14 @@ npm run tauri signer generate -- -w "$env:USERPROFILE\.tauri\autoflow-updater.ke
 https://github.com/wooshala/autoflow-chat/releases/latest/download/latest.json
 ```
 
+**중요:** GitHub repo가 **private**이면 업장 PC(비로그인)에서 `latest.json`·설치파일 URL이 **404**입니다.  
+In-app updater가 동작하려면 아래 중 하나가 필요합니다.
+
+- repo를 **public**으로 전환, 또는
+- `latest.json` + NSIS를 **공개 CDN/Vercel**에 호스팅하고 `tauri.conf.json` endpoint 변경
+
+현재 repo: `wooshala/autoflow-chat` (private).
+
 ## 3. 배포 순서 (매 릴리스)
 
 1. **Vercel** — `/chat`의 updater UI 등 웹 변경 먼저 배포  
