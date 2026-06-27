@@ -273,7 +273,7 @@ pub fn run() {
 
             // ── Main window: remote /chat + injected native bridge ─────────
             let reachable = server_reachable();
-            log::info!("[AUTOFLOW_BOOT] reachable={} shell=0.1.2", reachable);
+            log::info!("[AUTOFLOW_BOOT] reachable={} shell=0.1.3", reachable);
 
             // Cache-bust the page HTML per launch so a freshly deployed /chat
             // (web fixes) always loads — WebView2 otherwise serves a stale
