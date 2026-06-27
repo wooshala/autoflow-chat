@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server';
 import { jsonErr, jsonOk } from '@/lib/api/envelope';
 import { getReadState } from '@/lib/services/chatReadState';
 
+// Reads query params + live DB state — must never be statically rendered/cached.
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const raw = req.nextUrl.searchParams.get('room_id');
