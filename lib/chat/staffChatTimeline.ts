@@ -38,6 +38,15 @@ export function buildStaffChatVisibleTimeline(messages: ChatMessage[]): {
   return { visible: sortMessagesAsc(visible), drops };
 }
 
+/**
+ * Render timeline for staff-chat: keep soft-deleted rows so the UI can show the
+ * "삭제된 메시지입니다" placeholder (parity with PC). Only rows without an id are
+ * dropped. Diagnostics still use buildStaffChatVisibleTimeline (deleted excluded).
+ */
+export function buildStaffChatRenderTimeline(messages: ChatMessage[]): ChatMessage[] {
+  return sortMessagesAsc(messages.filter((m) => Boolean(m?.id)));
+}
+
 export function logStaffChatVisibleMessages(
   messages: ChatMessage[],
   extra?: Record<string, unknown>

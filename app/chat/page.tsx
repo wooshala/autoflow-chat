@@ -740,6 +740,9 @@ export default function ChatPage() {
         <ChatMessages
           messages={messages}
           currentUserId={sessionUser ? chatSendUserId : null}
+          /* /chat is always the manager/admin console (resolveChatPageUserId →
+             manager UUID); the server re-verifies role before deleting. */
+          isAdmin={Boolean(sessionUser)}
           deletingMessageId={deletingMessageId}
           onDeleteMessage={handleDeleteMessage}
           onCreateManualTicket={createManualTicket}

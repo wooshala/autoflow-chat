@@ -81,7 +81,7 @@ import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner
 import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
-import { logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
+import { buildStaffChatRenderTimeline, logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
 import {
   clearStoredInviteToken,
   inviteToSession,
@@ -249,7 +249,7 @@ function StaffChatPageInner() {
       if (!p || String(p.target_invite_id ?? '') !== myInviteId) return;
       const text = typeof p.text === 'string' && p.text.trim() ? p.text : '테스트입니다.';
       console.log('[STAFF_TEST_PING_RECEIVED]', { invite_id: myInviteId });
-      if (soundEnabled) void playNotificationTone('info', { allowHidden: true });
+      if (soundEnabled) void playNotificationTone('info');
       const { ttsLang } = resolveStaffTtsLangFromSession({
         spokenLang: staffSession.spokenLang,
         role: staffSession.role,
@@ -941,7 +941,7 @@ function StaffChatPageInner() {
           }
 
           if (soundEnabled) {
-            void playNotificationTone(urgent ? 'urgent' : 'info', { allowHidden: true });
+            void playNotificationTone(urgent ? 'urgent' : 'info');
           }
         }
       }
@@ -1367,10 +1367,12 @@ function StaffChatPageInner() {
     { code: 'ru', flag: '🇷🇺' }
   ];
 
-  const timelineMessages = useMemo(
-    () => logStaffChatVisibleMessages(messages, { staffKey, userParam: userParam || null }),
-    [messages, staffKey, userParam]
-  );
+  const timelineMessages = useMemo(() => {
+    // Diagnostics keep the original "deleted excluded" semantics…
+    logStaffChatVisibleMessages(messages, { staffKey, userParam: userParam || null });
+    // …but render keeps soft-deleted rows so they show "삭제된 메시지입니다" (PC parity).
+    return buildStaffChatRenderTimeline(messages);
+  }, [messages, staffKey, userParam]);
 
   if (invitePhase === 'loading' || !i18nHydrated) {
     return (
@@ -1619,6 +1621,16 @@ function StaffChatPageInner() {
           <div className="space-y-2 pb-2">
             {timelineMessages.map((m) => {
               const mine = isStaffChatSelfMessage(m, staffSession);
+              if (m.is_deleted) {
+                // Soft-deleted: show the same placeholder as PC, aligned like a normal bubble.
+                return (
+                  <div key={String(m.id)} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <div className="max-w-[88%] rounded-2xl bg-gray-100 px-3 py-2 text-[11px] italic text-gray-400">
+                      삭제된 메시지입니다
+                    </div>
+                  </div>
+                );
+              }
               const urgent = isUrgentMessage(m);
               const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
               const { ttsLang } = resolveStaffTtsLangFromSession({

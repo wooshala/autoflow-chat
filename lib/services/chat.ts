@@ -1,7 +1,7 @@
 import { getMockStore } from '@/lib/mock';
 import { supabaseAdmin } from '@/lib/supabase';
 import { IS_MOCK } from '@/lib/env';
-import { AiAction, ChatMessage, MessagePriority, MessageType, SenderSide } from '@/lib/types';
+import { AiAction, ChatMessage, DeletedReason, MessagePriority, MessageType, SenderSide } from '@/lib/types';
 import { detectAndTranslate } from '@/lib/services/translation';
 
 function withUser(msg: ChatMessage) {
@@ -380,36 +380,49 @@ const logSoftDeleteDebug = (...args: unknown[]) => {
   }
 };
 
+/** PC/관리자 권한으로 인정하는 역할 (mock=admin, prod seed=manager 둘 다 수용). */
+function isAdminRole(role: unknown): boolean {
+  const r = String(role ?? '').toLowerCase();
+  return r === 'admin' || r === 'manager';
+}
+
+/**
+ * Soft-delete a chat message. Authority is decided **server-side** from the
+ * requester's stored role — never trust a client-sent flag.
+ *  - owner (existing.user_id === userId)  → reason='owner'
+ *  - else admin/manager role              → reason='admin' (PC/관리자 override)
+ *  - else                                 → throw '권한이 없습니다.' (route maps to 403)
+ * Hard delete is never performed; re-deleting an already-deleted message is idempotent.
+ */
 export async function softDeleteChatMessage(input: { messageId: string; userId: string }): Promise<ChatMessage> {
   const { messageId, userId } = input;
   if (!messageId || !userId) throw new Error('messageId and userId required');
 
   const deletedAt = new Date().toISOString();
-  const patch = { is_deleted: true as const, deleted_at: deletedAt };
 
   if (IS_MOCK || !supabaseAdmin) {
     const store = getMockStore();
     const idx = store.messages.findIndex((m) => String(m.id) === String(messageId));
     if (idx === -1) throw new Error('메시지를 찾을 수 없습니다.');
-    if (String(store.messages[idx].user_id) !== String(userId)) throw new Error('권한이 없습니다.');
-    // [DEBUG] 추후 제거 가능 — 이미 삭제된 경우 재삭제 무시
+    const isOwner = String(store.messages[idx].user_id) === String(userId);
+    const requesterRole = store.users.find((u) => String(u.id) === String(userId))?.role ?? null;
+    const isAdmin = isAdminRole(requesterRole);
+    if (!isOwner && !isAdmin) throw new Error('권한이 없습니다.');
+    const reason: DeletedReason = isOwner ? 'owner' : 'admin';
+    // 이미 삭제된 경우 재삭제 무시(멱등)
     if (store.messages[idx].is_deleted) {
       logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', { messageId, note: 'already_deleted_mock' });
       return withUser(store.messages[idx]);
     }
-    store.messages[idx] = { ...store.messages[idx], ...patch };
+    store.messages[idx] = {
+      ...store.messages[idx],
+      is_deleted: true,
+      deleted_at: deletedAt,
+      deleted_by: userId,
+      deleted_reason: reason
+    };
     const out = withUser(store.messages[idx]);
-    // [DEBUG] 추후 제거 가능
-    logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', {
-      messageId,
-      userId,
-      mock: true,
-      data: out,
-      error: null,
-      affected_rows: 1
-    });
-    logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', 'result.data', out);
-    logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', 'result.error', null);
+    logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', { messageId, userId, reason, mock: true, affected_rows: 1 });
     return out;
   }
 
@@ -420,9 +433,24 @@ export async function softDeleteChatMessage(input: { messageId: string; userId: 
     .maybeSingle();
   if (fetchErr) throw fetchErr;
   if (!existing) throw new Error('메시지를 찾을 수 없습니다.');
-  if (String(existing.user_id) !== String(userId)) throw new Error('권한이 없습니다.');
 
-  // [DEBUG] 추후 제거 가능 — 이미 삭제된 경우 update 생략(멱등)
+  const isOwner = String(existing.user_id) === String(userId);
+  let isAdmin = false;
+  if (!isOwner) {
+    // Look up the requester's role from the DB (authoritative). A missing row
+    // (e.g. token-only mobile staff) is treated as non-admin → own-only.
+    const { data: requester, error: roleErr } = await supabaseAdmin
+      .from('users')
+      .select('id, role')
+      .eq('id', userId)
+      .maybeSingle();
+    if (roleErr) throw roleErr;
+    isAdmin = isAdminRole(requester?.role);
+  }
+  if (!isOwner && !isAdmin) throw new Error('권한이 없습니다.');
+  const reason: DeletedReason = isOwner ? 'owner' : 'admin';
+
+  // 이미 삭제된 경우 update 생략(멱등)
   if (existing.is_deleted === true) {
     const { data: full, error: fullErr } = await supabaseAdmin
       .from('chat_messages')
@@ -434,27 +462,30 @@ export async function softDeleteChatMessage(input: { messageId: string; userId: 
     return full as ChatMessage;
   }
 
+  const patch = {
+    is_deleted: true as const,
+    deleted_at: deletedAt,
+    deleted_by: userId,
+    deleted_reason: reason
+  };
+  // Authorization already validated above; update by id so an admin can remove
+  // another user's message (no user_id filter).
   const result = await supabaseAdmin
     .from('chat_messages')
     .update(patch)
     .eq('id', messageId)
-    .eq('user_id', userId)
     .select('*, user:users(id,name,role,language)')
     .single();
 
   const { data, error } = result;
-  const affectedRows = error ? 0 : data ? 1 : 0;
-  // [DEBUG] 추후 제거 가능
   logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', {
     messageId,
     userId,
-    data: data ?? null,
-    error: error ?? null,
-    affected_rows: affectedRows
+    reason,
+    is_owner: isOwner,
+    is_admin: isAdmin,
+    affected_rows: error ? 0 : data ? 1 : 0
   });
-  logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', 'result.data', data ?? null);
-  logSoftDeleteDebug('[CHAT_SOFT_DELETE_UPDATE]', 'result.error', error ?? null);
-
   if (error) throw error;
   return data as ChatMessage;
 }

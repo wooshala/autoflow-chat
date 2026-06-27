@@ -13,6 +13,8 @@ import MessageOverflowMenu from "@/components/chat/MessageOverflowMenu";
 type Props = {
   messages: ChatMessage[];
   currentUserId?: string | null;
+  /** PC/관리자 콘솔: 본인 외 메시지도 삭제 버튼 노출 (서버가 실제 권한 재확인). */
+  isAdmin?: boolean;
   deletingMessageId?: string | null;
   onDeleteMessage?: (msg: ChatMessage) => void | Promise<void>;
   onCreateManualTicket?: (msg: ChatMessage) => void;
@@ -60,6 +62,7 @@ function stripDuplicateRoomPrefix(text: string, roomNo?: string | null): string 
 export default function ChatMessages({
   messages,
   currentUserId,
+  isAdmin = false,
   deletingMessageId = null,
   onDeleteMessage,
   onCreateManualTicket
@@ -117,9 +120,9 @@ export default function ChatMessages({
 
         const isDeletingThis = deletingMessageId != null && String(deletingMessageId) === String(msg.id);
         const deleteBusyGlobal = deletingMessageId != null;
+        const isOwnMessage = Boolean(currentUserId) && String(msg.user_id) === String(currentUserId);
         const canDelete =
-          Boolean(currentUserId) &&
-          String(msg.user_id) === String(currentUserId) &&
+          (isOwnMessage || isAdmin) &&
           !isDeleted &&
           typeof onDeleteMessage === "function";
         const showDeleteBtn = canDelete;
@@ -127,7 +130,9 @@ export default function ChatMessages({
 
         async function handleDeleteClick() {
           if (!onDeleteMessage || isDeleted || deleteDisabled) return;
-          if (!confirm("삭제하시겠습니까?")) return;
+          // 본인 메시지가 아닌데 삭제하는 경우는 관리자 권한 행사 — 문구로 구분.
+          const confirmText = isOwnMessage ? "삭제하시겠습니까?" : "관리자 권한으로 삭제하시겠습니까?";
+          if (!confirm(confirmText)) return;
           await onDeleteMessage(msg);
         }
 
