@@ -338,11 +338,13 @@ function StaffChatPageInner() {
   });
 
   // Read receipts (Phase 2A): advance my own watermark + show "읽음 N" on my own
-  // messages only (no roster list on mobile). reader = invite:<tokenId> (else user:<id>).
-  const myReaderId = staffSession.currentTokenId
-    ? inviteReaderId(String(staffSession.currentTokenId))
-    : staffSession.currentUserId
-      ? pcReaderId(String(staffSession.currentUserId))
+  // messages only (no roster list on mobile). Canonical reader prefers user:<id>
+  // (matches the user-based roster in both env-users and invite modes); invite id
+  // is only a fallback when there is no linked user.
+  const myReaderId = staffSession.currentUserId
+    ? pcReaderId(String(staffSession.currentUserId))
+    : staffSession.currentTokenId
+      ? inviteReaderId(String(staffSession.currentTokenId))
       : null;
   const { computeRead: computeReadInfo } = useChatReadState({
     supabase,

@@ -25,12 +25,13 @@ export function isReaderId(v: unknown): v is string {
 
 /**
  * The reader_id that authored a message — used to exclude the sender from a
- * message's read/unread roster. Mobile messages carry token_id (invite id);
- * PC messages use user_id.
+ * message's read/unread roster. Canonical identity prefers user_id (every message
+ * has one, and the roster is user-based); token_id/invite is only a fallback for
+ * an unlinked invite message with no user_id.
  */
 export function senderReaderId(msg: Pick<ChatMessage, 'token_id' | 'user_id'>): string | null {
-  const tokenId = msg.token_id ? String(msg.token_id) : '';
-  if (tokenId) return inviteReaderId(tokenId);
   const userId = msg.user_id ? String(msg.user_id) : '';
-  return userId ? pcReaderId(userId) : null;
+  if (userId) return pcReaderId(userId);
+  const tokenId = msg.token_id ? String(msg.token_id) : '';
+  return tokenId ? inviteReaderId(tokenId) : null;
 }
