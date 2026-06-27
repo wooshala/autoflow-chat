@@ -3,13 +3,14 @@
 // layer only: native OS notification, loud WAV, system tray, window focus.
 // The web app at https://autoflow-mvp.vercel.app/chat is loaded unchanged.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    Manager, UserAttentionType, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 
 const REMOTE_CHAT_URL: &str = "https://autoflow-mvp.vercel.app/chat";
@@ -22,6 +23,11 @@ const SND_NOTIFY_036: &[u8] = include_bytes!("../assets/notify-036.mp3");
 const SND_NOTIFY_053: &[u8] = include_bytes!("../assets/notify-053.mp3");
 const ALERT_ICON: &[u8] = include_bytes!("../icons/alert.png");
 const BRIDGE_JS: &str = include_str!("../notify-bridge.js");
+
+/// True while the taskbar button is flashing for unread messages. Guards against
+/// re-flashing on every subsequent message until the user focuses the window.
+/// Independent of the tray-icon `set_alert` state and of the toast/sound path.
+static ATTENTION_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// Play the selected notification sound via the OS audio device, amplified for
 /// "loud". Runs detached so the notification path never blocks. OS-level
@@ -78,6 +84,40 @@ fn focus_main(app: &tauri::AppHandle) {
         let _ = w.set_focus();
     }
     set_alert(app, false);
+    clear_taskbar_attention(app);
+}
+
+/// Flash the taskbar AutoFlow button until the user focuses the window
+/// (`UserAttentionType::Critical` → FlashWindowEx, continuous until foreground).
+/// Called for every new inbound message; the focus gate + dedupe live here so the
+/// taskbar cue works even if the sound/toast was missed or suppressed.
+fn request_taskbar_attention(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        // Already in front → nothing to flag.
+        if w.is_focused().unwrap_or(false) {
+            log::info!("[TASKBAR_ATTENTION_SKIPPED_FOCUSED]");
+            return;
+        }
+        // Dedupe: only the first unread message starts the flash; later ones are
+        // no-ops until the user focuses (clears) the window.
+        if ATTENTION_PENDING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let _ = w.request_user_attention(Some(UserAttentionType::Critical));
+        log::info!("[TASKBAR_ATTENTION_REQUESTED]");
+    }
+}
+
+/// Stop the taskbar flash (window focused / opened / web tab visible again).
+/// Idempotent: a no-op when nothing is pending.
+fn clear_taskbar_attention(app: &tauri::AppHandle) {
+    if !ATTENTION_PENDING.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.request_user_attention(None);
+    }
+    log::info!("[TASKBAR_ATTENTION_CLEARED]");
 }
 
 /// Toggle the tray "new message" indicator (icon + tooltip).
@@ -174,6 +214,20 @@ fn focus_main_window(app: tauri::AppHandle) {
     focus_main(&app);
 }
 
+/// Flash the taskbar button for a new unread message (window.AutoFlowNative
+/// .requestAttention). The focus check + dedupe are handled in Rust.
+#[tauri::command]
+fn request_attention(app: tauri::AppHandle) {
+    request_taskbar_attention(&app);
+}
+
+/// Clear the taskbar flash from the web side, e.g. when the /chat tab becomes
+/// visible again (window.AutoFlowNative.clearAttention). Window focus also clears.
+#[tauri::command]
+fn clear_attention(app: tauri::AppHandle) {
+    clear_taskbar_attention(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -252,6 +306,7 @@ pub fn run() {
                 }
                 WindowEvent::Focused(true) => {
                     set_alert(&win_evt.app_handle(), false);
+                    clear_taskbar_attention(&win_evt.app_handle());
                 }
                 _ => {}
             });
@@ -261,7 +316,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             native_notify,
             focus_main_window,
-            play_sound
+            play_sound,
+            request_attention,
+            clear_attention
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

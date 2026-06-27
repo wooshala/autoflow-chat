@@ -55,6 +55,45 @@ function myDeviceSide(): 'pc' | 'mobile' {
   return /android|iphone|ipad|ipod|mobile/.test(ua) ? 'mobile' : 'pc';
 }
 
+type NativeBridge = {
+  requestAttention?: () => unknown;
+  clearAttention?: () => unknown;
+};
+
+function nativeBridge(): NativeBridge | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as { AutoFlowNative?: NativeBridge }).AutoFlowNative;
+}
+
+/**
+ * Tauri-only: flash the taskbar AutoFlow button for a new unread message. The
+ * Rust side gates on window focus + dedupes, so this is safe to call on every
+ * inbound message. No-op in a plain browser (the bridge injects AutoFlowNative
+ * only inside the native shell), and independent of the sound/toast path.
+ */
+function requestNativeTaskbarAttention(): void {
+  const native = nativeBridge();
+  if (native && typeof native.requestAttention === 'function') {
+    try {
+      void native.requestAttention();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** Tauri-only: stop the taskbar flash when the /chat tab becomes visible again. */
+function clearNativeTaskbarAttention(): void {
+  const native = nativeBridge();
+  if (native && typeof native.clearAttention === 'function') {
+    try {
+      void native.clearAttention();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export function useChatNotifications({
   messages,
   initialHydrationComplete,
@@ -199,6 +238,8 @@ export function useChatNotifications({
       if (document.visibilityState === 'visible') {
         unreadTitleRef.current = 0;
         document.title = DOC_TITLE_BASE;
+        // Native shell: tab visible again → stop the taskbar flash.
+        clearNativeTaskbarAttention();
       }
     };
     document.addEventListener('visibilitychange', onVis);
@@ -781,6 +822,20 @@ export function useChatNotifications({
 
       unreadTitleRef.current += 1;
       applyTitle();
+
+      // Native shell only: flag the taskbar AutoFlow button so a missed
+      // sound/toast still leaves a visible unread cue. Rust gates on window
+      // focus + dedupes; no-op in a plain browser.
+      //
+      // Only real inbound chat messages flash the taskbar. Exclude silent-tone
+      // (non-actionable general chatter) and status-only updates (e.g. 근무
+      // 가능/청소 중 — flags.status without an actionable request); a status
+      // message that also carries a request still counts.
+      const isStatusOnlyMsg = classification.flags.status && !classification.flags.request;
+      const taskbarAttentionEligible = tone !== 'silent' && !isStatusOnlyMsg;
+      if (taskbarAttentionEligible) {
+        requestNativeTaskbarAttention();
+      }
 
       // Visible tab: toast/sound are primary; browser notification is separate.
       if (visible && sameRoom) {

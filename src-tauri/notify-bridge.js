@@ -156,7 +156,12 @@
       playSound: function (key) {
         return invoke('play_sound', { soundKey: String(key || readSoundKey()) });
       },
-      focus: function () { return invoke('focus_main_window', {}); }
+      focus: function () { return invoke('focus_main_window', {}); },
+      // Flash the taskbar AutoFlow button for an unread message (focus gate +
+      // dedupe handled in Rust). Independent of the toast/sound path.
+      requestAttention: function () { return invoke('request_attention', {}); },
+      // Stop the taskbar flash (e.g. /chat tab visible again).
+      clearAttention: function () { return invoke('clear_attention', {}); }
     };
 
     // ── Connection fallback ────────────────────────────────────────────────
