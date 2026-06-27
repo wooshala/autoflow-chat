@@ -65,16 +65,27 @@ export async function showBrowserNotification(params: {
   }
 
   try {
+    // Default to SILENT: AutoFlow plays its own (picker-respecting) sound. A
+    // non-silent OS notification would add the Windows default beep on top,
+    // causing the duplicate / mute-still-beeps bugs.
+    const silent = params.silent ?? true;
     const options: NotificationOptions = {
       body: params.body,
       requireInteraction: params.requireInteraction ?? false,
-      silent: params.silent ?? false
+      silent
     };
     if (params.tag != null && params.tag !== '') {
       options.tag = params.tag;
     }
 
     const n = new Notification(params.title, options);
+
+    console.log('[NOTIFY_SOUND_BROWSER]', {
+      source: params.source ?? null,
+      messageId: params.messageId ?? null,
+      silent,
+      note: silent ? 'os_sound_suppressed' : 'os_default_sound_will_play'
+    });
 
     console.log('[CHAT_BROWSER_NOTIFY_CREATED]', {
       channel: 'os_notification',

@@ -68,7 +68,7 @@ export async function testBrowserOsNotificationPlain(): Promise<boolean> {
     title: 'AutoFlow OS 알림 테스트',
     body: '이 알림이 Windows 오른쪽 아래에 떠야 합니다',
     requireInteraction: true,
-    silent: false,
+    silent: true,
     source: 'diag_os_plain_no_tag'
   });
 
@@ -91,7 +91,7 @@ export async function testBrowserOsNotification(): Promise<boolean> {
     title: 'AutoFlow OS 알림 테스트',
     body: '브라우저 OS 알림이 정상적으로 표시되면 성공입니다.',
     tag: 'chat-diag-browser-os-test',
-    silent: false,
+    silent: true,
     source: 'diag_browser_os_test'
   });
 
@@ -120,7 +120,7 @@ export async function testHiddenNotifySimulation(): Promise<{ soundOk: boolean; 
     title: 'AutoFlow hidden 시뮬레이션',
     body: '탭 hidden 분기와 동일한 OS 알림 경로입니다.',
     tag: 'chat-diag-hidden-sim',
-    silent: false,
+    silent: true,
     source: 'diag_hidden_sim'
   });
 

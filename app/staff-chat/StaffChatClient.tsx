@@ -161,6 +161,7 @@ function StaffChatPageInner() {
     fromUserGesture = false,
     onResult?: (result: StaffTtsPlaybackResult) => void
   ) {
+    console.log('[NOTIFY_SOUND_TTS]', { ttsLang, len: text.length, fromUserGesture });
     void playStaffTts(text, ttsLang, { fromUserGesture }).then((result) => {
       onResult?.(result);
       if (result === 'server_not_unlocked' && !fromUserGesture) {
@@ -919,7 +920,7 @@ function StaffChatPageInner() {
                 body,
                 tag: id,
                 requireInteraction: urgent,
-                silent: false
+                silent: true // OS popup visual-only; AutoFlow plays the single sound
               }).then((ok) => {
                 console.log('[STAFF_BROWSER_NOTIFY_RESULT]', { messageId: id, ok, permission });
               });

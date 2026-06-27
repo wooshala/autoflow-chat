@@ -330,6 +330,16 @@ export async function playNotificationTone(
     return false;
   }
 
+  // In the Tauri shell the native notification (rodio) plays the sound for the
+  // background/OS path — skip the webaudio sound here to avoid a double.
+  const nativeBridge =
+    typeof window !== 'undefined' &&
+    Boolean((window as { __AUTOFLOW_NATIVE_BRIDGE__?: boolean }).__AUTOFLOW_NATIVE_BRIDGE__);
+  if (nativeBridge && options?.allowHidden) {
+    console.log('[NOTIFY_SOUND_SKIP_TAURI_NATIVE]', { tone });
+    return false;
+  }
+
   // Primary: user-selected notification sound (file or soft synth profile).
   const prefOk = await playPreferredNotifySound({ tone, volume: NOTIFY_PLAY_VOLUME, audioContext: sharedCtx });
   if (prefOk) return true;
@@ -384,6 +394,7 @@ export async function playNotificationTone(
       return false;
     }
 
+    console.log('[NOTIFY_SOUND_OSC]', { tone, reason: 'fallback_oscillator', notifyGain: NOTIFY_BEEP_GAIN });
     await playMessageNotificationBeeps(ctx, tone);
 
     console.log('[CHAT_SOUND_PLAY_OK]', { tone, state: ctx.state, notifyGain: NOTIFY_BEEP_GAIN });

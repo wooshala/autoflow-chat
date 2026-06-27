@@ -716,7 +716,7 @@ export function useChatNotifications({
           title,
           body,
           requireInteraction: tone === 'urgent',
-          silent: false,
+          silent: true, // OS popup is visual-only; AutoFlow plays the single sound
           messageId: id,
           source: 'message_receive_os'
         }).then((ok) => {

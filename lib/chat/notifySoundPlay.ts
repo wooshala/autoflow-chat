@@ -24,6 +24,7 @@ async function playFile(src: string, volume: number): Promise<boolean> {
     const audio = new Audio(src);
     audio.volume = Math.min(1, Math.max(0, volume));
     audio.currentTime = 0;
+    console.log('[NOTIFY_SOUND_AUDIO]', { src, volume: audio.volume });
     await audio.play();
     return true;
   } catch {
@@ -42,7 +43,10 @@ export async function playNotifySoundForKey(
 ): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   const opt = notifySoundOption(key);
-  if (opt.kind === 'mute') return false;
+  if (opt.kind === 'mute') {
+    console.log('[NOTIFY_SOUND_MUTE]', { key });
+    return false;
+  }
 
   const volume = options?.volume ?? NOTIFY_PLAY_VOLUME;
   const tone = options?.tone ?? 'info';
@@ -57,6 +61,7 @@ export async function playNotifySoundForKey(
       if (Ctor) {
         const ctx = options?.audioContext ?? new Ctor();
         try {
+          console.log('[NOTIFY_SOUND_SYNTH]', { synth: opt.synth, key, volume });
           await playNotifySynthProfile(ctx, opt.synth, volume);
           ok = true;
         } catch {
