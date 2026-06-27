@@ -12,7 +12,7 @@ import StaffInvitePanel from '@/components/chat/StaffInvitePanel';
 import TauriUpdatePanel from '@/components/chat/TauriUpdatePanel';
 import StaffInviteQrCard from '@/components/chat/StaffInviteQrCard';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
-import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
+import { CHAT_CALL_URL, CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
 import ChatNotifyDiagBar from '@/components/chat/ChatNotifyDiagBar';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
@@ -203,6 +203,32 @@ export default function ChatPage() {
     nearBottomRef: wasNearBottomRef
   });
   pingReadActivityRef.current = pingReadActivity;
+
+  // Phase 2B Call: 재호출 a message's unread readers. Server enforces the 30s
+  // cooldown + unread computation; realtime UPDATE propagates "호출됨".
+  const handleCallMessage = useCallback(
+    async (msg: ChatMessage) => {
+      if (!myReaderId) return;
+      const res = await fetchEnvelope<{ calledAt: string | null; unreadCount: number }>(CHAT_CALL_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_id: msg.id, caller_reader_id: myReaderId, room_id: null }),
+        timeoutMs: TIMEOUT_MS_CHAT_AUX
+      });
+      if (!res.ok) {
+        if (res.status === 429) return; // cooldown — button already reflects it
+        log.warn('[CHAT_CALL_CLIENT_ERROR]', { status: res.status, error: res.error });
+        return;
+      }
+      if (!res.data?.unreadCount) return; // everyone already read — nothing to call
+      // Optimistic cooldown until realtime UPDATE echoes last_called_at.
+      if (res.data.calledAt) {
+        const calledAt = res.data.calledAt;
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, last_called_at: calledAt } : m)));
+      }
+    },
+    [myReaderId, setMessages]
+  );
 
   const handleNotificationClick = useCallback(() => {
     const supported = isBrowserNotificationSupported();
@@ -762,6 +788,7 @@ export default function ChatPage() {
              manager UUID); the server re-verifies role before deleting. */
           isAdmin={Boolean(sessionUser)}
           getReadInfo={computeReadInfo}
+          onCallMessage={handleCallMessage}
           deletingMessageId={deletingMessageId}
           onDeleteMessage={handleDeleteMessage}
           onCreateManualTicket={createManualTicket}

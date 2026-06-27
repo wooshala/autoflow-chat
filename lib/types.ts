@@ -153,6 +153,9 @@ export interface ChatMessage {
   deleted_at?: string | null;
   deleted_by?: string | null;
   deleted_reason?: DeletedReason | null;
+  /** Phase 2B Call: last 재호출 time + caller reader_id (user:<id>). */
+  last_called_at?: string | null;
+  last_called_by?: string | null;
   created_at: string;
   user?: Pick<User, 'id' | 'name' | 'role' | 'language'>;
 }

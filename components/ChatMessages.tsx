@@ -19,6 +19,8 @@ type Props = {
   isAdmin?: boolean;
   /** PC read receipts: returns read/unread for a message ("읽음 N" + 명단 팝오버). */
   getReadInfo?: (msg: ChatMessage) => MessageReadInfo;
+  /** PC Call: 재호출 a message's unread readers (shows [호출] when unread ≥ 1). */
+  onCallMessage?: (msg: ChatMessage) => void | Promise<void>;
   deletingMessageId?: string | null;
   onDeleteMessage?: (msg: ChatMessage) => void | Promise<void>;
   onCreateManualTicket?: (msg: ChatMessage) => void;
@@ -68,6 +70,7 @@ export default function ChatMessages({
   currentUserId,
   isAdmin = false,
   getReadInfo,
+  onCallMessage,
   deletingMessageId = null,
   onDeleteMessage,
   onCreateManualTicket
@@ -363,10 +366,14 @@ export default function ChatMessages({
                 </div>
               </div>
 
-              {/* 읽음 표시 (PC) — 말풍선 아래, 메시지 쪽 정렬. 삭제 메시지엔 미표시. */}
+              {/* 읽음 표시 + 호출 (PC) — 말풍선 아래, 메시지 쪽 정렬. 삭제 메시지엔 미표시. */}
               {getReadInfo && !isDeleted ? (
                 <div className={isPc ? "pr-1" : "pl-1"}>
-                  <ReadReceiptBar info={getReadInfo(msg)} />
+                  <ReadReceiptBar
+                    info={getReadInfo(msg)}
+                    lastCalledAt={msg.last_called_at}
+                    onCall={onCallMessage ? () => onCallMessage(msg) : undefined}
+                  />
                 </div>
               ) : null}
             </div>

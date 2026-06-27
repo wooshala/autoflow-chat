@@ -354,6 +354,52 @@ function StaffChatPageInner() {
     enabled: Boolean(myReaderId)
   });
 
+  // Phase 2B Call receive (app-open / in-app only; OS push = Phase 4). Watches
+  // chat_messages UPDATE (last_called_at) and rings me when I'm an unread target
+  // and not the sender/caller. Reuses existing TTS for the sound.
+  const seenCallRef = useRef<Map<string, string>>(new Map());
+  const callInitRef = useRef(false);
+  const [callBanner, setCallBanner] = useState<{ msgId: string; at: string; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!myReaderId) return;
+    const firstRun = !callInitRef.current;
+    for (const m of messages) {
+      const id = String(m.id);
+      const lc = m.last_called_at ? String(m.last_called_at) : '';
+      const prev = seenCallRef.current.get(id);
+      seenCallRef.current.set(id, lc);
+      if (firstRun) continue; // seed existing calls on first load — never ring for history
+      if (!lc || lc === prev) continue; // no call / unchanged
+      if (Date.now() - new Date(lc).getTime() > 60_000) continue; // stale (reconnect backfill)
+      if (m.last_called_by && m.last_called_by === myReaderId) continue; // I'm the caller
+      if (m.is_deleted) continue;
+      if (!computeReadInfo(m).unread.some((x) => x.reader_id === myReaderId)) continue; // I already read it
+      const { ttsLang } = resolveStaffTtsLangFromSession({
+        spokenLang: staffSession.spokenLang,
+        role: staffSession.role,
+        uiLocale: locale
+      });
+      const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
+      const preview = getMessageDisplayParts(m, viewerLang, { logContext: 'staff' }).primary || m.message || '';
+      setCallBanner({ msgId: id, at: lc, text: preview });
+      const spoken = resolveManualStaffTtsText(m, ttsLang, viewerLang).text;
+      if (soundEnabled && spoken) {
+        void unlockServerStaffTts();
+        runStaffTts(spoken, ttsLang, true, true);
+      }
+    }
+    if (firstRun) callInitRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, myReaderId, computeReadInfo]);
+
+  // Auto-dismiss the call banner.
+  useEffect(() => {
+    if (!callBanner) return;
+    const t = setTimeout(() => setCallBanner(null), 12_000);
+    return () => clearTimeout(t);
+  }, [callBanner]);
+
   const setStaffMessages = useCallback<typeof setMessages>(
     (action) => {
       setMessages((prev) => {
@@ -1744,6 +1790,18 @@ function StaffChatPageInner() {
           </div>
         )}
       </div>
+
+      {/* Phase 2B Call: 호출 수신 배너 (앱 오픈 상태). 탭하면 닫힘. */}
+      {callBanner ? (
+        <button
+          type="button"
+          onClick={() => setCallBanner(null)}
+          className="fixed left-1/2 top-3 z-[60] -translate-x-1/2 rounded-xl border-2 border-orange-400 bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-2xl"
+          role="alert"
+        >
+          🔔 호출되었습니다{callBanner.text ? ` — ${callBanner.text.slice(0, 30)}` : ''}
+        </button>
+      ) : null}
 
       {/* 하단 composer: 📷 🎤 입력 전송 */}
       <div

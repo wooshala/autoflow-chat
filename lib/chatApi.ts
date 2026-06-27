@@ -7,6 +7,7 @@ export const CHAT_DELETE_URL = '/api/chat/delete';
 export const CHAT_MANUAL_TICKET_URL = '/api/chat/manual-ticket';
 export const CHAT_READ_URL = '/api/chat/read';
 export const CHAT_READ_STATE_URL = '/api/chat/read-state';
+export const CHAT_CALL_URL = '/api/chat/call';
 export const QUICK_PHRASES_URL = '/api/chat/quick-phrases';
 export const QUICK_PHRASES_ADMIN_URL = '/api/chat/quick-phrases/admin';
 export const STAFF_INVITES_URL = '/api/staff/invites';
