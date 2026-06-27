@@ -104,6 +104,8 @@ export default function ChatPage() {
 
   const [text, setText] = useState('');
   const [roomNo, setRoomNo] = useState('');
+  /** Phase 3: 객실(room_no) 필터. null = 전체. 표시 전용(읽음/호출은 전체 기준 유지). */
+  const [roomFilter, setRoomFilter] = useState<string | null>(null);
   const [keypadOpen, setKeypadOpen] = useState(false);
   const [keypadNum, setKeypadNum] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
@@ -229,6 +231,21 @@ export default function ChatPage() {
     },
     [myReaderId, setMessages]
   );
+
+  // Phase 3 객실 필터: 표시 전용. 읽음/호출 훅은 계속 전체 messages를 사용해 기존 동작 유지.
+  const roomOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of messages) {
+      const r = String(m.room_no ?? '').trim();
+      if (r) set.add(r);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [messages]);
+
+  const visibleMessages = useMemo(() => {
+    if (!roomFilter) return messages;
+    return messages.filter((m) => String(m.room_no ?? '').trim() === roomFilter);
+  }, [messages, roomFilter]);
 
   const handleNotificationClick = useCallback(() => {
     const supported = isBrowserNotificationSupported();
@@ -779,10 +796,41 @@ export default function ChatPage() {
 
       <StaffChatAdminSection open={showAdminPanel} />
 
+      {/* Phase 3: 객실 필터 (전체 + 객실번호). 표시 전용. */}
+      {roomOptions.length > 0 ? (
+        <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50 px-3 py-2">
+          <span className="shrink-0 text-xs font-semibold text-gray-500">객실</span>
+          <button
+            type="button"
+            onClick={() => setRoomFilter(null)}
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+              roomFilter === null ? 'bg-gray-800 text-white' : 'border border-gray-300 bg-white text-gray-600'
+            }`}
+          >
+            전체
+          </button>
+          {roomOptions.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRoomFilter(r)}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                roomFilter === r ? 'bg-[#FEE500] text-gray-900' : 'border border-gray-300 bg-white text-gray-600'
+              }`}
+            >
+              {r}호
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {/* 메시지 목록 — 배경 main에서 상속 */}
       <section ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        {roomFilter && visibleMessages.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-500">{roomFilter}호 메시지가 없습니다.</p>
+        ) : null}
         <ChatMessages
-          messages={messages}
+          messages={visibleMessages}
           currentUserId={sessionUser ? chatSendUserId : null}
           /* /chat is always the manager/admin console (resolveChatPageUserId →
              manager UUID); the server re-verifies role before deleting. */
