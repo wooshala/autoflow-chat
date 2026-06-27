@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
   try {
     const raw = req.nextUrl.searchParams.get('room_id');
     const roomId = raw && raw.trim() ? raw.trim() : null;
-    const data = await getReadState(roomId);
+    const debug = req.nextUrl.searchParams.get('debug') === '1';
+    const data = await getReadState(roomId, debug);
     return jsonOk(data);
   } catch (error: any) {
     console.error('[CHAT_READ_STATE_API_ERR]', error?.message || String(error));

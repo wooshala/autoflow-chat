@@ -32,7 +32,10 @@ export async function advanceReadState(input: {
  * (user_id) and mapped to user:<user_id>; invites without a user_id are excluded
  * (they can never match a user-based runtime reader → would be phantom "안읽음").
  */
-export async function getReadState(roomId: string | null): Promise<{ members: ReadStateMember[] }> {
+export async function getReadState(
+  roomId: string | null,
+  debug = false
+): Promise<{ members: ReadStateMember[]; _debug?: Record<string, unknown> }> {
   if (IS_MOCK || !supabaseAdmin) {
     const store = getMockStore();
     const members = store.users.map((u) => ({
@@ -90,5 +93,17 @@ export async function getReadState(roomId: string | null): Promise<{ members: Re
     if (linked) add(String(linked), (inv.display_name as string) || '직원', (inv.role as string) ?? null);
   }
 
+  if (debug) {
+    return {
+      members,
+      _debug: {
+        envIds,
+        managerId,
+        stateRowCount: (stateRes.data || []).length,
+        stateKeys: (stateRes.data || []).map((r) => String(r.reader_id)),
+        rosterRids: members.map((m) => m.reader_id)
+      }
+    };
+  }
   return { members };
 }
