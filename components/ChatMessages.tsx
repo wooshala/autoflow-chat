@@ -9,12 +9,16 @@ import { getMessageDisplayParts } from "@/lib/chat/displayMessageText";
 import { isEmojiOnlyMessage } from "@/lib/chat/isEmojiOnlyMessage";
 import { isUrgentMessage } from "@/lib/chat/messagePriority";
 import MessageOverflowMenu from "@/components/chat/MessageOverflowMenu";
+import ReadReceiptBar from "@/components/chat/ReadReceiptBar";
+import type { MessageReadInfo } from "@/lib/chat/readReceipts";
 
 type Props = {
   messages: ChatMessage[];
   currentUserId?: string | null;
   /** PC/관리자 콘솔: 본인 외 메시지도 삭제 버튼 노출 (서버가 실제 권한 재확인). */
   isAdmin?: boolean;
+  /** PC read receipts: returns read/unread for a message ("읽음 N" + 명단 팝오버). */
+  getReadInfo?: (msg: ChatMessage) => MessageReadInfo;
   deletingMessageId?: string | null;
   onDeleteMessage?: (msg: ChatMessage) => void | Promise<void>;
   onCreateManualTicket?: (msg: ChatMessage) => void;
@@ -63,6 +67,7 @@ export default function ChatMessages({
   messages,
   currentUserId,
   isAdmin = false,
+  getReadInfo,
   deletingMessageId = null,
   onDeleteMessage,
   onCreateManualTicket
@@ -357,6 +362,13 @@ export default function ChatMessages({
                   {formatKSTTime(msg.created_at)}
                 </div>
               </div>
+
+              {/* 읽음 표시 (PC) — 말풍선 아래, 메시지 쪽 정렬. 삭제 메시지엔 미표시. */}
+              {getReadInfo && !isDeleted ? (
+                <div className={isPc ? "pr-1" : "pl-1"}>
+                  <ReadReceiptBar info={getReadInfo(msg)} />
+                </div>
+              ) : null}
             </div>
           </div>
         );

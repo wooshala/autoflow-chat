@@ -17,6 +17,8 @@ import ChatToastStack from '@/components/chat/ChatToastStack';
 import ChatNotifyDiagBar from '@/components/chat/ChatNotifyDiagBar';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
 import { useChatNotifications } from '@/lib/hooks/useChatNotifications';
+import { useChatReadState } from '@/lib/hooks/useChatReadState';
+import { pcReaderId } from '@/lib/chat/readerIdentity';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
 import { isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
@@ -69,6 +71,8 @@ export default function ChatPage() {
   const messagesRef = useRef<ChatMessage[]>([]);
   const listRef = useRef<HTMLDivElement | null>(null);
   const wasNearBottomRef = useRef(true);
+  /** Stable handle so the once-mounted scroll effect can ping read-state advance. */
+  const pingReadActivityRef = useRef<() => void>(() => {});
   const [sessionUser, setSessionUser] = useState<AutoflowUser | null>(null);
   const chatSendUserId = useMemo(() => resolveChatSendUserId(), []);
 
@@ -188,6 +192,18 @@ export default function ChatPage() {
     });
   const notificationAudioUnlocked = useNotificationAudioUnlock();
 
+  // Read receipts (Phase 2A): /chat is the manager console → reader = user:<managerId>.
+  const myReaderId = sessionUser && chatSendUserId ? pcReaderId(chatSendUserId) : null;
+  const { computeRead: computeReadInfo, pingActivity: pingReadActivity } = useChatReadState({
+    supabase,
+    messages,
+    myReaderId,
+    roomId: null,
+    enabled: Boolean(sessionUser),
+    nearBottomRef: wasNearBottomRef
+  });
+  pingReadActivityRef.current = pingReadActivity;
+
   const handleNotificationClick = useCallback(() => {
     const supported = isBrowserNotificationSupported();
     const permissionNow = supported ? Notification.permission : 'unsupported';
@@ -249,6 +265,8 @@ export default function ChatPage() {
     if (!el) return;
     const onScroll = () => {
       wasNearBottomRef.current = isNearBottom();
+      // Scroll-to-bottom (no new message) should also advance the read watermark.
+      pingReadActivityRef.current?.();
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     // initialize once
@@ -743,6 +761,7 @@ export default function ChatPage() {
           /* /chat is always the manager/admin console (resolveChatPageUserId →
              manager UUID); the server re-verifies role before deleting. */
           isAdmin={Boolean(sessionUser)}
+          getReadInfo={computeReadInfo}
           deletingMessageId={deletingMessageId}
           onDeleteMessage={handleDeleteMessage}
           onCreateManualTicket={createManualTicket}

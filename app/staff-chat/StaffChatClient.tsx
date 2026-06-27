@@ -82,6 +82,8 @@ import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
 import { buildStaffChatRenderTimeline, logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
+import { useChatReadState } from '@/lib/hooks/useChatReadState';
+import { inviteReaderId, pcReaderId } from '@/lib/chat/readerIdentity';
 import {
   clearStoredInviteToken,
   inviteToSession,
@@ -333,6 +335,21 @@ function StaffChatPageInner() {
     initialListLimit: STAFF_CHAT_LIST_LIMIT,
     deltaListLimit: STAFF_CHAT_DELTA_LIMIT,
     staffTimelineMode: true
+  });
+
+  // Read receipts (Phase 2A): advance my own watermark + show "읽음 N" on my own
+  // messages only (no roster list on mobile). reader = invite:<tokenId> (else user:<id>).
+  const myReaderId = staffSession.currentTokenId
+    ? inviteReaderId(String(staffSession.currentTokenId))
+    : staffSession.currentUserId
+      ? pcReaderId(String(staffSession.currentUserId))
+      : null;
+  const { computeRead: computeReadInfo } = useChatReadState({
+    supabase,
+    messages,
+    myReaderId,
+    roomId: null,
+    enabled: Boolean(myReaderId)
   });
 
   const setStaffMessages = useCallback<typeof setMessages>(
@@ -1710,6 +1727,12 @@ function StaffChatPageInner() {
                         }`}
                       >
                         {secondary}
+                      </div>
+                    ) : null}
+                    {/* 본인 메시지에만 읽음 수(명단 없음). */}
+                    {mine ? (
+                      <div className="mt-0.5 text-right text-[10px] text-blue-100/80">
+                        읽음 {computeReadInfo(m).readCount}
                       </div>
                     ) : null}
                   </div>
