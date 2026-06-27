@@ -10,6 +10,7 @@ import ChatMessages from '@/components/ChatMessages';
 import StaffChatAdminSection from '@/components/chat/StaffChatAdminSection';
 import StaffInvitePanel from '@/components/chat/StaffInvitePanel';
 import TauriUpdatePanel from '@/components/chat/TauriUpdatePanel';
+import StaffInviteQrCard from '@/components/chat/StaffInviteQrCard';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
@@ -641,7 +642,11 @@ export default function ChatPage() {
             </div>
             {/* 서브타이틀: 카카오 포인트 노랑 */}
             <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
-            <TauriUpdatePanel />
+            {/* 상단 고정: 업데이트 박스 + 항상 보이는 직원 초대 QR (모바일 wrap) */}
+            <div className="mt-2 flex flex-wrap items-start gap-3">
+              <TauriUpdatePanel />
+              <StaffInviteQrCard />
+            </div>
             <button
               type="button"
               onClick={() => setShowAdminPanel((open) => !open)}
@@ -726,7 +731,7 @@ export default function ChatPage() {
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
 
-      <StaffInvitePanel variant="chat" collapsible defaultOpen messages={messages} />
+      <StaffInvitePanel variant="chat" collapsible defaultOpen={false} messages={messages} />
 
       <StaffChatAdminSection open={showAdminPanel} />
 

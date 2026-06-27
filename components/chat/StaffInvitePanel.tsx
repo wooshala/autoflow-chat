@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
-import { STAFF_ENTRY_INVITE_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
+import { STAFF_INVITES_URL } from '@/lib/chatApi';
 import { formatRelativeKST } from '@/lib/formatKST';
 import {
   STAFF_WORK_STATUS_OPTIONS,
@@ -35,10 +35,6 @@ const ONLINE_MS = 60_000;
 const AWAY_MS = 5 * 60_000;
 const EVENTS_KEY = 'autoflow_staff_events';
 const EVENTS_MAX = 20;
-
-function qrUrl(link: string) {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(link)}`;
-}
 
 /** Operator-facing text only — never leak ids/tokens/[object Object]. */
 function safeText(v: unknown, fallback: string): string {
@@ -98,15 +94,11 @@ export default function StaffInvitePanel({
   messages
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
-  const [showQr, setShowQr] = useState(true);
   const [showLog, setShowLog] = useState(false);
   const [invites, setInvites] = useState<InviteRow[]>([]);
-  const [entryUrl, setEntryUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [rotatingEntry, setRotatingEntry] = useState(false);
   const [testState, setTestState] = useState<Record<string, 'sending' | 'done'>>({});
-  const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [events, setEvents] = useState<StaffEvent[]>([]);
 
@@ -181,17 +173,12 @@ export default function StaffInvitePanel({
     async (opts?: { quiet?: boolean }) => {
       if (!opts?.quiet) setLoading(true);
       setLoadError(null);
-      const [listRes, entryRes] = await Promise.all([
-        fetchEnvelope<{ invites: InviteRow[] }>(STAFF_INVITES_URL),
-        fetchEnvelope<{ url: string }>(STAFF_ENTRY_INVITE_URL)
-      ]);
+      const listRes = await fetchEnvelope<{ invites: InviteRow[] }>(STAFF_INVITES_URL);
       if (listRes.ok && listRes.data?.invites) applyInvites(listRes.data.invites);
-      if (entryRes.ok && entryRes.data?.url) setEntryUrl(entryRes.data.url);
       if (!listRes.ok) setLoadError('참여자 목록을 불러오지 못했습니다.');
-      else if (!entryRes.ok && !entryUrl) setLoadError('입장 QR을 불러오지 못했습니다.');
       if (!opts?.quiet) setLoading(false);
     },
-    [applyInvites, entryUrl]
+    [applyInvites]
   );
 
   // Initial load + background polling (kept running even while collapsed, so the
@@ -296,26 +283,6 @@ export default function StaffInvitePanel({
     }
   }
 
-  async function handleRotateEntry() {
-    if (!window.confirm('새 QR을 만들면 이전 QR은 사용할 수 없게 됩니다. 계속할까요?')) return;
-    setRotatingEntry(true);
-    try {
-      const res = await fetch(STAFF_INVITES_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'rotate_entry' })
-      });
-      const json = await res.json();
-      if (json?.ok && json?.data?.url) {
-        setEntryUrl(json.data.url);
-        setShowQr(true);
-        logEvent('QR 재발급');
-      }
-    } finally {
-      setRotatingEntry(false);
-    }
-  }
-
   async function handleTest(inv: InviteRow) {
     const ch = testChannelRef.current;
     if (!ch || testState[inv.id]) return; // ignore double-clicks while in progress
@@ -346,17 +313,6 @@ export default function StaffInvitePanel({
     }, 2000);
   }
 
-  async function copyLink() {
-    if (!entryUrl) return;
-    try {
-      await navigator.clipboard.writeText(entryUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
-    }
-  }
-
   const btnBase =
     'inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -364,58 +320,10 @@ export default function StaffInvitePanel({
 
   const body = (
     <>
-      {/* ── 직원 초대 (QR, 가장 위) ─────────────────────────── */}
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-        <div className="mb-2 text-sm font-bold text-emerald-900">직원 초대</div>
-        {showQr ? (
-          <div className="flex flex-col items-center gap-2">
-            {entryUrl ? (
-              <img
-                src={qrUrl(entryUrl)}
-                alt="직원 입장 QR"
-                className="h-40 w-40 rounded-lg border border-emerald-200 bg-white p-2"
-              />
-            ) : (
-              <div className="flex h-40 w-40 items-center justify-center rounded-lg border border-emerald-200 bg-white text-xs text-gray-400">
-                QR 불러오는 중…
-              </div>
-            )}
-            <p className="text-center text-xs text-emerald-800">
-              직원 휴대폰 카메라로 이 QR을 찍으면 바로 입장합니다.
-            </p>
-          </div>
-        ) : null}
-        <div className="mt-2.5 flex flex-wrap justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowQr((v) => !v)}
-            className={`${btnBase} border border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100`}
-          >
-            {showQr ? 'QR 숨기기' : 'QR 보기'}
-          </button>
-          <button
-            type="button"
-            disabled={rotatingEntry}
-            onClick={() => void handleRotateEntry()}
-            className={`${btnBase} border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100`}
-          >
-            {rotatingEntry ? '재발급 중…' : 'QR 재발급'}
-          </button>
-          <button
-            type="button"
-            disabled={!entryUrl}
-            onClick={() => void copyLink()}
-            className={`${btnBase} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}
-          >
-            {copied ? '복사됨 ✓' : '링크 복사'}
-          </button>
-        </div>
-      </div>
-
       {loadError ? (
-        <p className="mt-2 text-xs text-rose-600" role="alert">
+        <p className="mb-2 text-[11px] text-rose-600" role="alert">
           {loadError}
-          <button type="button" onClick={() => void load()} className="ml-2 underline">
+          <button type="button" onClick={() => void load()} className="ml-1 underline">
             다시 시도
           </button>
         </p>
