@@ -6,6 +6,7 @@ import { isSameRoomForNotify, messagePreview, normalizeRoomNo } from '@/lib/chat
 import { classifyMessage, getCategoryLabel, type ClassificationFlags, type MainCategory } from '@/lib/chat/classifyMessageCategory';
 import { getNotificationTone, type NotificationTone } from '@/lib/chat/notificationTone';
 import { makeNotificationDedupeKey, shouldPlayNotificationSound } from '@/lib/chat/notificationDedupe';
+import { normalizeNotifyBody } from '@/lib/chat/normalizeNotifyBody';
 import {
   isNotificationAudioUnlocked,
   NOTIFY_BEEP_GAIN,
@@ -231,7 +232,6 @@ export function useChatNotifications({
       flags: ClassificationFlags;
       textPreview: string;
     }) => {
-      const roomPrefix = input.roomNumber ? `${input.roomNumber}호 ` : '';
       const urgent = input.flags.urgent;
       const request = input.flags.request;
       const status = input.flags.status;
@@ -247,7 +247,7 @@ export function useChatNotifications({
       else if (input.category !== 'general') title = `${getCategoryLabel(input.category)} 알림`;
       else if (status) title = '객실 상태';
 
-      const body = `${roomPrefix}${input.textPreview}`.trim();
+      const body = normalizeNotifyBody(input.roomNumber, input.textPreview);
       return { title, body };
     },
     []
@@ -357,6 +357,7 @@ export function useChatNotifications({
       }
 
       if (notified.has(id)) {
+        console.log('[NOTIFY_CREATE_SKIP_DUPLICATE]', { messageId: id, reason: 'already_notified' });
         if (DEBUG_NOTIFY) log.info('[CHAT_NOTIFY_SKIP]', { id, reason: 'already_notified' });
         if (DEBUG_VERBOSE) {
           log.debug('[CHAT_NOTIFY_SKIPPED]', {

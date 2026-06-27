@@ -1,10 +1,10 @@
 [package]
 name = "app"
-version = "0.1.0"
-description = "A Tauri App"
+version = "0.1.1"
+description = "AutoFlow desktop shell"
 authors = ["you"]
 license = ""
-repository = ""
+repository = "https://github.com/wooshala/autoflow-chat"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -31,4 +31,11 @@ log = "0.4"
 tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 rodio = "0.20"
+
+# Windows: build the OS toast directly so we can force it SILENT (no Windows
+# default beep). AutoFlow plays the single selected sound via rodio.
+[target.'cfg(windows)'.dependencies]
+tauri-winrt-notification = "0.7"

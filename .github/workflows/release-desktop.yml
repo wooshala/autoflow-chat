@@ -1,0 +1,56 @@
+# AutoFlow desktop release (Tauri v2 + Updater)
+#
+# Trigger: git tag app-v0.1.1  (semver after app-v prefix)
+# Produces: NSIS installer + latest.json + signatures → GitHub Release
+#
+# Required secrets (repo Settings → Secrets):
+#   TAURI_SIGNING_PRIVATE_KEY         — content of ~/.tauri/autoflow-updater.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty string if key has no password
+
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'app-v*'
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: AutoFlow Desktop ${{ github.ref_name }}
+          releaseBody: |
+            AutoFlow Windows desktop shell (Tauri).
+            Web UI continues to load from Vercel; this release updates tray, notifications, and native bridge only.
+          releaseDraft: false
+          prerelease: false
+          args: --target x86_64-pc-windows-msvc

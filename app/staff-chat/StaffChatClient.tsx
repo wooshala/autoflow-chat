@@ -41,6 +41,7 @@ import {
 } from '@/lib/chat/browserNotifications';
 import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
+import { normalizeNotifyBody } from '@/lib/chat/normalizeNotifyBody';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
 import type { ChatLang } from '@/lib/chat/translateMessageForChat';
 import { speakStaffTts, unlockStaffTts } from '@/lib/chat/staffTts';
@@ -913,7 +914,7 @@ function StaffChatPageInner() {
           });
 
           if (canShowBrowserNotification()) {
-            const body = notifyBody.slice(0, OS_NOTIFY_BODY_MAX);
+            const body = normalizeNotifyBody(m.room_no, notifyBody).slice(0, OS_NOTIFY_BODY_MAX);
             if (body) {
               void showBrowserNotification({
                 title: urgent ? `🚨 ${t('urgentToast')}` : staffKeyLabel(staffKey) || 'AutoFlow Chat',

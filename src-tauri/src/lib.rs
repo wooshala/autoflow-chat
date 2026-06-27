@@ -11,7 +11,6 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
-use tauri_plugin_notification::NotificationExt;
 
 const REMOTE_CHAT_URL: &str = "https://autoflow-mvp.vercel.app/chat";
 const SND_DEFAULT: &[u8] = include_bytes!("../assets/default.wav");
@@ -98,6 +97,44 @@ fn set_alert(app: &tauri::AppHandle, on: bool) {
     }
 }
 
+/// Show the Windows OS toast. We build it directly (not via the notification
+/// plugin) so we can force SILENT — the plugin/notify-rust path always plays the
+/// Windows default beep, which duplicated AutoFlow's own sound. AutoFlow plays
+/// the single selected sound via rodio (play_sound_key).
+#[cfg(windows)]
+fn show_native_toast(app: &tauri::AppHandle, title: &str, body: &str, silent: bool) {
+    use tauri_winrt_notification::{Sound, Toast};
+    // Prefer the app's registered AppUserModelID (shows "AutoFlow" once installed);
+    // fall back to the always-present PowerShell AUMID when unpackaged.
+    let app_id = app.config().identifier.clone();
+    let sound: Option<Sound> = if silent { None } else { Some(Sound::Default) };
+    let build = |aid: &str| Toast::new(aid).title(title).text1(body).sound(sound);
+    match build(&app_id).show() {
+        Ok(()) => log::info!("[NATIVE_TOAST_SHOWN] aid={} silent={}", app_id, silent),
+        Err(e1) => {
+            log::warn!("[NATIVE_TOAST_AUMID_FAILED] aid={} err={}", app_id, e1);
+            match build(Toast::POWERSHELL_APP_ID).show() {
+                Ok(()) => log::info!("[NATIVE_TOAST_SHOWN_FALLBACK] silent={}", silent),
+                Err(e2) => log::warn!("[NATIVE_TOAST_FAILED] err={}", e2),
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn show_native_toast(app: &tauri::AppHandle, title: &str, body: &str, _silent: bool) {
+    use tauri_plugin_notification::NotificationExt;
+    if let Err(e) = app
+        .notification()
+        .builder()
+        .title(title.to_string())
+        .body(body.to_string())
+        .show()
+    {
+        log::warn!("[NATIVE_TOAST_FAILED] err={}", e);
+    }
+}
+
 /// Invoked by the injected bridge whenever the web app calls `new Notification`.
 #[tauri::command]
 fn native_notify(
@@ -106,6 +143,7 @@ fn native_notify(
     title: String,
     body: String,
     _tag: String,
+    silent: Option<bool>,
     sound_key: Option<String>,
 ) {
     let title = if title.trim().is_empty() {
@@ -113,13 +151,13 @@ fn native_notify(
     } else {
         title
     };
-    if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        log::warn!("[NATIVE_NOTIFY_ERR] id={} err={}", id, e);
-    }
+    // Default silent: the OS toast is visual-only; AutoFlow owns the sound.
+    let want_silent = silent.unwrap_or(true);
+    show_native_toast(&app, &title, &body, want_silent);
     let key = sound_key.as_deref().unwrap_or("default");
     play_sound_key(key);
     set_alert(&app, true);
-    log::info!("[NATIVE_NOTIFY] id={} sound={}", id, key);
+    log::info!("[NATIVE_NOTIFY] id={} sound={} silent={}", id, key, want_silent);
 }
 
 /// Play a notification sound natively without showing a toast ("테스트 재생").
@@ -140,6 +178,8 @@ fn focus_main_window(app: tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

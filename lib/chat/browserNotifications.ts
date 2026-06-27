@@ -42,6 +42,11 @@ export async function showBrowserNotification(params: {
 }): Promise<boolean> {
   const ctx = notifyContext();
 
+  console.log('[NOTIFY_CREATE_ATTEMPT]', {
+    source: params.source ?? null,
+    messageId: params.messageId ?? null,
+    silent: params.silent ?? true
+  });
   console.log('[CHAT_BROWSER_NOTIFY_ATTEMPT]', {
     channel: 'os_notification',
     ...ctx,
@@ -80,6 +85,11 @@ export async function showBrowserNotification(params: {
 
     const n = new Notification(params.title, options);
 
+    console.log('[NOTIFY_CREATE_DONE]', {
+      source: params.source ?? null,
+      messageId: params.messageId ?? null,
+      silent
+    });
     console.log('[NOTIFY_SOUND_BROWSER]', {
       source: params.source ?? null,
       messageId: params.messageId ?? null,

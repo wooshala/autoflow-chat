@@ -17,3 +17,8 @@ node_modules/
 .env.local 
 .DS_Store 
 .vercel
+
+# Tauri updater signing keys (never commit)
+.tauri/
+*.key
+!*.key.pub

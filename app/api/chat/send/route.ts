@@ -6,6 +6,7 @@ import { emitLatency } from '@/lib/chat/latencyTrace';
 import { waitUntil } from '@vercel/functions';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
+import { assertStaffInviteCanSend } from '@/lib/services/staffInvites';
 import { uploadImage } from '@/lib/services/upload';
 import { mapIntentIssueTypeToKo, parseMessage } from '@/lib/aiParser';
 import { createTicket, findActiveTicketByRoomAndIssue } from '@/lib/services/maintenance';
@@ -538,6 +539,16 @@ export async function POST(req: NextRequest) {
     if (!isUuid(user_id)) {
       console.log('[CHAT_SEND_INVALID_USER_ID]', { user_id });
       return jsonErr('INVALID_USER_ID', '전송에 실패했습니다. 관리자 설정이 필요합니다.', 400);
+    }
+
+    const inviteGuard = await assertStaffInviteCanSend(token_id);
+    if (!inviteGuard.ok) {
+      console.log('[CHAT_SEND_INVITE_REVOKED]', { token_id, reason: inviteGuard.reason });
+      return jsonErr(
+        'INVITE_REVOKED',
+        '채팅방에서보내졌습니다. 관리자에게 문의하세요.',
+        403
+      );
     }
 
     const latSource = sender_side === 'pc' ? 'pc' : 'staff';

@@ -92,6 +92,9 @@
         title: String(title == null ? '' : title),
         body: String(this.body || ''),
         tag: String(this.tag || ''),
+        // Forward the web silent flag (default true): the native toast must be
+        // silent so only AutoFlow's selected sound (rodio) plays.
+        silent: options.silent !== false,
         soundKey: readSoundKey()
       })
         .then(function () {

@@ -9,6 +9,7 @@ import { type AutoflowUser, loadUser, logoutAndGoLogin, resolveChatSendUserId, r
 import ChatMessages from '@/components/ChatMessages';
 import StaffChatAdminSection from '@/components/chat/StaffChatAdminSection';
 import StaffInvitePanel from '@/components/chat/StaffInvitePanel';
+import TauriUpdatePanel from '@/components/chat/TauriUpdatePanel';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
@@ -640,6 +641,7 @@ export default function ChatPage() {
             </div>
             {/* 서브타이틀: 카카오 포인트 노랑 */}
             <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
+            <TauriUpdatePanel />
             <button
               type="button"
               onClick={() => setShowAdminPanel((open) => !open)}

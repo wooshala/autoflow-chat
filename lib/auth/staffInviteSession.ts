@@ -37,6 +37,24 @@ export function saveStoredInviteToken(token: string) {
   }
 }
 
+export function clearStoredInviteToken() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(STAFF_INVITE_TOKEN_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readEntryJoinTokenFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return new URLSearchParams(window.location.search).get('join')?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function inviteToSession(invite: StaffInvite, userId: string | null): StaffInviteSession {
   return {
     inviteId: invite.id,
