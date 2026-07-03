@@ -2,13 +2,21 @@ import {
   buildStaffFcmDataPayload,
   buildStaffFcmNotificationPayload
 } from '@/lib/push/buildStaffFcmPayload';
+import { sendStaffFcm } from '@/lib/push/sendStaffFcm';
+import { listEnabledStaffPushTargets } from '@/lib/services/staffDevices';
 import type { ChatMessage } from '@/lib/types';
 
 /**
- * After chat_messages insert — build FCM payload and dispatch when configured.
- * P0: always log payload; send when Firebase + device tokens exist.
+ * After chat_messages INSERT, notify native staff devices.
+ * This is called as a best-effort side effect from /api/chat/send; errors must
+ * never fail the chat send response.
  */
 export async function sendStaffPushAfterMessage(message: ChatMessage): Promise<void> {
+  if ((message as any)?.is_deleted) {
+    console.log('[STAFF_FCM_SKIPPED]', { reason: 'deleted_message', message_id: message.id });
+    return;
+  }
+
   const data = buildStaffFcmDataPayload(message);
   const notification = buildStaffFcmNotificationPayload(message);
 
@@ -38,13 +46,43 @@ export async function sendStaffPushAfterMessage(message: ChatMessage): Promise<v
     return;
   }
 
-  // Device token lookup + Firebase Admin send — wired when staff_device_tokens migration lands.
-  console.log('[STAFF_FCM_SEND_PENDING]', {
+  const targets = await listEnabledStaffPushTargets();
+  const messageTokenId = message.token_id ? String(message.token_id) : null;
+  const messageUserId = message.user_id ? String(message.user_id) : null;
+  const tokens = targets
+    .filter((target) => {
+      const sameInvite = Boolean(
+        messageTokenId && target.staff_invite_id && String(target.staff_invite_id) === messageTokenId
+      );
+      const sameUser = Boolean(
+        messageUserId && target.user_id && String(target.user_id) === messageUserId
+      );
+      if (sameInvite || sameUser) {
+        console.log('[STAFF_FCM_TARGET_SKIPPED]', {
+          reason: 'self_message',
+          message_id: data.message_id,
+          target_id: target.id,
+          sameInvite,
+          sameUser
+        });
+        return false;
+      }
+      return true;
+    })
+    .map((target) => target.fcm_token);
+
+  console.log('[STAFF_FCM_SEND_START]', {
     message_id: data.message_id,
     notification_title: notification.title,
     android_channel:
       data.urgency === 'urgent' ? 'autoflow_staff_urgent' : 'autoflow_staff_messages',
-    data_keys: Object.keys(data),
-    doc: 'docs/native-android-fcm-channel.md'
+    target_count: tokens.length,
+    data_keys: Object.keys(data)
+  });
+
+  const result = await sendStaffFcm({ tokens, notification, data });
+  console.log('[STAFF_FCM_SEND_DONE]', {
+    message_id: data.message_id,
+    ...result
   });
 }
