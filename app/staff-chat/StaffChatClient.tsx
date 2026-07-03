@@ -95,6 +95,12 @@ import {
   type StaffInviteSession
 } from '@/lib/auth/staffInviteSession';
 import { getOrCreateStaffDeviceKey } from '@/lib/auth/staffDeviceKey';
+import {
+  accountPublicToInviteSession,
+  clearStaffSession,
+  loadStoredSessionToken,
+  saveStaffSession
+} from '@/lib/auth/staffAccountSession';
 import { useI18n } from '@/lib/i18n/useI18n';
 import type { StaffLocale } from '@/lib/i18n/messages';
 import {
@@ -114,9 +120,16 @@ import { isInAppForegroundVisible, isOsBackgroundLike } from '@/lib/chat/notifyF
 /** OS notification body cap (Browser Notification API, not Web Push). */
 const OS_NOTIFY_BODY_MAX = 100;
 
+/** Phase 2A: staff account login endpoints (local constants; lib/chatApi.ts untouched). */
+const STAFF_LOGIN_URL = '/api/staff/login';
+const STAFF_LOGIN_ROSTER_URL = '/api/staff/login/roster';
+const STAFF_SESSION_URL = '/api/staff/session';
+const STAFF_LOGOUT_URL = '/api/staff/logout';
+
 type ListPhase = 'loading' | 'ready' | 'error';
-type SessionSource = 'localStorage' | 'query_param' | 'invite_token' | 'none';
-type InvitePhase = 'loading' | 'ready' | 'invalid' | 'revoked' | 'join';
+type SessionSource = 'localStorage' | 'query_param' | 'invite_token' | 'account_session' | 'none';
+// Phase 2A: 'login' = no-token entry shows the login screen (display only; NOT chat/ready).
+type InvitePhase = 'loading' | 'ready' | 'invalid' | 'revoked' | 'join' | 'login';
 
 function StaffChatPageInner() {
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
@@ -147,6 +160,13 @@ function StaffChatPageInner() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinSubmitting, setJoinSubmitting] = useState(false);
   const [deprecatedWarned, setDeprecatedWarned] = useState(false);
+
+  // Phase 2A: staff-account login screen state (display + login only; never enters chat/ready).
+  const [staffLoginRoster, setStaffLoginRoster] = useState<Array<{ accountId: string; displayName: string }>>([]);
+  const [staffLoginAccountId, setStaffLoginAccountId] = useState('');
+  const [staffLoginCode, setStaffLoginCode] = useState('');
+  const [staffLoginSubmitting, setStaffLoginSubmitting] = useState(false);
+  const [staffLoginError, setStaffLoginError] = useState<string | null>(null);
   const [listPhase, setListPhase] = useState<ListPhase>('loading');
   const [listError, setListError] = useState<string | null>(null);
   const [pendingPhraseKey, setPendingPhraseKey] = useState<string | null>(null);
@@ -495,10 +515,110 @@ function StaffChatPageInner() {
       if (legacyUser) {
         setDeprecatedWarned(true);
       }
-      setInvitePhase('invalid');
+      // Phase 2B: no invite token → if a stored staff session validates, enter chat
+      // directly (skip login); otherwise show the login screen. If the session was
+      // revoked/deactivated, clear it and fall back to login. Invite path above unchanged.
+      const storedSessionToken = loadStoredSessionToken();
+      if (storedSessionToken) {
+        try {
+          const sres = await fetch(STAFF_SESSION_URL, {
+            headers: { Authorization: `Bearer ${storedSessionToken}` }
+          });
+          const sjson = await sres.json();
+          if (sres.ok && sjson?.ok && sjson.data?.account) {
+            setInviteSession(accountPublicToInviteSession(sjson.data.account));
+            setSessionSource('account_session');
+            setInvitePhase('ready');
+            return;
+          }
+          clearStaffSession();
+        } catch {
+          /* network error → fall through to login */
+        }
+      }
+      setInvitePhase('login');
     }
     void bootstrapInvite();
   }, []);
+
+  // Phase 2A: load the name-select roster when the login screen is shown.
+  useEffect(() => {
+    if (invitePhase !== 'login') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(STAFF_LOGIN_ROSTER_URL);
+        const json = await res.json();
+        if (!cancelled && res.ok && json?.ok) {
+          setStaffLoginRoster(Array.isArray(json.data?.roster) ? json.data.roster : []);
+        }
+      } catch {
+        /* roster load is best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [invitePhase]);
+
+  // Phase 2A: submit login. On success, persist the session token and show a
+  // "로그인 성공" view ONLY. Does NOT setInvitePhase('ready') / enter chat (Phase 2B).
+  async function handleStaffLogin() {
+    const accountId = staffLoginAccountId.trim();
+    const code = staffLoginCode.trim();
+    if (!accountId || !/^\d{4}$/.test(code)) {
+      setStaffLoginError('이름을 선택하고 4자리 코드를 입력하세요.');
+      return;
+    }
+    setStaffLoginSubmitting(true);
+    setStaffLoginError(null);
+    try {
+      const res = await fetch(STAFF_LOGIN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, login_code: code, device_key: getOrCreateStaffDeviceKey() })
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        const err = json?.error;
+        setStaffLoginError(
+          err === 'LOGIN_LOCKED'
+            ? '시도가 많아 잠시 잠겼습니다. 잠시 후 다시 시도하세요.'
+            : '코드가 올바르지 않습니다.'
+        );
+        return;
+      }
+      const { sessionToken, account } = json.data;
+      saveStaffSession(sessionToken, { accountId: account.accountId, userId: account.userId });
+      // Phase 2B: enter the existing staff-chat with the account identity.
+      setInviteSession(accountPublicToInviteSession(account));
+      setSessionSource('account_session');
+      setInvitePhase('ready');
+    } catch {
+      setStaffLoginError('네트워크 오류입니다. 다시 시도하세요.');
+    } finally {
+      setStaffLoginSubmitting(false);
+    }
+  }
+
+  // Phase 2B: account-session logout → revoke server-side, clear local, return to login.
+  async function handleStaffLogout() {
+    const token = loadStoredSessionToken();
+    try {
+      if (token) {
+        await fetch(STAFF_LOGOUT_URL, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      }
+    } catch {
+      /* best-effort; clear locally regardless */
+    }
+    clearStaffSession();
+    setInviteSession(null);
+    setSessionSource('none');
+    setStaffLoginAccountId('');
+    setStaffLoginCode('');
+    setStaffLoginError(null);
+    setInvitePhase('login');
+  }
 
   useEffect(() => {
     if (invitePhase !== 'ready' || !inviteSession?.token) return;
@@ -1502,6 +1622,43 @@ function StaffChatPageInner() {
     );
   }
 
+  // Phase 2A/2B: no-token → staff login screen. On success → enters chat (ready).
+  if (invitePhase === 'login') {
+    return (
+      <main className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-[#eceff1] px-6">
+        <h1 className="text-lg font-bold text-gray-900">직원 로그인</h1>
+        <select
+          value={staffLoginAccountId}
+          onChange={(e) => setStaffLoginAccountId(e.target.value)}
+          className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">이름 선택</option>
+          {staffLoginRoster.map((r) => (
+            <option key={r.accountId} value={r.accountId}>
+              {r.displayName}
+            </option>
+          ))}
+        </select>
+        <input
+          value={staffLoginCode}
+          onChange={(e) => setStaffLoginCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          inputMode="numeric"
+          placeholder="4자리 코드"
+          className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-lg tracking-widest"
+        />
+        {staffLoginError ? <p className="text-sm text-rose-600">{staffLoginError}</p> : null}
+        <button
+          type="button"
+          disabled={!staffLoginAccountId || staffLoginCode.length !== 4 || staffLoginSubmitting}
+          onClick={() => void handleStaffLogin()}
+          className="rounded-lg bg-[#FEE500] px-6 py-2 text-sm font-bold text-gray-900 disabled:opacity-50"
+        >
+          {staffLoginSubmitting ? '로그인 중…' : '로그인'}
+        </button>
+      </main>
+    );
+  }
+
   return (
     <main
       className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#eceff1]"
@@ -1536,6 +1693,15 @@ function StaffChatPageInner() {
           </div>
         ) : null}
         <div className="mx-auto flex max-w-md items-center justify-end gap-1.5">
+          {sessionSource === 'account_session' ? (
+            <button
+              type="button"
+              onClick={() => void handleStaffLogout()}
+              className="mr-auto rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-bold text-gray-700"
+            >
+              로그아웃
+            </button>
+          ) : null}
           <div className="flex gap-0.5">
             {localeButtons.map((b) => (
               <button

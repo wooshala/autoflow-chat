@@ -93,6 +93,9 @@ export async function registerStaffDeviceToken(input: RegisterStaffDeviceInput):
   if (IS_MOCK || !supabaseAdmin) {
     const list = mockTokens();
     const existing = list.find((t) => t.fcm_token === fcmToken);
+    // Phase 3A: a session/user_id registration (no invite) must not null an
+    // existing invite binding on the same fcm_token.
+    if (!invite && existing?.staff_invite_id) row.staff_invite_id = existing.staff_invite_id;
     if (existing) {
       Object.assign(existing, row, { updated_at: nowIso() });
       return existing;
@@ -105,6 +108,17 @@ export async function registerStaffDeviceToken(input: RegisterStaffDeviceInput):
     };
     list.push(created);
     return created;
+  }
+
+  // Phase 3A: a session/user_id registration (no invite) must not null an
+  // existing invite binding on the same fcm_token.
+  if (!invite) {
+    const { data: prev } = await supabaseAdmin
+      .from('staff_device_tokens')
+      .select('staff_invite_id')
+      .eq('fcm_token', fcmToken)
+      .maybeSingle();
+    if (prev?.staff_invite_id) row.staff_invite_id = prev.staff_invite_id;
   }
 
   const { data, error } = await supabaseAdmin
