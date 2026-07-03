@@ -13,27 +13,39 @@ object StaffDeviceRegistrar {
     fun tryRegister(context: Context) {
         val appContext = context.applicationContext
         val fcmToken = StaffPrefs.getFcmToken(appContext)
+        val sessionToken = StaffPrefs.getSessionToken(appContext)
         val inviteToken = StaffPrefs.getInviteToken(appContext)
-        if (fcmToken.isBlank() || inviteToken.isBlank()) return
+        if (fcmToken.isBlank()) return
+        // Register when we have EITHER credential; neither -> skip.
+        if (sessionToken.isBlank() && inviteToken.isBlank()) return
+
+        // Decision 1: session and invite are mutually exclusive per request.
+        // With a session token we register via Bearer only and omit invite_token
+        // (sending a revoked invite alongside would 403 the whole request).
+        val useSession = sessionToken.isNotBlank()
 
         executor.execute {
             try {
-                val payload = buildJson(
-                    mapOf(
-                        "invite_token" to inviteToken,
-                        "fcm_token" to fcmToken,
-                        "platform" to "android",
-                        "device_key" to StaffPrefs.getOrCreateDeviceKey(appContext),
-                        "device_label" to "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
-                        "app_version" to BuildConfig.VERSION_NAME
-                    )
+                val values = linkedMapOf(
+                    "fcm_token" to fcmToken,
+                    "platform" to "android",
+                    "device_key" to StaffPrefs.getOrCreateDeviceKey(appContext),
+                    "device_label" to "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+                    "app_version" to BuildConfig.VERSION_NAME
                 )
+                if (!useSession) {
+                    values["invite_token"] = inviteToken
+                }
+                val payload = buildJson(values)
 
                 val conn = (URL(REGISTER_URL).openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 10_000
                     readTimeout = 10_000
                     setRequestProperty("Content-Type", "application/json")
+                    if (useSession) {
+                        setRequestProperty("Authorization", "Bearer $sessionToken")
+                    }
                     doOutput = true
                 }
                 OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(payload) }

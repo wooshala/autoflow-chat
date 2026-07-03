@@ -7,6 +7,7 @@ object StaffPrefs {
     private const val PREFS = "autoflow_staff_native"
     private const val KEY_FCM_TOKEN = "fcm_token"
     private const val KEY_INVITE_TOKEN = "invite_token"
+    private const val KEY_SESSION_TOKEN = "session_token"
     private const val KEY_DEVICE_KEY = "device_key"
     private const val KEY_LAST_REGISTER_OK_AT = "last_register_ok_at"
 
@@ -24,6 +25,18 @@ object StaffPrefs {
 
     fun getInviteToken(context: Context): String {
         return context.prefs().getString(KEY_INVITE_TOKEN, "").orEmpty()
+    }
+
+    fun setSessionToken(context: Context, token: String) {
+        context.prefs().edit().putString(KEY_SESSION_TOKEN, token).apply()
+    }
+
+    fun getSessionToken(context: Context): String {
+        return context.prefs().getString(KEY_SESSION_TOKEN, "").orEmpty()
+    }
+
+    fun clearSessionToken(context: Context) {
+        context.prefs().edit().remove(KEY_SESSION_TOKEN).apply()
     }
 
     fun getOrCreateDeviceKey(context: Context): String {

@@ -38,6 +38,7 @@ class MainActivity : Activity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 captureInviteTokenFromWebStorage()
+                captureStaffSessionFromWebStorage()
             }
         }
         webView.webChromeClient = object : WebChromeClient() {
@@ -235,6 +236,30 @@ class MainActivity : Activity() {
                 .orEmpty()
             if (token.isBlank() || token == "null") return@evaluateJavascript
             StaffPrefs.setInviteToken(this, token)
+            StaffDeviceRegistrar.tryRegister(this)
+        }
+    }
+
+    // Phase 3C: read the staff-account session token the web app stores on login.
+    // Present  -> save + register (StaffDeviceRegistrar uses it as Bearer).
+    // Absent   -> clear any stale native session (e.g. after web logout).
+    // Never log the token value; only its presence.
+    private fun captureStaffSessionFromWebStorage() {
+        webView.evaluateJavascript(
+            "window.localStorage && window.localStorage.getItem('autoflow_staff_session_token_v1')"
+        ) { raw ->
+            val token = raw
+                ?.removeSurrounding("\"")
+                ?.replace("\\\"", "\"")
+                ?.trim()
+                .orEmpty()
+            if (token.isBlank() || token == "null") {
+                StaffPrefs.clearSessionToken(this)
+                Log.d(TAG, "staff session token: present=false (cleared stale if any)")
+                return@evaluateJavascript
+            }
+            StaffPrefs.setSessionToken(this, token)
+            Log.d(TAG, "staff session token: present=true")
             StaffDeviceRegistrar.tryRegister(this)
         }
     }
