@@ -1673,13 +1673,16 @@ function StaffChatPageInner() {
         ) : null}
         <div className="mx-auto flex max-w-md items-center justify-end gap-1.5">
           {sessionSource === 'account_session' ? (
-            <button
-              type="button"
-              onClick={() => void handleStaffLogout()}
-              className="mr-auto rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-bold text-gray-700"
-            >
-              로그아웃
-            </button>
+            <div className="mr-auto flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-gray-900">{actorName}</span>
+              <button
+                type="button"
+                onClick={() => void handleStaffLogout()}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700"
+              >
+                로그아웃
+              </button>
+            </div>
           ) : null}
           <div className="flex gap-0.5">
             {localeButtons.map((b) => (
@@ -1714,16 +1717,7 @@ function StaffChatPageInner() {
               </span>
             ) : null}
           </div>
-          {browserNotifyPermission === 'unsupported' ? (
-            <button
-              type="button"
-              onClick={() => window.alert(t('notifyUnsupportedHelp'))}
-              className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800"
-              title={t('notifyUnsupportedHelp')}
-            >
-              🔔 {t('notifyUnsupported')}
-            </button>
-          ) : (
+          {browserNotifyPermission !== 'unsupported' ? (
             <button
               type="button"
               onClick={handleNotificationEnableClick}
@@ -1742,7 +1736,7 @@ function StaffChatPageInner() {
                   ? t('notifyGranted')
                   : t('notifyDenied')}
             </button>
-          )}
+          ) : null}
         </div>
         {diagMode ? (
           <StaffChatTtsDiagLine
