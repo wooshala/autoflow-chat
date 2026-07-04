@@ -18,6 +18,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.content.FileProvider
+import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import java.io.File
 
@@ -265,11 +266,21 @@ class MainActivity : Activity() {
     }
 
     private fun refreshFcmToken() {
-        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-            if (!task.isSuccessful) return@addOnCompleteListener
-            val token = task.result ?: return@addOnCompleteListener
-            StaffPrefs.setFcmToken(this, token)
-            StaffDeviceRegistrar.tryRegister(this)
+        // Firebase가 초기화되지 않은 빌드(google-services 미적용/미설정)에서는 FCM을 건너뛴다.
+        // 미초기화 상태로 FirebaseMessaging.getInstance()를 호출하면 앱이 즉시 crash한다.
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            Log.i(TAG, "[STAFF_FCM_SKIPPED] reason=firebase_not_initialized")
+            return
+        }
+        try {
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (!task.isSuccessful) return@addOnCompleteListener
+                val token = task.result ?: return@addOnCompleteListener
+                StaffPrefs.setFcmToken(this, token)
+                StaffDeviceRegistrar.tryRegister(this)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "[STAFF_FCM_SKIPPED] reason=fcm_init_failed", e)
         }
     }
 
