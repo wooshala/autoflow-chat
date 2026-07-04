@@ -10,19 +10,23 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.content.FileProvider
 import com.google.firebase.messaging.FirebaseMessaging
+import java.io.File
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var pendingFileChooserParams: WebChromeClient.FileChooserParams? = null
     private var pendingPermissionRequest: PermissionRequest? = null
+    private var cameraPhotoUri: Uri? = null
     private val sessionPollHandler = Handler(Looper.getMainLooper())
     private var sessionPollActive = false
 
@@ -113,8 +117,21 @@ class MainActivity : Activity() {
         if (requestCode == REQUEST_FILE_CHOOSER) {
             val callback = filePathCallback
             filePathCallback = null
+            val capturedUri = cameraPhotoUri
+            cameraPhotoUri = null
             if (callback == null) return
-            val results = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+            if (resultCode != RESULT_OK) {
+                // 취소/실패 → null (WebView가 첨부 취소 처리)
+                callback.onReceiveValue(null)
+                return
+            }
+            // 갤러리 선택은 data.data 로, 카메라 촬영은 data 없이 EXTRA_OUTPUT(capturedUri)에 저장된다.
+            val fromPicker = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+            val results: Array<Uri>? = when {
+                fromPicker != null && fromPicker.isNotEmpty() -> fromPicker
+                capturedUri != null -> arrayOf(capturedUri)
+                else -> null
+            }
             callback.onReceiveValue(results)
             return
         }
@@ -140,12 +157,8 @@ class MainActivity : Activity() {
                 if (requestCode == REQUEST_CAMERA) {
                     val params = pendingFileChooserParams
                     pendingFileChooserParams = null
-                    if (granted) {
-                        launchFileChooser(params)
-                    } else {
-                        filePathCallback?.onReceiveValue(null)
-                        filePathCallback = null
-                    }
+                    // grant → 카메라+갤러리, deny → 갤러리만. 어느 쪽이든 파일 선택은 진행.
+                    launchFileChooser(params)
                 }
             }
             REQUEST_READ_MEDIA -> {
@@ -169,24 +182,51 @@ class MainActivity : Activity() {
         val callback = filePathCallback
         if (callback == null) return false
 
-        val intent = try {
+        val galleryIntent = try {
             params?.createIntent() ?: defaultImagePickIntent()
         } catch (e: Exception) {
             Log.w(TAG, "FileChooserParams.createIntent failed; using fallback picker", e)
             defaultImagePickIntent()
         }
 
+        // capture 요청(<input capture>) + 카메라 권한이 있으면 촬영 인텐트를 chooser에 추가.
+        cameraPhotoUri = null
+        val cameraIntent =
+            if (params?.isCaptureEnabled == true && hasCameraPermission()) buildCameraCaptureIntent() else null
+
+        val chooser = Intent.createChooser(galleryIntent, "사진").apply {
+            if (cameraIntent != null) {
+                putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+            }
+        }
+
         return try {
-            startActivityForResult(
-                Intent.createChooser(intent, "사진 선택"),
-                REQUEST_FILE_CHOOSER
-            )
+            startActivityForResult(chooser, REQUEST_FILE_CHOOSER)
             true
         } catch (e: ActivityNotFoundException) {
             Log.e(TAG, "No activity found for staff-chat file chooser", e)
+            cameraPhotoUri = null
             filePathCallback?.onReceiveValue(null)
             filePathCallback = null
             false
+        }
+    }
+
+    /** ACTION_IMAGE_CAPTURE 인텐트. 결과 사진은 FileProvider Uri(cameraPhotoUri)에 저장된다. */
+    private fun buildCameraCaptureIntent(): Intent? {
+        return try {
+            val dir = File(cacheDir, "camera").apply { mkdirs() }
+            val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            cameraPhotoUri = uri
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "buildCameraCaptureIntent failed", e)
+            cameraPhotoUri = null
+            null
         }
     }
 
