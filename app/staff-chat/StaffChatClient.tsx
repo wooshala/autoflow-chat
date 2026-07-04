@@ -1469,7 +1469,9 @@ function StaffChatPageInner() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setPhotoRoom('');
+    // 메인 객실 선택(roomNo)을 사진 첨부 기본값으로 상속. 사진 패널에서 바꾸면 그 값 우선.
+    // 메인 미선택이면 '' → room_no null 허용. 갤러리/카메라 동일 경로.
+    setPhotoRoom(roomNo);
     setPhotoStatusText('');
     setPhotoPhraseKey(null);
     const previewUrl = URL.createObjectURL(file);
