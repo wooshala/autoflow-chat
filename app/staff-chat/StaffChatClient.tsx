@@ -502,7 +502,9 @@ function StaffChatPageInner() {
         const res = await fetch(STAFF_LOGIN_ROSTER_URL);
         const json = await res.json();
         if (!cancelled && res.ok && json?.ok) {
-          setStaffLoginRoster(Array.isArray(json.data?.roster) ? json.data.roster : []);
+          const raw: Array<{ accountId: string; displayName: string }> = Array.isArray(json.data?.roster) ? json.data.roster : [];
+          raw.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { numeric: true }));
+          setStaffLoginRoster(raw);
         }
       } catch {
         /* roster load is best-effort */
