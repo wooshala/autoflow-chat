@@ -13,6 +13,7 @@ import { fetchEnvelope } from '@/lib/api/envelope';
 import { CHAT_SEND_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
 import { TIMEOUT_MS_CHAT_LIST, TIMEOUT_MS_CHAT_SEND } from '@/lib/api/timeouts';
 import type { ChatMessage } from '@/lib/types';
+import { formatKSTShort } from '@/lib/formatKST';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
@@ -1908,6 +1909,10 @@ function StaffChatPageInner() {
                         {secondary}
                       </div>
                     ) : null}
+                    {/* 시간 — 월/일 시간 (연도 제외) */}
+                    <div className={`mt-0.5 text-[10px] ${mine ? 'text-right text-blue-100/70' : 'text-gray-400'}`}>
+                      {formatKSTShort(m.created_at)}
+                    </div>
                   </div>
                 </div>
               );

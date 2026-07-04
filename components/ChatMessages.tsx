@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import AiActionBadge from "@/components/AiActionBadge";
 import { AiAction, ChatMessage } from "@/lib/types";
-import { formatKSTTime } from "@/lib/formatKST";
+import { formatKSTShort } from "@/lib/formatKST";
 import { getMessageDisplayParts } from "@/lib/chat/displayMessageText";
 import { isEmojiOnlyMessage } from "@/lib/chat/isEmojiOnlyMessage";
 import { isUrgentMessage } from "@/lib/chat/messagePriority";
@@ -347,9 +347,9 @@ export default function ChatMessages({
                 </div>
                 )}
 
-                {/* 시간 — 말풍선 옆 하단에 배치 */}
+                {/* 시간 — 말풍선 옆 하단에 배치 (월/일 시간, 연도 제외) */}
                 <div className="text-[10px] text-gray-500 shrink-0 pb-0.5 leading-none whitespace-nowrap">
-                  {formatKSTTime(msg.created_at)}
+                  {formatKSTShort(msg.created_at)}
                 </div>
               </div>
             </div>
