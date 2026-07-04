@@ -3,6 +3,12 @@ import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { listChatMessages, listChatMessagesByTicket, listChatMessagesSince } from '@/lib/services/chat';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// supabase-js uses fetch internally; without these, Next.js Data Cache caches the
+// list query per URL (limit-keyed) and can serve a stale window (e.g. limit=500
+// stuck on an old snapshot). Match the staff auth routes so chat reads are fresh.
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 const DEBUG_VERBOSE = process.env.CHAT_DEBUG_VERBOSE === '1';
 
 function sleep(ms: number) {
