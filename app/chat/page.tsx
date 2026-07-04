@@ -116,6 +116,18 @@ export default function ChatPage() {
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'degraded' | 'reconnecting'>('reconnecting');
   const [realtimeReconnectToken, setRealtimeReconnectToken] = useState(0);
+  // 숙박일지(관리모드)에서 넘어온 경우의 복귀 URL. http(s) 절대 URL만 허용(스킴 인젝션 차단).
+  const [returnToUrl, setReturnToUrl] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const raw = new URLSearchParams(window.location.search).get('returnTo');
+      if (!raw) return;
+      const decoded = decodeURIComponent(raw);
+      if (/^https?:\/\//i.test(decoded)) setReturnToUrl(decoded);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   function getOrCreateDeviceId(): string {
     try {
@@ -632,6 +644,15 @@ export default function ChatPage() {
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 shrink-0">
         <div className="flex items-start justify-between gap-3">
           <div>
+            {returnToUrl ? (
+              <button
+                type="button"
+                onClick={() => window.location.assign(returnToUrl)}
+                className="mb-1.5 inline-flex items-center gap-1 rounded-lg border border-gray-500 bg-gray-700 px-2.5 py-1 text-xs font-bold text-gray-100 hover:bg-gray-600"
+              >
+                ← 관리모드
+              </button>
+            ) : null}
             <div className="font-bold text-white">AutoFlow 채팅</div>
             <div
               className="mt-1 rounded border border-lime-400/80 bg-lime-950/80 px-2 py-1 font-mono text-sm font-bold text-lime-300"
