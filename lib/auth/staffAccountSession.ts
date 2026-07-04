@@ -85,11 +85,14 @@ export function clearLegacyInviteStorageOnce(): void {
 /**
  * Map an account-login identity onto the chat's StaffInviteSession shape so the
  * existing chat identity/render path can consume account sessions (Phase 2).
- * `token` is empty (no invite token); `inviteId` falls back to accountId.
+ * `token` is empty (no invite token). `inviteId` is set only when the account is
+ * actually linked to an invite; otherwise it stays empty so the chat send path
+ * never sends an accountId as token_id (which fails the server invite guard →
+ * false INVITE_REVOKED). Account sessions are identified by user_id, not invite.
  */
 export function accountPublicToInviteSession(account: StaffAccountPublic): StaffInviteSession {
   return {
-    inviteId: account.inviteId ?? account.accountId,
+    inviteId: account.inviteId ?? '',
     token: '',
     displayName: account.displayName,
     role: account.role,
