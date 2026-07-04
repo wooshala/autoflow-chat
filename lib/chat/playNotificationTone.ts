@@ -299,6 +299,46 @@ export async function unlockNotificationAudio(): Promise<boolean> {
   }
 }
 
+const STAFF_DEFAULT_SOUND_SRC = '/sounds/default.wav';
+let staffDefaultAudio: HTMLAudioElement | null = null;
+
+function getStaffDefaultAudio(): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null;
+  if (!staffDefaultAudio) {
+    staffDefaultAudio = new Audio(STAFF_DEFAULT_SOUND_SRC);
+    staffDefaultAudio.preload = 'auto';
+  }
+  return staffDefaultAudio;
+}
+
+export async function unlockStaffDefaultSound(): Promise<boolean> {
+  const audio = getStaffDefaultAudio();
+  if (!audio) return false;
+  try {
+    audio.volume = 0;
+    audio.currentTime = 0;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function playStaffDefaultSound(volume: number): Promise<boolean> {
+  const audio = getStaffDefaultAudio();
+  if (!audio) return false;
+  try {
+    audio.volume = Math.min(1, Math.max(0, volume));
+    audio.currentTime = 0;
+    await audio.play();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export type PlayNotificationToneOptions = {
   /** Best-effort beep when tab hidden (often blocked; OS notification sound is primary). */
   allowHidden?: boolean;

@@ -39,7 +39,8 @@ import {
   isBrowserNotificationSupported,
   showBrowserNotification
 } from '@/lib/chat/browserNotifications';
-import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
+import { playStaffDefaultSound, unlockStaffDefaultSound, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
+import { loadStaffAlertVolume, saveStaffAlertVolume } from '@/lib/chat/staffAlertPrefs';
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import { normalizeNotifyBody } from '@/lib/chat/normalizeNotifyBody';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
@@ -79,6 +80,7 @@ import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
 import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
+import StaffNativeSoundPicker from '@/components/staff-chat/StaffNativeSoundPicker';
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
 import { logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
@@ -209,6 +211,10 @@ function StaffChatPageInner() {
   const [soundEnabled, setSoundEnabled] = useState(() =>
     typeof window !== 'undefined' ? loadStaffAlertsEnabled() : true
   );
+  const [alertVolume, setAlertVolume] = useState(() =>
+    typeof window !== 'undefined' ? loadStaffAlertVolume() : 0.6
+  );
+  const alertVolumeRef = useRef(alertVolume);
   const [autoTtsEnabled, setAutoTtsEnabled] = useState(() =>
     typeof window !== 'undefined' ? loadStaffAutoTtsEnabled() : false
   );
@@ -269,7 +275,7 @@ function StaffChatPageInner() {
       if (!p || String(p.target_invite_id ?? '') !== myInviteId) return;
       const text = typeof p.text === 'string' && p.text.trim() ? p.text : '테스트입니다.';
       console.log('[STAFF_TEST_PING_RECEIVED]', { invite_id: myInviteId });
-      if (soundEnabled) void playNotificationTone('info', { allowHidden: true });
+      if (soundEnabled) void playStaffDefaultSound(alertVolumeRef.current);
       const { ttsLang } = resolveStaffTtsLangFromSession({
         spokenLang: staffSession.spokenLang,
         role: staffSession.role,
@@ -796,6 +802,7 @@ function StaffChatPageInner() {
     if (typeof window === 'undefined') return;
     const onFirst = () => {
       void unlockNotificationAudio();
+      void unlockStaffDefaultSound();
       window.removeEventListener('pointerdown', onFirst, true);
       window.removeEventListener('keydown', onFirst, true);
     };
@@ -1017,7 +1024,7 @@ function StaffChatPageInner() {
               urgent,
               foregroundVisible: true
             });
-            void playNotificationTone(urgent ? 'urgent' : 'info');
+            void playStaffDefaultSound(alertVolumeRef.current);
           }
         }
 
@@ -1061,7 +1068,7 @@ function StaffChatPageInner() {
           }
 
           if (soundEnabled) {
-            void playNotificationTone(urgent ? 'urgent' : 'info', { allowHidden: true });
+            void playStaffDefaultSound(alertVolumeRef.current);
           }
         }
       }
@@ -1349,9 +1356,16 @@ function StaffChatPageInner() {
     saveStaffStoredRoom(r); // ''이면 저장값도 클리어(load 시 '' 반환)
   }
 
+  function handleAlertVolumeChange(v: number) {
+    setAlertVolume(v);
+    alertVolumeRef.current = v;
+    saveStaffAlertVolume(v);
+  }
+
   function toggleSound() {
     if (soundEnabled && !isServerStaffTtsUnlocked()) {
       void unlockNotificationAudio();
+      void unlockStaffDefaultSound();
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -1373,6 +1387,7 @@ function StaffChatPageInner() {
     });
     if (next) {
       void unlockNotificationAudio();
+      void unlockStaffDefaultSound();
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -1715,6 +1730,9 @@ function StaffChatPageInner() {
             ttsTextOrigin={ttsTextOrigin}
             ruVoiceReady={ruVoiceReady}
           />
+        ) : null}
+        {soundEnabled ? (
+          <StaffNativeSoundPicker volume={alertVolume} onVolumeChange={handleAlertVolumeChange} />
         ) : null}
       </header>
 

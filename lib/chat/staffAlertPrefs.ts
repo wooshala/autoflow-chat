@@ -38,3 +38,26 @@ export function saveStaffAutoTtsEnabled(enabled: boolean) {
     /* ignore */
   }
 }
+
+const STORAGE_ALERT_VOLUME = 'autoflow_staff_alert_volume_v1';
+const DEFAULT_STAFF_ALERT_VOLUME = 0.6;
+
+export function loadStaffAlertVolume(): number {
+  try {
+    const v = localStorage.getItem(STORAGE_ALERT_VOLUME);
+    if (v === null) return DEFAULT_STAFF_ALERT_VOLUME;
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return DEFAULT_STAFF_ALERT_VOLUME;
+    return Math.min(1, Math.max(0, n));
+  } catch {
+    return DEFAULT_STAFF_ALERT_VOLUME;
+  }
+}
+
+export function saveStaffAlertVolume(volume: number) {
+  try {
+    localStorage.setItem(STORAGE_ALERT_VOLUME, String(Math.min(1, Math.max(0, volume))));
+  } catch {
+    /* ignore */
+  }
+}
