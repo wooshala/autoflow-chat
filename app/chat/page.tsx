@@ -756,6 +756,7 @@ export default function ChatPage() {
         <ChatMessages
           messages={messages}
           currentUserId={sessionUser ? chatSendUserId : null}
+          isAdmin={Boolean(sessionUser)}
           deletingMessageId={deletingMessageId}
           onDeleteMessage={handleDeleteMessage}
           onCreateManualTicket={createManualTicket}

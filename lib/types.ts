@@ -151,9 +151,13 @@ export interface ChatMessage {
   sender_side?: SenderSide | null;
   is_deleted?: boolean;
   deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_reason?: DeletedReason | null;
   created_at: string;
   user?: Pick<User, 'id' | 'name' | 'role' | 'language'>;
 }
+
+export type DeletedReason = 'owner' | 'admin';
 
 export interface MaintenancePhoto {
   id: string;

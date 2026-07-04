@@ -10,7 +10,7 @@ import {
   staffKeyLabel
 } from '@/lib/auth';
 import { fetchEnvelope } from '@/lib/api/envelope';
-import { CHAT_SEND_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
+import { CHAT_DELETE_URL, CHAT_SEND_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
 import { TIMEOUT_MS_CHAT_LIST, TIMEOUT_MS_CHAT_SEND } from '@/lib/api/timeouts';
 import type { ChatMessage } from '@/lib/types';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
@@ -90,7 +90,7 @@ import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
 import StaffNativeSoundPicker from '@/components/staff-chat/StaffNativeSoundPicker';
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
-import { logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
+import { buildStaffChatRenderTimeline, logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
 import {
   clearStoredInviteToken,
   inviteToSession,
@@ -234,6 +234,7 @@ function StaffChatPageInner() {
   const [roomNo, setRoomNo] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [composerHeight, setComposerHeight] = useState(72);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [toast, setToast] = useState<{ kind: 'ok' | 'error'; msg: string; urgent?: boolean } | null>(null);
@@ -1327,6 +1328,35 @@ function StaffChatPageInner() {
     [actorName, chatSendUserId, locale, roomNo, sessionSource, setStaffMessages, staffKey, inviteSession?.inviteId, pendingPhraseKey, t]
   );
 
+  const handleDeleteMessage = useCallback(
+    async (msg: ChatMessage) => {
+      if (!chatSendUserId) return;
+      setDeletingMessageId(String(msg.id));
+      try {
+        const res = await fetchEnvelope<{ message: ChatMessage }>(CHAT_DELETE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message_id: msg.id, user_id: chatSendUserId })
+        });
+        if (!res.ok) {
+          setToast({ kind: 'error', msg: res.message || '삭제 실패' });
+          return;
+        }
+        const deleted = res.data?.message;
+        if (deleted) {
+          setStaffMessages((prev) =>
+            prev.map((m) => (String(m.id) === String(deleted.id) ? { ...m, ...deleted } : m))
+          );
+        }
+      } catch {
+        setToast({ kind: 'error', msg: '삭제 실패' });
+      } finally {
+        setDeletingMessageId(null);
+      }
+    },
+    [chatSendUserId, setStaffMessages]
+  );
+
   function clearPendingPhoto() {
     if (pendingPhoto?.previewUrl) {
       try {
@@ -1535,7 +1565,10 @@ function StaffChatPageInner() {
   ];
 
   const timelineMessages = useMemo(
-    () => logStaffChatVisibleMessages(messages, { staffKey, userParam: userParam || null }),
+    () => {
+      logStaffChatVisibleMessages(messages, { staffKey, userParam: userParam || null });
+      return buildStaffChatRenderTimeline(messages);
+    },
     [messages, staffKey, userParam]
   );
 
@@ -1834,6 +1867,7 @@ function StaffChatPageInner() {
           <div className="space-y-2 pb-2">
             {timelineMessages.map((m) => {
               const mine = isStaffChatSelfMessage(m, staffSession);
+              const isDeleted = Boolean(m.is_deleted);
               const urgent = isUrgentMessage(m);
               const viewerLang: ChatLang = locale === 'ru' ? 'ru' : 'ko';
               const { ttsLang } = resolveStaffTtsLangFromSession({
@@ -1847,10 +1881,26 @@ function StaffChatPageInner() {
                 logContext: 'staff',
                 selectedLang: locale
               });
+              const isDeletingThis = deletingMessageId != null && String(deletingMessageId) === String(m.id);
+              const canDelete = mine && !isDeleted && typeof handleDeleteMessage === 'function';
+
+              if (isDeleted) {
+                return (
+                  <div key={String(m.id)} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <div className="max-w-[88%] rounded-2xl px-3 py-2 text-sm shadow-sm bg-gray-100 text-gray-400 italic">
+                      <div className="text-[10px] text-gray-400 mb-0.5">
+                        {m.sender_name || '—'} · {m.sender_side || '?'}
+                      </div>
+                      삭제된 메시지입니다
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div key={String(m.id)} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                    className={`group max-w-[88%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
                       urgent && !mine
                         ? 'border-2 border-orange-400 bg-orange-50 text-gray-900'
                         : mine
@@ -1913,6 +1963,25 @@ function StaffChatPageInner() {
                         }`}
                       >
                         {secondary}
+                      </div>
+                    ) : null}
+                    {canDelete ? (
+                      <div className="mt-1 flex justify-end">
+                        <button
+                          type="button"
+                          disabled={isDeletingThis || deletingMessageId != null}
+                          onClick={() => {
+                            if (!confirm('삭제하시겠습니까?')) return;
+                            void handleDeleteMessage(m);
+                          }}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
+                            mine
+                              ? 'text-blue-100 hover:bg-blue-700'
+                              : 'text-red-600 hover:bg-red-50'
+                          } disabled:cursor-not-allowed disabled:opacity-40`}
+                        >
+                          {isDeletingThis ? '삭제 중' : '삭제'}
+                        </button>
                       </div>
                     ) : null}
                   </div>
