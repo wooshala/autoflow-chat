@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -21,6 +23,8 @@ class MainActivity : Activity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var pendingFileChooserParams: WebChromeClient.FileChooserParams? = null
     private var pendingPermissionRequest: PermissionRequest? = null
+    private val sessionPollHandler = Handler(Looper.getMainLooper())
+    private var sessionPollActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,7 +91,18 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        startStaffSessionPoll()
+    }
+
+    override fun onPause() {
+        stopStaffSessionPoll()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        stopStaffSessionPoll()
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         super.onDestroy()
@@ -258,10 +273,44 @@ class MainActivity : Activity() {
                 Log.d(TAG, "staff session token: present=false (cleared stale if any)")
                 return@evaluateJavascript
             }
+            // Register only on a newly captured session (absent -> present) so a
+            // repeated poll/navigation read does not re-register.
+            val wasAbsent = StaffPrefs.getSessionToken(this).isBlank()
             StaffPrefs.setSessionToken(this, token)
-            Log.d(TAG, "staff session token: present=true")
-            StaffDeviceRegistrar.tryRegister(this)
+            if (wasAbsent) {
+                Log.d(TAG, "staff session token: present=true")
+                StaffDeviceRegistrar.tryRegister(this)
+                stopStaffSessionPoll()
+            }
         }
+    }
+
+    // Phase 3C: while the app is foregrounded and no session token is captured yet,
+    // poll localStorage every few seconds. Login happens in-page (no page reload), so
+    // this is how an arbitrarily-timed first login gets picked up without an app
+    // restart. Stops as soon as a token is captured; never starts if one already
+    // exists (no duplicate polling/registration). Presence-only logging.
+    private val staffSessionPoll = object : Runnable {
+        override fun run() {
+            if (StaffPrefs.getSessionToken(this@MainActivity).isNotBlank()) {
+                stopStaffSessionPoll()
+                return
+            }
+            if (::webView.isInitialized) captureStaffSessionFromWebStorage()
+            sessionPollHandler.postDelayed(this, SESSION_POLL_INTERVAL_MS)
+        }
+    }
+
+    private fun startStaffSessionPoll() {
+        if (sessionPollActive) return
+        if (StaffPrefs.getSessionToken(this).isNotBlank()) return
+        sessionPollActive = true
+        sessionPollHandler.post(staffSessionPoll)
+    }
+
+    private fun stopStaffSessionPoll() {
+        sessionPollActive = false
+        sessionPollHandler.removeCallbacks(staffSessionPoll)
     }
 
     companion object {
@@ -275,5 +324,6 @@ class MainActivity : Activity() {
         private const val REQUEST_CAMERA = 1003
         private const val REQUEST_CAMERA_WEBVIEW = 1004
         private const val REQUEST_READ_MEDIA = 1005
+        private const val SESSION_POLL_INTERVAL_MS = 3000L
     }
 }
