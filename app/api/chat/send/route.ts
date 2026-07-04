@@ -456,7 +456,9 @@ export async function POST(req: NextRequest) {
   console.log('[CHAT_SEND_START]');
   logSupabaseEnvCtx('[DIAG_SUPABASE_CTX_SEND]');
   try {
+    const formDataStarted = Date.now();
     const formData = await req.formData();
+    const formDataMs = Date.now() - formDataStarted;
 
     const client_nonce = String(formData.get('client_nonce') || formData.get('client_request_id') || '').trim() || null;
     const client_send_ts_raw = Number(formData.get('client_send_ts'));
@@ -481,15 +483,23 @@ export async function POST(req: NextRequest) {
       console.log('[CHAT_SEND_ACTOR_NAME]', { actor_name, user_id: user_id || null });
     }
     const image = formData.get('image');
+    console.log('[CHAT_FORMDATA_PARSED]', {
+      formdata_ms: formDataMs,
+      elapsed_ms: Date.now() - requestStarted,
+      has_image: image instanceof File,
+      client_nonce
+    });
     console.log('[CHAT_FILE_RECEIVED]', {
       exists: image instanceof File,
       name: image instanceof File ? image.name : null,
       size: image instanceof File ? image.size : null,
-      type: image instanceof File ? image.type : null
+      type: image instanceof File ? image.type : null,
+      elapsed_ms: Date.now() - requestStarted
     });
 
     let image_url: string | null = null;
     let image_storage_path: string | null = null;
+    let storageUploadMs: number | null = null;
 
     // 파일이 있으면 업로드 (단일 업로드 플로우)
     if (image instanceof File) {
@@ -501,17 +511,25 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        const uploadStarted = Date.now();
         console.log('[CHAT_FILE_UPLOAD_START]', {
           image_name: image.name,
           image_size: image.size,
-          image_type: image.type
+          image_type: image.type,
+          elapsed_ms: uploadStarted - requestStarted
         });
         const uploaded = await uploadImage(image);
         image_url = uploaded.image_url;
         image_storage_path = uploaded.storage_path;
+        const uploadMs = Date.now() - uploadStarted;
+        storageUploadMs = uploadMs;
         console.log('[CHAT_FILE_UPLOAD_OK]', {
           image_url,
-          image_storage_path
+          image_storage_path,
+          storage_upload_ms: uploaded.profile?.storage_upload_ms ?? null,
+          array_buffer_ms: uploaded.profile?.array_buffer_ms ?? null,
+          total_upload_image_ms: uploadMs,
+          elapsed_ms: Date.now() - requestStarted
         });
       } catch (uploadError: any) {
         console.error('[CHAT_FILE_UPLOAD_ERROR]', {
@@ -745,6 +763,10 @@ export async function POST(req: NextRequest) {
       client_nonce,
       message_id: saved.id,
       elapsed_ms: apiRespondedAt - requestStarted,
+      formdata_ms: formDataMs,
+      storage_upload_ms: storageUploadMs,
+      db_insert_ms: dbInsertedAt - insertStarted,
+      has_image: image instanceof File,
       ts: apiRespondedAt
     });
     emitLatency('API_RESPONDED', {
