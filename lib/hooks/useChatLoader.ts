@@ -69,6 +69,17 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
     ): Promise<{ ok: boolean; count: number; maxCreatedAt: string | null }> => {
       if (!isMountedRef.current) return { ok: false, count: 0, maxCreatedAt: null };
 
+      // Phase 4 guard: while the initial full-load is in flight and hydration has
+      // not completed, skip non-initial (watchdog hidden-poll / delta) loads so
+      // they cannot abort the initial load. Otherwise the initial CHAT_LIST_LOAD
+      // gets aborted (CHAT_LIST_LOAD_ABORT) and the timeline stays empty after
+      // app re-entry. Watchdog loads are full loads, so they still backfill once
+      // hydration is done.
+      const isInitialLoad = source === 'initial' || source === 'initial_retry';
+      if (!isInitialLoad && loadingRef.current && !initialHydrationDoneRef.current) {
+        return { ok: false, count: 0, maxCreatedAt: null };
+      }
+
       const mySeq = ++loadSeqRef.current;
       if (loadAbortRef.current) {
         loadAbortRef.current.abort();
