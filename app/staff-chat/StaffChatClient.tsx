@@ -1343,9 +1343,10 @@ function StaffChatPageInner() {
 
   function handleRoomSelect(next: string) {
     const r = String(next || '').trim();
-    if (!r || !STAFF_VALID_ROOM_SET.has(r)) return;
+    // '' = 객실 없음(해제) 허용. 비어있지 않으면 유효 방번호만 허용.
+    if (r && !STAFF_VALID_ROOM_SET.has(r)) return;
     setRoomNo(r);
-    saveStaffStoredRoom(r);
+    saveStaffStoredRoom(r); // ''이면 저장값도 클리어(load 시 '' 반환)
   }
 
   function toggleSound() {
