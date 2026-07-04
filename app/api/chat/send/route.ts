@@ -14,6 +14,11 @@ import { ChatMessage, IssueType } from '@/lib/types';
 import { supabaseAdmin } from '@/lib/supabase';
 import { createMessageIntent, updateMessageIntentById } from '@/lib/services/messageIntents';
 
+// supabase-js uses fetch internally; opt out of Next.js Data Cache so chat
+// writes/reads are never served from a stale cached fetch. Match the staff auth routes.
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 type AutoTicketSkipReason = 'duplicate' | 'not_ticketable' | 'no_room' | 'ai_error';
 
 const DEBUG_VERBOSE = process.env.CHAT_DEBUG_VERBOSE === '1';
