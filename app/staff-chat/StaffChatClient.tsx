@@ -16,6 +16,7 @@ import type { ChatMessage } from '@/lib/types';
 import { formatKSTShort } from '@/lib/formatKST';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
+import { useStaffPushToTalk } from '@/lib/hooks/useStaffPushToTalk';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
 import { useChatRenderTrace } from '@/lib/hooks/useChatRenderTrace';
@@ -89,6 +90,7 @@ import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
 import StaffPwaInstallBanner from '@/components/staff-chat/StaffPwaInstallBanner';
 import StaffChatTtsDiagLine from '@/components/staff-chat/StaffChatTtsDiagLine';
 import StaffNativeSoundPicker from '@/components/staff-chat/StaffNativeSoundPicker';
+import StaffSttOverlay from '@/components/staff-chat/StaffSttOverlay';
 import { STAFF_CHAT_CLIENT_REV } from '@/lib/chat/staffChatClientRev';
 import { STAFF_CHAT_DELTA_LIMIT, STAFF_CHAT_LIST_LIMIT } from '@/lib/chat/staffChatList';
 import { buildStaffChatRenderTimeline, logStaffChatVisibleMessages } from '@/lib/chat/staffChatTimeline';
@@ -1556,9 +1558,14 @@ function StaffChatPageInner() {
     setPendingPhoto({ file, previewUrl });
   }
 
-  function handleVoiceClick() {
-    setToast({ kind: 'ok', msg: t('voiceSoon') });
-  }
+  // Android Push-to-Talk (STT, ru-RU). Transcript flows through the existing
+  // send() path — no new send path, no contract change. Browser (no native
+  // bridge) hides the mic button entirely.
+  const stt = useStaffPushToTalk({
+    onTranscript: (transcript) => send(transcript),
+    onError: () => setToast({ kind: 'error', msg: '음성 인식을 사용할 수 없습니다.' }),
+    disabled: !canSendMessages || sending
+  });
 
   const localeButtons: { code: StaffLocale; flag: string }[] = [
     { code: 'ko', flag: '🇰🇷' },
@@ -1678,6 +1685,17 @@ function StaffChatPageInner() {
       className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#eceff1]"
       style={{ ['--staff-composer-height' as string]: `${composerHeight}px` }}
     >
+      {/* Push-to-Talk 오버레이 (녹음/인식/전송 중). RMS 막대만 표시. */}
+      <StaffSttOverlay
+        phase={stt.phase}
+        rmsElRef={stt.rmsElRef}
+        labels={{
+          listening: '듣는 중...',
+          recognizing: '인식 중...',
+          sending: '전송 중...',
+          hint: '손을 떼면 자동 전송됩니다.'
+        }}
+      />
       {/* 상단: 언어 · 소리 · 알림 */}
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-1.5 shadow-sm">
         <div className="mx-auto mb-1 flex max-w-md items-center gap-2">
@@ -2061,15 +2079,22 @@ function StaffChatPageInner() {
           >
             📷
           </button>
-          <button
-            type="button"
-            onClick={handleVoiceClick}
-            disabled={sending}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-2xl active:bg-gray-200 disabled:opacity-40"
-            aria-label="음성"
-          >
-            🎤
-          </button>
+          {stt.available ? (
+            <button
+              type="button"
+              onTouchStart={stt.handlers.onTouchStart}
+              onTouchEnd={stt.handlers.onTouchEnd}
+              onTouchCancel={stt.handlers.onTouchCancel}
+              onTouchMove={stt.handlers.onTouchMove}
+              onContextMenu={(e) => e.preventDefault()}
+              disabled={sending}
+              style={{ touchAction: 'none' }}
+              className="flex h-12 w-12 shrink-0 select-none items-center justify-center rounded-xl bg-gray-100 text-2xl active:bg-gray-200 disabled:opacity-40"
+              aria-label="음성"
+            >
+              🎤
+            </button>
+          ) : null}
           <input
             ref={inputRef}
             type="text"
