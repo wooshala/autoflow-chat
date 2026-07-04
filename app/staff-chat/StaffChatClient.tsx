@@ -1210,6 +1210,7 @@ function StaffChatPageInner() {
       image?: File | null,
       opts?: { roomNo?: string; phraseKey?: string | null }
     ): Promise<boolean> => {
+      const clientPerfStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const msg = String(body || '').trim();
       const r = String(opts?.roomNo ?? roomNo ?? '').trim();
       const phraseKey = opts?.phraseKey !== undefined ? opts.phraseKey : pendingPhraseKey;
@@ -1290,11 +1291,15 @@ function StaffChatPageInner() {
           setToast({ kind: 'error', msg: t('sendFailed') });
           return false;
         }
+        const clientPerfEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
         staffChatLog('STAFF_CHAT_SEND_API_SUCCESS', {
           client_nonce: nonce,
           echoed_client_nonce: res.data?.client_nonce ?? null,
           messageId: saved.id,
-          roomNo: saved.room_no ?? r
+          roomNo: saved.room_no ?? r,
+          client_total_ms: Math.round(clientPerfEnd - clientPerfStart),
+          hasImage: Boolean(image),
+          image_size: image?.size ?? null
         });
         registerMessageIdForNonce(nonce, String(saved.id));
         logSendApiResponded(nonce, String(saved.id), saved.created_at);
@@ -1503,6 +1508,12 @@ function StaffChatPageInner() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    console.log('[STAFF_CHAT_PHOTO_SELECTED]', {
+      file_size: file.size,
+      mime_type: file.type,
+      last_modified: file.lastModified,
+      has_preview: true
+    });
     // 메인 객실 선택(roomNo)을 사진 첨부 기본값으로 상속. 사진 패널에서 바꾸면 그 값 우선.
     // 메인 미선택이면 '' → room_no null 허용. 갤러리/카메라 동일 경로.
     setPhotoRoom(roomNo);
