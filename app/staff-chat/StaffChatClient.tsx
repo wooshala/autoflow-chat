@@ -1331,10 +1331,8 @@ function StaffChatPageInner() {
 
   async function handlePhotoSend() {
     if (!pendingPhoto || sending) return;
-    if (!photoRoom.trim()) {
-      setToast({ kind: 'error', msg: t('selectRoomRequired') });
-      return;
-    }
+    // 객실없음 허용: 텍스트 전송과 동일하게 room 미선택이어도 전송 가능(room_no=null).
+    // buildPhotoCaption/send가 빈 room을 이미 처리한다.
     const caption = buildPhotoCaption(photoRoom, photoStatusText);
     const ok = await send(caption, pendingPhoto.file, {
       roomNo: photoRoom.trim(),
