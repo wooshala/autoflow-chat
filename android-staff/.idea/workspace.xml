@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="NONE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="ef0ef834-bce9-4a1d-adff-006cf227d070" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/../.env.local.example" beforeDir="false" afterPath="$PROJECT_DIR$/../.env.local.example" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/app/build.gradle.kts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/autoflow/staff/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/autoflow/staff/MainActivity.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/api/chat/list/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../app/api/chat/list/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/api/chat/quick-phrases/admin/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../app/api/chat/quick-phrases/admin/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/api/chat/quick-phrases/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../app/api/chat/quick-phrases/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/api/chat/send/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../app/api/chat/send/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/api/staff/devices/register/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../app/api/staff/devices/register/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/api/staff/invites/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../app/api/staff/invites/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/chat/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../app/chat/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/staff-chat/StaffChatClient.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../app/staff-chat/StaffChatClient.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../app/staff-chat/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../app/staff-chat/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../components/chat/QuickPhraseAdminPanel.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../components/chat/QuickPhraseAdminPanel.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../components/chat/StaffInvitePanel.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../components/chat/StaffInvitePanel.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../components/chat/StaffInviteQrCard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../components/chat/StaffInviteQrCard.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../components/staff-chat/MobileQuickPhraseEditor.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../components/staff-chat/MobileQuickPhraseEditor.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../components/staff-chat/QuickPhraseBar.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../components/staff-chat/QuickPhraseBar.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/api/envelope.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/api/envelope.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/auth/staffInviteSession.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/auth/staffInviteSession.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/chat/chatNotifyDiag.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/chat/chatNotifyDiag.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/chat/playNotificationTone.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/chat/playNotificationTone.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/chat/staffChatClientRev.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/chat/staffChatClientRev.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/chat/staffChatLog.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/chat/staffChatLog.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/chatApi.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/chatApi.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/hooks/useChatLoader.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/hooks/useChatLoader.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/hooks/useChatNotifications.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/hooks/useChatNotifications.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/hooks/useChatRealtime.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/hooks/useChatRealtime.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/hooks/useChatWatchdog.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/hooks/useChatWatchdog.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/i18n/messages.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/i18n/messages.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/push/sendStaffFcm.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/push/sendStaffFcm.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/push/sendStaffPushAfterMessage.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/push/sendStaffPushAfterMessage.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/push/staffFcmTypes.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/push/staffFcmTypes.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/services/quickPhrases.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/services/quickPhrases.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/services/staffDevices.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/services/staffDevices.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/services/staffInvites.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/services/staffInvites.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../lib/types.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../lib/types.ts" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[PhysicalDevice::serial=RF9Y401VQPD]" />
+  <component name="ExternalProjectsData">
+    <projectState path="$PROJECT_DIR$">
+      <ProjectState />
+    </projectState>
+  </component>
+  <component name="ExternalProjectsManager">
+    <system id="GRADLE">
+      <state>
+        <task path="$PROJECT_DIR$">
+          <activation />
+        </task>
+        <projects_view>
+          <tree_state>
+            <expand>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="AutoFlowStaff" type="f1a62948:ProjectNode" />
+              </path>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="AutoFlowStaff" type="f1a62948:ProjectNode" />
+                <item name="app" type="2d1252cf:ModuleNode" />
+              </path>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="AutoFlowStaff" type="f1a62948:ProjectNode" />
+                <item name="app" type="2d1252cf:ModuleNode" />
+                <item name="Tasks" type="e4a08cd1:TasksNode" />
+              </path>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="AutoFlowStaff" type="f1a62948:ProjectNode" />
+                <item name="app" type="2d1252cf:ModuleNode" />
+                <item name="Tasks" type="e4a08cd1:TasksNode" />
+                <item name="other" type="c8890929:TasksNode$1" />
+              </path>
+            </expand>
+            <select />
+          </tree_state>
+        </projects_view>
+      </state>
+    </system>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="GradleScriptDefinitionsStorage" workingDir="$PROJECT_DIR$" gradleHome="C:\Users\LG\.gradle\wrapper\dists\gradle-9.0.0-bin\d6wjpkvcgsg3oed0qlfss3wgl\gradle-9.0.0" javaHome="C:\Program Files\Android\Android Studio\jbr" gradleVersion="9.0.0" />
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
+  <component name="ProjectId" id="3FleN5owtvUwOb8EXFTnu8ijzTi" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Android App.app.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "feat/chat-room-filter",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "C:/dev/autoflow_chatgpt_mvp/android-staff"
+  }
+}]]></component>
+  <component name="RunManager">
+    <configuration name="app" type="AndroidRunConfigurationType" factoryName="Android App" activateToolWindowBeforeRun="false">
+      <module name="AutoFlowStaff.app" />
+      <option name="ANDROID_RUN_CONFIGURATION_SCHEMA_VERSION" value="1" />
+      <option name="DEPLOY" value="true" />
+      <option name="DEPLOY_APK_FROM_BUNDLE" value="false" />
+      <option name="DEPLOY_AS_INSTANT" value="false" />
+      <option name="ARTIFACT_NAME" value="" />
+      <option name="PM_INSTALL_OPTIONS" value="" />
+      <option name="ALL_USERS" value="false" />
+      <option name="ALWAYS_INSTALL_WITH_PM" value="false" />
+      <option name="ALLOW_ASSUME_VERIFIED" value="false" />
+      <option name="CLEAR_APP_STORAGE" value="false" />
+      <option name="DYNAMIC_FEATURES_DISABLED_LIST" value="" />
+      <option name="ACTIVITY_EXTRA_FLAGS" value="" />
+      <option name="MODE" value="default_activity" />
+      <option name="RESTORE_ENABLED" value="false" />
+      <option name="RESTORE_FILE" value="" />
+      <option name="RESTORE_FRESH_INSTALL_ONLY" value="false" />
+      <option name="CLEAR_LOGCAT" value="false" />
+      <option name="SHOW_LOGCAT_AUTOMATICALLY" value="false" />
+      <option name="TARGET_SELECTION_MODE" value="DEVICE_AND_SNAPSHOT_COMBO_BOX" />
+      <option name="SELECTED_CLOUD_MATRIX_CONFIGURATION_ID" value="-1" />
+      <option name="SELECTED_CLOUD_MATRIX_PROJECT_ID" value="" />
+      <option name="DEBUGGER_TYPE" value="Auto" />
+      <Auto>
+        <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+        <option name="SHOW_STATIC_VARS" value="true" />
+        <option name="WORKING_DIR" value="" />
+        <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+        <option name="SHOW_OPTIMIZED_WARNING" value="true" />
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Auto>
+      <Hybrid>
+        <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+        <option name="SHOW_STATIC_VARS" value="true" />
+        <option name="WORKING_DIR" value="" />
+        <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+        <option name="SHOW_OPTIMIZED_WARNING" value="true" />
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Hybrid>
+      <Java>
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Java>
+      <Native>
+        <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+        <option name="SHOW_STATIC_VARS" value="true" />
+        <option name="WORKING_DIR" value="" />
+        <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+        <option name="SHOW_OPTIMIZED_WARNING" value="true" />
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Native>
+      <Profilers>
+        <option name="ADVANCED_PROFILING_ENABLED" value="false" />
+        <option name="STARTUP_PROFILING_ENABLED" value="false" />
+        <option name="STARTUP_CPU_PROFILING_ENABLED" value="false" />
+        <option name="STARTUP_CPU_PROFILING_CONFIGURATION_NAME" value="Java/Kotlin Method Sample (legacy)" />
+        <option name="STARTUP_NATIVE_MEMORY_PROFILING_ENABLED" value="false" />
+        <option name="NATIVE_MEMORY_SAMPLE_RATE_BYTES" value="2048" />
+      </Profilers>
+      <option name="DEEP_LINK" value="" />
+      <option name="ACTIVITY" value="" />
+      <option name="ACTIVITY_CLASS" value="" />
+      <option name="SEARCH_ACTIVITY_IN_GLOBAL_SCOPE" value="false" />
+      <option name="SKIP_ACTIVITY_VALIDATION" value="false" />
+      <method v="2">
+        <option name="Android.Gradle.BeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="ef0ef834-bce9-4a1d-adff-006cf227d070" name="Changes" comment="" />
+      <created>1782654042429</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1782654042429</updated>
+    </task>
+    <servers />
+  </component>
+</project>

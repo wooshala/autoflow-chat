@@ -1,7 +1,16 @@
 import { NextRequest } from 'next/server';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { listChatMessages, listChatMessagesByTicket, listChatMessagesSince } from '@/lib/services/chat';
+import { logChatListTrace, newRequestId } from '@/lib/chat/syncTrace';
+import { getSiteId } from '@/lib/site';
 import { supabaseAdmin } from '@/lib/supabase';
+
+// Cache opt-out: this GET must never be served from Next.js Data Cache / fetch cache.
+// A cached supabase-js fetch for the ?limit=500 variant was serving stale rows (frozen
+// ~06-27) on EXE reloads. force-no-store prevents the inner supabase fetch from caching.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 const DEBUG_VERBOSE = process.env.CHAT_DEBUG_VERBOSE === '1';
 
@@ -41,6 +50,11 @@ function getAdminChosenUrlHost(): string | null {
 }
 
 export async function GET(req: NextRequest) {
+  const request_id = newRequestId();
+  const queryStarted = Date.now();
+  const clientHeader = req.headers.get('x-chat-client')?.trim() || 'unknown';
+  const source =
+    clientHeader === 'pc' || clientHeader === 'staff' ? clientHeader : ('unknown' as const);
   try {
     logSupabaseEnvCtx('[DIAG_SUPABASE_CTX_LIST]');
     const { searchParams } = new URL(req.url);
@@ -344,7 +358,42 @@ export async function GET(req: NextRequest) {
       latest5
     });
 
-    return jsonOk({ messages });
+    const rowsAsc = [...(messages || [])].sort((a, b) =>
+      String(a?.created_at || '').localeCompare(String(b?.created_at || ''))
+    );
+    const first = rowsAsc[0];
+    const last = rowsAsc[rowsAsc.length - 1];
+    const latest = rowsAsc[rowsAsc.length - 1];
+    logChatListTrace({
+      request_id,
+      source,
+      limit,
+      site_id: getSiteId(),
+      user_filter: 'none',
+      room_filter: null,
+      count: rowsAsc.length,
+      first_message_id: first?.id ?? null,
+      first_created_at: first?.created_at ?? null,
+      last_message_id: last?.id ?? null,
+      last_created_at: last?.created_at ?? null,
+      latest_message_id: latest?.id ?? null,
+      latest_created_at: latest?.created_at ?? null,
+      query_ms: Date.now() - queryStarted,
+      scope,
+      since: since || null,
+      ticket_id: ticketId || null
+    });
+
+    return jsonOk(
+      { messages },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0'
+        }
+      }
+    );
   } catch (error: any) {
     const message = error?.message || '채팅 목록 조회 실패';
     return jsonErr('CHAT_LIST_FAILED', message, 500);

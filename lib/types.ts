@@ -94,6 +94,7 @@ export type MessagePriority = 'normal' | 'urgent';
 export interface ChatQuickPhrase {
   id: string;
   site_id: string;
+  user_id: string | null;
   phrase_key: string;
   ko: string;
   ru: string;

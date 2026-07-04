@@ -1,6 +1,6 @@
 import { IS_MOCK } from '@/lib/env';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getStaffInviteById, resolveInviteUserId, resolveStaffInviteByTokenAny } from '@/lib/services/staffInvites';
+import { getStaffInviteById, isStaffInviteActive, resolveInviteUserId, resolveStaffInviteByTokenAny } from '@/lib/services/staffInvites';
 import type { StaffInvite } from '@/lib/types';
 
 export type StaffDeviceToken = {
@@ -56,6 +56,31 @@ function normalizePlatform(value: unknown): 'android' | 'ios' {
   return 'android';
 }
 
+type SupabaseErrorLike = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
+
+function throwSupabaseError(error: SupabaseErrorLike, phase: string): never {
+  console.error('[STAFF_DEVICE_REGISTER]', {
+    phase,
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint
+  });
+  throw new Error(
+    JSON.stringify({
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    })
+  );
+}
+
 async function resolveActiveInvite(input: RegisterStaffDeviceInput): Promise<StaffInvite | null> {
   const inviteId = trimOrNull(input.staffInviteId);
   const inviteToken = trimOrNull(input.inviteToken);
@@ -64,25 +89,52 @@ async function resolveActiveInvite(input: RegisterStaffDeviceInput): Promise<Sta
   if (inviteId) invite = await getStaffInviteById(inviteId);
   if (!invite && inviteToken) invite = await resolveStaffInviteByTokenAny(inviteToken);
   if (!invite) return null;
-  if (!invite.enabled || invite.revoked_at) throw new Error('INVITE_REVOKED');
+  if (!isStaffInviteActive(invite)) throw new Error('INVITE_REVOKED');
   return invite;
 }
 
 export async function registerStaffDeviceToken(input: RegisterStaffDeviceInput): Promise<StaffDeviceToken> {
+  const inviteTokenRaw = trimOrNull(input.inviteToken);
+  const deviceKeyRaw = trimOrNull(input.deviceKey);
+  const platform = normalizePlatform(input.platform);
+
+  console.log('[STAFF_DEVICE_REGISTER]', { phase: 'register_start' });
+  console.log('[STAFF_DEVICE_REGISTER]', {
+    phase: 'input_summary',
+    hasInviteToken: Boolean(inviteTokenRaw),
+    inviteTokenPrefix: inviteTokenRaw ? inviteTokenRaw.slice(0, 8) : null,
+    fcmTokenLength: String(input.fcmToken ?? '').trim().length,
+    fcmTokenPrefix: String(input.fcmToken ?? '').trim().slice(0, 12) || null,
+    platform,
+    hasDeviceKey: Boolean(deviceKeyRaw)
+  });
+
   const fcmToken = trimOrNull(input.fcmToken);
   if (!fcmToken) throw new Error('FCM_TOKEN_REQUIRED');
   if (fcmToken.length < 40) throw new Error('FCM_TOKEN_INVALID');
 
   const invite = await resolveActiveInvite(input);
+  console.log('[STAFF_DEVICE_REGISTER]', {
+    phase: 'staff_invite_lookup',
+    found: Boolean(invite),
+    staffInviteId: invite?.id ?? null
+  });
+
   const userId = trimOrNull(input.userId) || (invite ? resolveInviteUserId(invite) : null);
+  console.log('[STAFF_DEVICE_REGISTER]', {
+    phase: 'identity_resolved',
+    staffInviteId: invite?.id ?? null,
+    userId: userId ?? null
+  });
+
   if (!invite && !userId) throw new Error('STAFF_IDENTITY_REQUIRED');
 
   const row = {
     staff_invite_id: invite?.id ?? null,
     user_id: userId,
     fcm_token: fcmToken,
-    platform: normalizePlatform(input.platform),
-    device_key: trimOrNull(input.deviceKey),
+    platform,
+    device_key: deviceKeyRaw,
     device_label: trimOrNull(input.deviceLabel),
     app_version: trimOrNull(input.appVersion),
     user_agent: trimOrNull(input.userAgent),
@@ -107,14 +159,67 @@ export async function registerStaffDeviceToken(input: RegisterStaffDeviceInput):
     return created;
   }
 
+  console.log('[STAFF_DEVICE_REGISTER]', {
+    phase: 'upsert_start',
+    payloadKeys: Object.keys(row)
+  });
+
   const { data, error } = await supabaseAdmin
     .from('staff_device_tokens')
     .upsert(row, { onConflict: 'fcm_token' })
     .select('*')
     .single();
 
-  if (error) throw error;
+  if (error) throwSupabaseError(error, 'upsert_failed');
+  console.log('[STAFF_DEVICE_REGISTER]', {
+    phase: 'upsert_success',
+    deviceId: data?.id ?? null,
+    enabled: data?.enabled ?? true,
+    user_id_prefix: userId ? String(userId).slice(0, 8) : null,
+    device_key: deviceKeyRaw
+  });
   return data as StaffDeviceToken;
+}
+
+export async function disableStaffDevicesForUser(
+  userId: string,
+  opts?: { deviceKey?: string | null; fcmToken?: string | null }
+): Promise<number> {
+  const uid = String(userId || '').trim();
+  if (!uid) return 0;
+  const deviceKey = opts?.deviceKey ? String(opts.deviceKey).trim() : null;
+  const fcmToken = opts?.fcmToken ? String(opts.fcmToken).trim() : null;
+
+  if (IS_MOCK || !supabaseAdmin) {
+    let count = 0;
+    for (const item of mockTokens()) {
+      if (String(item.user_id || '') !== uid) continue;
+      if (deviceKey && String(item.device_key || '') !== deviceKey) continue;
+      if (fcmToken && item.fcm_token !== fcmToken) continue;
+      if (item.enabled) {
+        item.enabled = false;
+        item.updated_at = nowIso();
+        count += 1;
+      }
+    }
+    console.log('[STAFF_FCM_TOKEN_DISABLED_MOCK]', { count, reason: 'logout', user_id_prefix: uid.slice(0, 8) });
+    return count;
+  }
+
+  let query = supabaseAdmin
+    .from('staff_device_tokens')
+    .update({ enabled: false, updated_at: nowIso() })
+    .eq('user_id', uid)
+    .eq('enabled', true);
+
+  if (deviceKey) query = query.eq('device_key', deviceKey);
+  if (fcmToken) query = query.eq('fcm_token', fcmToken);
+
+  const { data, error } = await query.select('id');
+  if (error) throw error;
+  const count = (data || []).length;
+  console.log('[STAFF_FCM_TOKEN_DISABLED]', { count, reason: 'logout', user_id_prefix: uid.slice(0, 8) });
+  return count;
 }
 
 export async function disableStaffDeviceTokens(fcmTokens: string[], reason: string): Promise<void> {

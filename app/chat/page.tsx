@@ -15,17 +15,24 @@ import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_CALL_URL, CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
 import ChatNotifyDiagBar from '@/components/chat/ChatNotifyDiagBar';
+import ChatTraceDiagButton from '@/components/chat/ChatTraceDiagButton';
+import StaffNoticeAdminCard from '@/components/chat/StaffNoticeAdminCard';
+import StaffAccountAdminCard from '@/components/chat/StaffAccountAdminCard';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
 import { useChatNotifications } from '@/lib/hooks/useChatNotifications';
 import { useChatReadState } from '@/lib/hooks/useChatReadState';
 import { pcReaderId } from '@/lib/chat/readerIdentity';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
+import { useChatRefetchFallback } from '@/lib/hooks/useChatRefetchFallback';
+import { useChatVisibleTrace } from '@/lib/hooks/useChatVisibleTrace';
+import { registerChatSyncProbe, latestMessageMeta } from '@/lib/chat/syncTrace';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
 import { isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
 import {
   createClientNonce,
   logSendApiResponded,
   logSendClick,
+  lookupClientNonceForMessage,
   registerMessageIdForNonce
 } from '@/lib/chat/sendTrace';
 import { latApiResponded, latApiStart, latSendClick, setLatencySelf } from '@/lib/chat/latencyTrace';
@@ -40,6 +47,7 @@ import {
   TIMEOUT_MS_MAINTENANCE_CREATE
 } from '@/lib/api/timeouts';
 import { log } from '@/lib/logger';
+import { chatTrace, setChatTraceContext } from '@/lib/chat/chatTrace';
 import { CHAT_CLIENT_REV, CHAT_PAGE_SOURCE } from '@/lib/chat/chatClientRev';
 
 function getDeviceSide(): SenderSide {
@@ -51,6 +59,18 @@ function getDeviceSide(): SenderSide {
 function readMobileChatViewport(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia('(max-width: 767px)').matches;
+}
+
+const MANAGER_MODE_STORAGE_KEY = 'autoflow_chat_manager_mode';
+
+function readInitialManagerMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (new URLSearchParams(window.location.search).get('manager') === '1') return true;
+    return sessionStorage.getItem(MANAGER_MODE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 export default function ChatPage() {
@@ -69,6 +89,10 @@ export default function ChatPage() {
   /** INSERT postgres_changes만 기록 — SUBSCRIBED/UPDATE와 구분해 push 실패 확정용 */
   const lastRealtimeInsertPushAtRef = useRef<number | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  // [CHAT_RENDER_DUPLICATE_TRACE] source attribution (logging-only; no behavior change).
+  const sendResponseIdsRef = useRef<Set<string>>(new Set());
+  const realtimeSeenIdsRef = useRef<Set<string>>(new Set());
+  const roomFilterRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const wasNearBottomRef = useRef(true);
   /** Stable handle so the once-mounted scroll effect can ping read-state advance. */
@@ -91,21 +115,38 @@ export default function ChatPage() {
     });
   }, [chatSendUserId]);
   const { messages, setMessages, loadFull: hookLoadFull, initialHydrationComplete } = useChatLoader({
-    loadingRef: isLoadingRef
+    loadingRef: isLoadingRef,
+    syncClient: 'pc',
+    messagesRef,
+    roomFilterRef,
+    initialListLimit: 500
   });
 
   const loadFull = useCallback(
     async (source: string) => {
       lastLoadSourceRef.current = source;
-      return await hookLoadFull(source);
+      const flBefore = messagesRef.current.length;
+      const result = await hookLoadFull(source);
+      // Loader applies via setMessages; messages_after here reads messagesRef which the
+      // loader syncs on merge. Authoritative post-apply count is [CHAT_MESSAGES_AFTER_APPLY].
+      console.log(
+        '[CHAT_APPEND_FULLLOAD]',
+        JSON.stringify({
+          message_id: null,
+          client_nonce: null,
+          body: null,
+          messages_before: flBefore,
+          messages_after: messagesRef.current.length,
+          mode: source
+        })
+      );
+      return result;
     },
     [hookLoadFull]
   );
 
   const [text, setText] = useState('');
   const [roomNo, setRoomNo] = useState('');
-  /** Phase 3: 객실(room_no) 필터. null = 전체. 표시 전용(읽음/호출은 전체 기준 유지). */
-  const [roomFilter, setRoomFilter] = useState<string | null>(null);
   const [keypadOpen, setKeypadOpen] = useState(false);
   const [keypadNum, setKeypadNum] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
@@ -116,6 +157,8 @@ export default function ChatPage() {
   const [submitting, setSubmitting] = useState(false);
   const [urgentMode, setUrgentMode] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showOpsPanel, setShowOpsPanel] = useState(false);
+  const [isManagerMode, setIsManagerMode] = useState(readInitialManagerMode);
   const [isMobileViewport, setIsMobileViewport] = useState(readMobileChatViewport);
   /** soft delete 진행 중 message id — 중복 요청 방지 */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
@@ -155,6 +198,40 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('manager') === '1') {
+      try {
+        sessionStorage.setItem(MANAGER_MODE_STORAGE_KEY, '1');
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.shiftKey || (e.key !== 'D' && e.key !== 'd')) return;
+      e.preventDefault();
+      setIsManagerMode((prev) => {
+        const next = !prev;
+        try {
+          if (next) sessionStorage.setItem(MANAGER_MODE_STORAGE_KEY, '1');
+          else sessionStorage.removeItem(MANAGER_MODE_STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
+        if (!next) {
+          setShowOpsPanel(false);
+          setShowAdminPanel(false);
+        }
+        return next;
+      });
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
     runSessionMigration();
     const u = loadUser();
     if (!u) {
@@ -174,6 +251,17 @@ export default function ChatPage() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Log-only: expose reconnectToken to loadFull traces (loader scope can't see it).
+  useEffect(() => {
+    setChatTraceContext({ reconnectToken: realtimeReconnectToken });
+    chatTrace('reconnect_token_change', {
+      id: null,
+      source: 'reconnect_token_change',
+      messages: messagesRef.current.length,
+      extra: { reconnectToken: realtimeReconnectToken }
+    });
+  }, [realtimeReconnectToken]);
 
   const showChatTestNotification = useCallback(() => {
     void showBrowserNotification({
@@ -232,20 +320,115 @@ export default function ChatPage() {
     [myReaderId, setMessages]
   );
 
-  // Phase 3 객실 필터: 표시 전용. 읽음/호출 훅은 계속 전체 messages를 사용해 기존 동작 유지.
-  const roomOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const m of messages) {
-      const r = String(m.room_no ?? '').trim();
-      if (r) set.add(r);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  // PC: 객실 칩 필터 제거 — 전체 타임라인 표시
+  const visibleMessages = messages;
+
+  // [CHAT_MESSAGES_AFTER_APPLY] — logging-only. Fires once per applied messages change.
+  // Duplicate arrays computed over the FULL array; raw id/nonce/body dumped as last-15 tail
+  // to bound log size. No behavior change.
+  useEffect(() => {
+    const arr = messages;
+    const ids = arr.map((m) => String(m?.id));
+    const nonces = ids.map((id) => lookupClientNonceForMessage(id));
+    const bodies = arr.map((m) => String((m as any)?.message ?? '').slice(0, 40));
+    const dupOf = (list: (string | null)[]) => {
+      const counts = new Map<string, number>();
+      for (const v of list) {
+        if (v == null || v === '') continue;
+        counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+      return Array.from(counts.entries())
+        .filter(([, c]) => c > 1)
+        .map(([value, count]) => ({ value, count }));
+    };
+    console.log(
+      '[CHAT_MESSAGES_AFTER_APPLY]',
+      JSON.stringify({
+        count: arr.length,
+        ids_tail: ids.slice(-15),
+        client_nonce_tail: nonces.slice(-15),
+        body_tail: bodies.slice(-15),
+        duplicate_ids: dupOf(ids),
+        duplicate_client_nonce: dupOf(nonces),
+        duplicate_body: dupOf(bodies)
+      })
+    );
   }, [messages]);
 
-  const visibleMessages = useMemo(() => {
-    if (!roomFilter) return messages;
-    return messages.filter((m) => String(m.room_no ?? '').trim() === roomFilter);
-  }, [messages, roomFilter]);
+  // [CHAT_RENDER_DUPLICATE_TRACE] / [CHAT_RENDER_ARRAY_TRACE] — logging-only.
+  // Only emits when the render array actually contains a duplicate candidate (same text or
+  // same id appearing 2+ times). Attributes each entry to its source. No behavior change.
+  useEffect(() => {
+    const arr = visibleMessages;
+    if (!arr || arr.length === 0) return;
+
+    const isTmp = (id: string) => id.startsWith('tmp-') || id.startsWith('tmp_');
+    const sourceHint = (id: string): string => {
+      if (isTmp(id)) return 'optimistic';
+      if (sendResponseIdsRef.current.has(id)) return 'send_response_or_realtime';
+      if (realtimeSeenIdsRef.current.has(id)) return 'realtime_seen';
+      return 'list_fetch_seen';
+    };
+
+    const ids = arr.map((m) => String(m?.id));
+    const idCounts = new Map<string, number>();
+    for (const id of ids) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+    const duplicateIdCount = Array.from(idCounts.values()).filter((c) => c > 1).length;
+
+    const groups = new Map<string, ChatMessage[]>();
+    for (const m of arr) {
+      const key = String((m as any)?.message ?? '').trim().slice(0, 40);
+      if (!key) continue;
+      const g = groups.get(key) ?? [];
+      g.push(m);
+      groups.set(key, g);
+    }
+    const dupGroups = Array.from(groups.entries()).filter(([, g]) => g.length > 1);
+
+    if (dupGroups.length === 0 && duplicateIdCount === 0) return;
+
+    for (const [prefix, g] of dupGroups) {
+      console.log(
+        '[CHAT_RENDER_DUPLICATE_TRACE]',
+        JSON.stringify({
+          text_prefix: prefix,
+          count: g.length,
+          entries: g.map((m) => {
+            const id = String(m?.id);
+            return {
+              id,
+              is_tmp_id: isTmp(id),
+              client_nonce: lookupClientNonceForMessage(id),
+              created_at: (m as any)?.created_at ?? null,
+              sender_side: (m as any)?.sender_side ?? null,
+              room_no: (m as any)?.room_no ?? null,
+              source_hint: sourceHint(id),
+              has_translated_ko: Boolean((m as any)?.translated_text?.ko),
+              has_translated_ru: Boolean((m as any)?.translated_text?.ru)
+            };
+          })
+        })
+      );
+    }
+
+    console.log(
+      '[CHAT_RENDER_ARRAY_TRACE]',
+      JSON.stringify({
+        total_count: arr.length,
+        unique_id_count: new Set(ids).size,
+        duplicate_id_count: duplicateIdCount,
+        tmp_count: ids.filter(isTmp).length,
+        latest_ids: ids.slice(-10)
+      })
+    );
+  }, [visibleMessages]);
+
+  useChatVisibleTrace({
+    client: 'pc',
+    messages,
+    roomFilter: roomFilterRef.current,
+    userFilter: null
+  });
 
   const handleNotificationClick = useCallback(() => {
     const supported = isBrowserNotificationSupported();
@@ -332,7 +515,49 @@ export default function ChatPage() {
     });
   }, [messages.length]);
 
+  // Stable realtime row-event handler: keeps useChatRealtime's subscribe effect from
+  // re-running every render (which caused unsubscribe→subscribe churn → refetch storm).
+  // Body reads only refs (messagesRef, realtimeSeenIdsRef) + module fns, so deps = [].
+  const handleRowEvent = useCallback((e: { id: string; type: 'INSERT' | 'UPDATE' }) => {
+    realtimeSeenIdsRef.current.add(String(e.id));
+    const rtBefore = messagesRef.current.length;
+    const existing = messagesRef.current.find((m) => String(m?.id) === String(e.id));
+    chatTrace('realtime_enter', {
+      id: String(e.id),
+      client_nonce: lookupClientNonceForMessage(String(e.id)),
+      room: (existing as any)?.room_no ?? null,
+      source: `realtime_${e.type}`,
+      messages: rtBefore
+    });
+    console.log(
+      '[CHAT_APPEND_REALTIME]',
+      JSON.stringify({
+        message_id: e.id,
+        type: e.type,
+        client_nonce: lookupClientNonceForMessage(String(e.id)),
+        body: existing ? String((existing as any)?.message ?? '').slice(0, 40) : null,
+        messages_before: rtBefore,
+        messages_after: e.type === 'INSERT' && !existing ? rtBefore + 1 : rtBefore
+      })
+    );
+  }, []);
+
   // hooks
+  const { handleRealtimeStatus, requestRefetch } = useChatRefetchFallback({
+    loadFull: hookLoadFull,
+    isLoadingRef,
+    isMountedRef,
+    reconnectToken: realtimeReconnectToken,
+    listLimit: 500,
+    lastRealtimeActivityAtRef,
+    // B perf: realtime-quiet watchdog is the single fallback poller now; the blunt
+    // 20s interval was redundant with realtime_quiet_watchdog_full. Event-driven
+    // refetches (focus/visible/subscribed/reconnect/send_ack) stay active.
+    enableIntervalPolling: false,
+    pollIntervalMs: 20000,
+    syncClient: 'pc'
+  });
+
   useChatRealtime({
     supabase,
     setMessages,
@@ -341,7 +566,13 @@ export default function ChatPage() {
     lastRealtimeActivityAtRef,
     lastRealtimeInsertPushAtRef,
     reconnectToken: realtimeReconnectToken,
-    onConnectionStatus: setConnectionStatus
+    onConnectionStatus: setConnectionStatus,
+    onRealtimeStatus: handleRealtimeStatus,
+    // Logging-only: record ids seen via realtime + trace the realtime append path.
+    // Stable ref (useCallback []) so the subscribe effect does not churn per render.
+    onRowEvent: handleRowEvent,
+    syncClient: 'pc',
+    currentUserId: chatSendUserId
   });
 
   useChatWatchdog({
@@ -363,8 +594,28 @@ export default function ChatPage() {
   });
 
   useEffect(() => {
-    // Initial load / retry / abort/reset are handled by `useChatLoader`.
-    // Keep mount/unmount flag for non-loader effects.
+    isMountedRef.current = true;
+    return registerChatSyncProbe('pc', {
+      dumpState: () => ({
+        client: 'pc',
+        message_count: messagesRef.current.length,
+        latest_message_id: latestMessageMeta(messagesRef.current).id,
+        latest_created_at: latestMessageMeta(messagesRef.current).created_at,
+        realtime_status: realtimeConnectedRef.current ? 'SUBSCRIBED' : 'DISCONNECTED',
+        realtime_connected: realtimeConnectedRef.current,
+        reconnect_token: realtimeReconnectToken,
+        selected_room_filter: roomFilterRef.current,
+        user_filter: null,
+        current_user_id: chatSendUserId,
+        current_token_id: null,
+        last_fetch_reason: null,
+        last_fetch_at: null
+      }),
+      refetch: (reason) => requestRefetch(reason)
+    });
+  }, [chatSendUserId, realtimeReconnectToken, requestRefetch]);
+
+  useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
@@ -411,6 +662,33 @@ export default function ChatPage() {
       ai_action: null,
       created_at: new Date().toISOString()
     };
+    {
+      const optBefore = messagesRef.current.length;
+      console.log(
+        '[CHAT_APPEND_OPTIMISTIC]',
+        JSON.stringify({
+          message_id: optimisticId,
+          client_nonce: clientNonce,
+          body: String(optimisticMessage.message ?? '').slice(0, 40),
+          messages_before: optBefore,
+          messages_after: optBefore + 1
+        })
+      );
+      chatTrace('optimistic_append', {
+        id: optimisticId,
+        client_nonce: clientNonce,
+        room: roomNo || null,
+        source: 'pc_send',
+        messages: optBefore + 1
+      });
+    }
+    chatTrace('set_messages', {
+      id: optimisticId,
+      client_nonce: clientNonce,
+      room: roomNo || null,
+      source: 'optimistic_set',
+      messages: messagesRef.current.length + 1
+    });
     setMessages((prev) => [...prev, optimisticMessage]);
     try {
       const clientRequestId = clientNonce;
@@ -486,7 +764,37 @@ export default function ChatPage() {
       registerMessageIdForNonce(clientNonce, String(saved.id));
       logSendApiResponded(clientNonce, String(saved.id), saved.created_at);
       latApiResponded(clientNonce, String(saved.id), Boolean((saved as any)?.translated_text));
-      setMessages((prev) => prev.map((m) => (m.id === optimisticId ? ({ ...m, ...saved } as ChatMessage) : m)));
+      sendResponseIdsRef.current.add(String(saved.id)); // logging-only: render trace source attribution
+      chatTrace('send_success', {
+        id: String(saved.id),
+        client_nonce: clientNonce,
+        room: roomNo || null,
+        source: 'send_response',
+        messages: messagesRef.current.length
+      });
+      // Reconcile (send-success path only): guarantee the optimistic tmp is removed AND the
+      // saved message appears exactly once. WebView2 can deliver the realtime INSERT for
+      // saved.id as a separate entry before this response returns; the old in-place map left
+      // the tmp behind (tmp + real coexisting). Filter the tmp, then merge into the real row
+      // if it already exists, otherwise append the saved row. No loader/realtime/global-dedupe change.
+      chatTrace('set_messages', {
+        id: String(saved.id),
+        client_nonce: clientNonce,
+        room: roomNo || null,
+        source: 'reconcile_send_success',
+        messages: messagesRef.current.length
+      });
+      setMessages((prev) => {
+        const withoutTmp = prev.filter((m) => m.id !== optimisticId);
+        const idx = withoutTmp.findIndex((m) => String(m.id) === String(saved.id));
+        if (idx === -1) {
+          return [...withoutTmp, { ...optimisticMessage, ...saved } as ChatMessage];
+        }
+        const next = [...withoutTmp];
+        next[idx] = { ...next[idx], ...saved } as ChatMessage;
+        return next;
+      });
+      void requestRefetch('send_ack');
       clearInput();
       setUrgentMode(false);
     } catch (error: any) {
@@ -690,90 +998,48 @@ export default function ChatPage() {
     // 채팅 배경: 카카오 연파랑
     <main className="flex h-screen flex-col bg-[#B2C7D9]">
 
-      {/* 헤더: 다크 그레이 테마 */}
-      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 shrink-0">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+      {/* 헤더: 운영 모드 — 채팅 공간 우선 */}
+      <header className="bg-gray-800 border-b border-gray-700 px-3 py-2 shrink-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <div className="font-bold text-white">AutoFlow 채팅</div>
-            <div
-              className="mt-1 rounded border border-lime-400/80 bg-lime-950/80 px-2 py-1 font-mono text-sm font-bold text-lime-300"
-              data-testid="chat-deploy-rev"
-            >
-              rev={CHAT_CLIENT_REV} · {CHAT_PAGE_SOURCE}
-            </div>
-            {/* 서브타이틀: 카카오 포인트 노랑 */}
-            <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
-            {/* 상단 고정: 업데이트 박스 + 항상 보이는 직원 초대 QR (모바일 wrap) */}
-            <div className="mt-2 flex flex-wrap items-start gap-3">
-              <TauriUpdatePanel />
-              <StaffInviteQrCard />
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowAdminPanel((open) => !open)}
-              className="mt-2 rounded-lg border border-yellow-500/50 bg-gray-700 px-3 py-1.5 text-xs font-semibold text-yellow-300 hover:bg-gray-600"
-            >
-              {showAdminPanel ? '상태 문구 닫기' : '상태 문구 관리'}
-            </button>
             {sessionUser ? (
-              <div className="mt-0.5 text-xs font-semibold text-gray-400">로그인: {sessionUser.name}</div>
+              <div className="text-xs font-semibold text-gray-400">로그인: {sessionUser.name}</div>
             ) : null}
             {!canSendToServer ? (
-              <div className="mt-1 text-xs font-semibold text-red-400">
+              <div className="mt-0.5 text-xs font-semibold text-red-400">
                 전송/티켓 생성이 비활성화되었습니다. 관리자 설정이 필요합니다.
               </div>
             ) : null}
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400">
-              {!notificationAudioUnlocked ? (
-                <button
-                  type="button"
-                  onClick={handleEnableAlertSound}
-                  className="rounded-lg border border-amber-500/60 bg-amber-950/40 px-2 py-1 font-semibold text-amber-200 hover:bg-amber-900/50"
-                >
-                  🔊 알림음 켜기
-                </button>
-              ) : null}
-              {browserNotifyPermission !== 'unsupported' && browserNotifyPermission !== 'granted' ? (
-                <button
-                  type="button"
-                  onClick={handleNotificationClick}
-                  className="rounded-lg border border-sky-500/70 bg-sky-950/50 px-2 py-1 font-semibold text-sky-100 hover:bg-sky-900/60"
-                >
-                  {browserNotifyPermission === 'denied'
-                    ? '탭 밖 OS 알림 차단됨'
-                    : '탭 밖 OS 알림 허용 (필수)'}
-                </button>
-              ) : null}
-              {browserNotifyPermission === 'granted' && (
-                <button
-                  type="button"
-                  onClick={handleTestNotificationClick}
-                  className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
-                >
-                  테스트 알림
-                </button>
-              )}
-              <span className="text-gray-400">
-                브라우저 알림:{' '}
-                {browserNotifyPermission === 'granted'
-                  ? '허용됨'
-                  : browserNotifyPermission === 'denied'
-                    ? '차단됨'
-                    : browserNotifyPermission === 'unsupported'
-                      ? '미지원'
-                      : '미설정'}
-              </span>
-              <span className="text-gray-400">
-                연결 상태:{' '}
-                {connectionStatus === 'connected'
-                  ? 'connected'
-                  : connectionStatus === 'degraded'
-                    ? 'degraded'
-                    : 'reconnecting'}
-              </span>
-            </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden text-[11px] text-gray-400 sm:inline">
+              연결:{' '}
+              {connectionStatus === 'connected'
+                ? 'connected'
+                : connectionStatus === 'degraded'
+                  ? 'degraded'
+                  : 'reconnecting'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isManagerMode) {
+                  setIsManagerMode(true);
+                  try {
+                    sessionStorage.setItem(MANAGER_MODE_STORAGE_KEY, '1');
+                  } catch {
+                    /* ignore */
+                  }
+                  setShowOpsPanel(true);
+                  return;
+                }
+                setShowOpsPanel((open) => !open);
+              }}
+              className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 text-xs font-semibold text-gray-200 hover:bg-gray-600"
+            >
+              {isManagerMode && showOpsPanel ? '관리 닫기' : '관리'}
+            </button>
             <button
               onClick={() => {
                 log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/login', reason: 'manual_logout' });
@@ -787,48 +1053,84 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <ChatNotifyDiagBar onRequestPermission={handleNotificationClick} />
-      {/* ChatNotifyDiagBar: components/chat/ChatNotifyDiagBar.tsx — always mounted, no conditional */}
-
-      <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
-
-      <StaffInvitePanel variant="chat" collapsible defaultOpen={false} messages={messages} />
-
-      <StaffChatAdminSection open={showAdminPanel} />
-
-      {/* Phase 3: 객실 필터 (전체 + 객실번호). 표시 전용. */}
-      {roomOptions.length > 0 ? (
-        <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50 px-3 py-2">
-          <span className="shrink-0 text-xs font-semibold text-gray-500">객실</span>
+      {isManagerMode && showOpsPanel ? (
+        <div className="shrink-0 border-b border-gray-300 bg-gray-100 px-3 py-2 space-y-2">
+          <div
+            className="rounded border border-lime-400/80 bg-lime-950/80 px-2 py-1 font-mono text-xs font-bold text-lime-300"
+            data-testid="chat-deploy-rev"
+          >
+            rev={CHAT_CLIENT_REV} · {CHAT_PAGE_SOURCE} · build: {buildTag}
+          </div>
+          <div className="flex flex-wrap items-start gap-3">
+            <TauriUpdatePanel />
+            <StaffInviteQrCard />
+          </div>
+          <ChatNotifyDiagBar onRequestPermission={handleNotificationClick} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ChatTraceDiagButton />
+          </div>
+          <StaffNoticeAdminCard />
+          <StaffAccountAdminCard />
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {!notificationAudioUnlocked ? (
+              <button
+                type="button"
+                onClick={handleEnableAlertSound}
+                className="rounded-lg border border-amber-500/60 bg-amber-950/40 px-2 py-1 font-semibold text-amber-200 hover:bg-amber-900/50"
+              >
+                🔊 알림음 켜기
+              </button>
+            ) : null}
+            {browserNotifyPermission !== 'unsupported' && browserNotifyPermission !== 'granted' ? (
+              <button
+                type="button"
+                onClick={handleNotificationClick}
+                className="rounded-lg border border-sky-500/70 bg-sky-950/50 px-2 py-1 font-semibold text-sky-100 hover:bg-sky-900/60"
+              >
+                {browserNotifyPermission === 'denied'
+                  ? '탭 밖 OS 알림 차단됨'
+                  : '탭 밖 OS 알림 허용 (필수)'}
+              </button>
+            ) : null}
+            {browserNotifyPermission === 'granted' ? (
+              <button
+                type="button"
+                onClick={handleTestNotificationClick}
+                className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
+              >
+                테스트 알림
+              </button>
+            ) : null}
+            <span className="text-gray-600">
+              브라우저 알림:{' '}
+              {browserNotifyPermission === 'granted'
+                ? '허용됨'
+                : browserNotifyPermission === 'denied'
+                  ? '차단됨'
+                  : browserNotifyPermission === 'unsupported'
+                    ? '미지원'
+                    : '미설정'}
+            </span>
+          </div>
           <button
             type="button"
-            onClick={() => setRoomFilter(null)}
-            className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
-              roomFilter === null ? 'bg-gray-800 text-white' : 'border border-gray-300 bg-white text-gray-600'
-            }`}
+            onClick={() => setShowAdminPanel((open) => !open)}
+            className="rounded-lg border border-yellow-500/50 bg-white px-3 py-1.5 text-xs font-semibold text-yellow-800 hover:bg-yellow-50"
           >
-            전체
+            {showAdminPanel ? '상태 문구 닫기' : '상태 문구 관리'}
           </button>
-          {roomOptions.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setRoomFilter(r)}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
-                roomFilter === r ? 'bg-[#FEE500] text-gray-900' : 'border border-gray-300 bg-white text-gray-600'
-              }`}
-            >
-              {r}호
-            </button>
-          ))}
+          <StaffInvitePanel variant="chat" collapsible defaultOpen={false} messages={messages} />
         </div>
       ) : null}
 
+      <StaffInvitePanel summaryOnly messages={messages} />
+
+      <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
+
+      <StaffChatAdminSection open={showAdminPanel} />
+
       {/* 메시지 목록 — 배경 main에서 상속 */}
       <section ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {roomFilter && visibleMessages.length === 0 ? (
-          <p className="py-8 text-center text-sm text-gray-500">{roomFilter}호 메시지가 없습니다.</p>
-        ) : null}
         <ChatMessages
           messages={visibleMessages}
           currentUserId={sessionUser ? chatSendUserId : null}
@@ -975,7 +1277,6 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="px-3 pb-1 text-right text-[10px] text-gray-500">build: {buildTag}</div>
       <Navigation active="chat" />
     </main>
   );

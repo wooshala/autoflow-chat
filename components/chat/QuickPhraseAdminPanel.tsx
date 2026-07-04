@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
-import { QUICK_PHRASES_ADMIN_URL } from '@/lib/chatApi';
+import { staffAdminRequestHeaders } from '@/lib/auth/staffAdminSecret';
+import { QUICK_PHRASES_ADMIN_URL, QUICK_PHRASES_TRANSLATE_URL } from '@/lib/chatApi';
 import type { ChatQuickPhrase } from '@/lib/types';
 
 export default function QuickPhraseAdminPanel() {
@@ -14,22 +15,49 @@ export default function QuickPhraseAdminPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editKo, setEditKo] = useState('');
   const [editRu, setEditRu] = useState('');
+  const [translating, setTranslating] = useState(false);
+  const [secretMissing, setSecretMissing] = useState(false);
+
+  const headers = useMemo(() => staffAdminRequestHeaders(), []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetchEnvelope<{ phrases: ChatQuickPhrase[] }>(QUICK_PHRASES_ADMIN_URL);
+    if (!headers['x-staff-admin-secret']) {
+      setSecretMissing(true);
+      setLoading(false);
+      return;
+    }
+    setSecretMissing(false);
+    const res = await fetchEnvelope<{ phrases: ChatQuickPhrase[] }>(QUICK_PHRASES_ADMIN_URL, { headers });
     if (res.ok && res.data?.phrases) setPhrases(res.data.phrases);
     setLoading(false);
-  }, []);
+  }, [headers]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  async function translateField(source: string, from: 'ko' | 'ru', to: 'ko' | 'ru'): Promise<string | null> {
+    const text = source.trim();
+    if (!text) return null;
+    setTranslating(true);
+    try {
+      const res = await fetchEnvelope<{ translated: string }>(QUICK_PHRASES_TRANSLATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ text, from, to })
+      });
+      if (!res.ok) return null;
+      return res.data.translated?.trim() || null;
+    } finally {
+      setTranslating(false);
+    }
+  }
+
   async function handleCreate() {
     const res = await fetch(QUICK_PHRASES_ADMIN_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ phrase_key: draftKey, ko: draftKo, ru: draftRu })
     });
     if (res.ok) {
@@ -43,7 +71,7 @@ export default function QuickPhraseAdminPanel() {
   async function handleSaveEdit(id: string) {
     await fetch(QUICK_PHRASES_ADMIN_URL, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ id, ko: editKo, ru: editRu })
     });
     setEditingId(null);
@@ -52,7 +80,7 @@ export default function QuickPhraseAdminPanel() {
 
   async function handleDelete(id: string) {
     if (!confirm('이 Quick Phrase를 삭제할까요?')) return;
-    await fetch(`${QUICK_PHRASES_ADMIN_URL}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await fetch(`${QUICK_PHRASES_ADMIN_URL}?id=${encodeURIComponent(id)}`, { method: 'DELETE', headers });
     void load();
   }
 
@@ -66,15 +94,23 @@ export default function QuickPhraseAdminPanel() {
     setPhrases(next);
     await fetch(QUICK_PHRASES_ADMIN_URL, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ ids: next.map((p) => p.id) })
     });
     void load();
   }
 
+  if (secretMissing) {
+    return (
+      <div className="rounded-xl border border-rose-400/60 bg-rose-950/30 p-3 text-xs text-rose-200">
+        STAFF_ADMIN_SECRET 미설정 — 공용 문구 관리를 사용할 수 없습니다.
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-gray-600 bg-gray-900/60 p-3 text-sm text-gray-200">
-      <div className="mb-2 font-bold text-yellow-400">Quick Phrase 관리 (모바일 즉시 반영)</div>
+      <div className="mb-2 font-bold text-yellow-400">공용 Quick Phrase (모바일 즉시 반영)</div>
       {loading ? <p className="text-xs text-gray-400">불러오는 중…</p> : null}
       <div className="space-y-1">
         {phrases.map((p, idx) => (
@@ -83,7 +119,9 @@ export default function QuickPhraseAdminPanel() {
             {editingId === p.id ? (
               <>
                 <input value={editKo} onChange={(e) => setEditKo(e.target.value)} className="min-w-[5rem] rounded border border-gray-600 bg-gray-700 px-1 text-xs" placeholder="ko" />
+                <button type="button" disabled={translating || !editKo.trim()} onClick={() => void translateField(editKo, 'ko', 'ru').then((v) => v && setEditRu(v))} className="text-[10px] text-sky-300 disabled:opacity-40">→RU</button>
                 <input value={editRu} onChange={(e) => setEditRu(e.target.value)} className="min-w-[5rem] rounded border border-gray-600 bg-gray-700 px-1 text-xs" placeholder="ru" />
+                <button type="button" disabled={translating || !editRu.trim()} onClick={() => void translateField(editRu, 'ru', 'ko').then((v) => v && setEditKo(v))} className="text-[10px] text-sky-300 disabled:opacity-40">→KO</button>
                 <button type="button" onClick={() => void handleSaveEdit(p.id)} className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold">저장</button>
               </>
             ) : (
@@ -102,7 +140,9 @@ export default function QuickPhraseAdminPanel() {
       <div className="mt-2 flex flex-wrap items-center gap-1">
         <input value={draftKey} onChange={(e) => setDraftKey(e.target.value)} placeholder="phrase_key" className="w-24 rounded border border-gray-600 bg-gray-700 px-1 py-1 text-xs" />
         <input value={draftKo} onChange={(e) => setDraftKo(e.target.value)} placeholder="한국어" className="w-24 rounded border border-gray-600 bg-gray-700 px-1 py-1 text-xs" />
+        <button type="button" disabled={translating || !draftKo.trim()} onClick={() => void translateField(draftKo, 'ko', 'ru').then((v) => v && setDraftRu(v))} className="text-[10px] text-sky-300 disabled:opacity-40">→RU</button>
         <input value={draftRu} onChange={(e) => setDraftRu(e.target.value)} placeholder="Русский" className="w-28 rounded border border-gray-600 bg-gray-700 px-1 py-1 text-xs" />
+        <button type="button" disabled={translating || !draftRu.trim()} onClick={() => void translateField(draftRu, 'ru', 'ko').then((v) => v && setDraftKo(v))} className="text-[10px] text-sky-300 disabled:opacity-40">→KO</button>
         <button type="button" onClick={() => void handleCreate()} className="rounded bg-[#FEE500] px-2 py-1 text-xs font-bold text-gray-900">추가</button>
       </div>
     </div>

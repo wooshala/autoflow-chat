@@ -71,6 +71,20 @@ export async function resolveStaffInviteByToken(token: string, siteId = getSiteI
 }
 
 /** Resolve token even when revoked — for blocked-session messaging. */
+/** Matches device registration: enabled and not soft-revoked. */
+export function isStaffInviteActive(invite: Pick<StaffInvite, 'enabled' | 'revoked_at'>): boolean {
+  return Boolean(invite.enabled) && !invite.revoked_at;
+}
+
+export async function resolveActiveStaffInviteByToken(
+  token: string,
+  siteId = getSiteId()
+): Promise<StaffInvite | null> {
+  const invite = await resolveStaffInviteByTokenAny(token, siteId);
+  if (!invite || !isStaffInviteActive(invite)) return null;
+  return invite;
+}
+
 export async function resolveStaffInviteByTokenAny(token: string, siteId = getSiteId()): Promise<StaffInvite | null> {
   const t = String(token || '').trim();
   if (!t) return null;

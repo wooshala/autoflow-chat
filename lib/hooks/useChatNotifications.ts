@@ -11,11 +11,13 @@ import {
   isNotificationAudioUnlocked,
   NOTIFY_BEEP_GAIN,
   playNotificationTone,
-  peekNotificationAudioDiag,
   unlockNotificationAudio
 } from '@/lib/chat/playNotificationTone';
 import { shouldCreateQueueItem } from '@/lib/chat/chatOpsQueue';
+import { getNotifiedMessageIdsMap, tryClaimMessageNotify } from '@/lib/chat/chatNotifyMessageDedupe';
 import { canShowBrowserNotification, isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
+import { lookupClientNonceForMessage } from '@/lib/chat/sendTrace';
+import { chatTrace } from '@/lib/chat/chatTrace';
 import { log } from '@/lib/logger';
 
 const TAG = '[CHAT_NOTIFY]';
@@ -112,6 +114,8 @@ export function useChatNotifications({
   const knownIdsRef = useRef<Set<string>>(new Set());
   const notifiedIdsRef = useRef<Set<string>>(new Set());
   const notifiedBrowserIdsRef = useRef<Set<string>>(new Set());
+  /** Shared with module-level store — survives hook remount within TTL window. */
+  const notifiedMessageIdsRef = useRef<Map<string, number>>(getNotifiedMessageIdsMap());
   const seededRef = useRef(false);
 
   const roomNoRef = useRef(roomNo);
@@ -427,6 +431,7 @@ export function useChatNotifications({
 
       // Exclusions
       if ((msg as any)?.is_deleted) {
+        console.log('[CHAT_SOUND_SKIPPED]', { messageId: id, reason: 'deleted' });
         notified.add(id);
         if (DEBUG_NOTIFY) {
           log.info('[CHAT_NOTIFY_SKIP]', {
@@ -458,11 +463,7 @@ export function useChatNotifications({
       const isOwnUser = Boolean(uid) && msgUserId && String(msgUserId) === String(uid);
       const shouldTreatAsOwnMessageSkip = isOwnUser && msgSide !== 'mobile';
       if (shouldTreatAsOwnMessageSkip) {
-        console.log('[CHAT_SOUND_SKIPPED_SELF]', {
-          messageId: id,
-          senderId: msgUserId,
-          currentUserId: uid
-        });
+        console.log('[CHAT_SOUND_SKIPPED]', { messageId: id, reason: 'self', senderId: msgUserId, currentUserId: uid });
         notified.add(id);
         if (DEBUG_NOTIFY) {
           log.info('[CHAT_NOTIFY_SKIP]', {
@@ -510,7 +511,6 @@ export function useChatNotifications({
       }
 
       const visible = typeof document !== 'undefined' && document.visibilityState === 'visible';
-      const hidden = typeof document !== 'undefined' && (document.hidden || document.visibilityState !== 'visible');
       const hasFocus =
         typeof document !== 'undefined' && typeof document.hasFocus === 'function'
           ? document.hasFocus()
@@ -522,6 +522,30 @@ export function useChatNotifications({
           : !hasFocusRef.current;
       const sameRoom = isSameRoomForNotify(viewRoom, msg);
 
+      console.log('[CHAT_NOTIFY_ATTEMPT]', {
+        message_id: id,
+        source: 'useChatNotifications_messages_effect',
+        created_at: (msg as any)?.created_at ?? null,
+        sender_id: msgUserId,
+        current_user_id: uid,
+        reason: 'inbound_new_message'
+      });
+
+      if (!tryClaimMessageNotify(id)) {
+        console.log('[CHAT_NOTIFY_SUPPRESSED_DUPLICATE]', { message_id: id });
+        notified.add(id);
+        if (DEBUG_VERBOSE) {
+          log.debug('[CHAT_NOTIFY_SKIPPED]', {
+            id,
+            reason: 'dedupe_ttl',
+            dedupe_map_size: notifiedMessageIdsRef.current.size,
+            text: String((msg as any)?.message ?? '').slice(0, 40),
+            created_at: (msg as any)?.created_at ?? null
+          });
+        }
+        continue;
+      }
+
       // Mark first to guarantee de-dupe even if toast/sound fails.
       notified.add(id);
 
@@ -532,7 +556,7 @@ export function useChatNotifications({
       const visibilityState =
         typeof document !== 'undefined' ? document.visibilityState : null;
       const soundUnlocked = isNotificationAudioUnlocked();
-      const allowHidden = isBackgroundLike;
+      const nativeAlreadyPlaysSound = isBackgroundLike;
 
       console.log('[CHAT_NOTIFY_RECEIVED]', {
         messageId: id,
@@ -542,7 +566,7 @@ export function useChatNotifications({
         notificationPermission,
         soundUnlocked,
         notifyGain: NOTIFY_BEEP_GAIN,
-        allowHidden
+        nativeAlreadyPlaysSound
       });
 
       const preview = messagePreview(msg);
@@ -552,13 +576,19 @@ export function useChatNotifications({
       const category = classification.mainCategory;
       const categoryLabel = getCategoryLabel(classification.mainCategory);
       const tone = getNotificationTone(classification);
+      const isStatusOnlyMsg = classification.flags.status && !classification.flags.request;
+      // Inbound chat always gets an audible tone unless status-only (handled below).
+      let soundTone: NotificationTone = tone;
+      if (soundTone === 'silent' && !isStatusOnlyMsg) {
+        soundTone = 'info';
+      }
       const dedupeKey = makeNotificationDedupeKey({
         roomNumber: classification.roomNumber,
         mainCategory: classification.mainCategory,
         urgent: classification.flags.urgent,
         fallbackText: preview
       });
-      const shouldPlay = shouldPlayNotificationSound(dedupeKey, tone);
+      const shouldPlay = shouldPlayNotificationSound(dedupeKey, soundTone);
       const channels = decideNotifyChannels({ isBackgroundLike, tone, senderSide: msgSide || null });
       if (DEBUG_VERBOSE) {
         log.info('[CHAT_NOTIFY_CHANNEL_DECISION]', {
@@ -614,6 +644,14 @@ export function useChatNotifications({
           hasFocus,
           visibilityState: typeof document !== 'undefined' ? document.visibilityState : null
         });
+        chatTrace('notify_popup', {
+          id,
+          client_nonce: lookupClientNonceForMessage(id),
+          room: roomLabel || (msg.room_no != null ? String(msg.room_no) : null),
+          source: 'in_app_toast',
+          messages: messages.length,
+          extra: { sender_side: msgSide || null, tone }
+        });
         pushToast({
           messageId: id,
           body: toastBody,
@@ -633,57 +671,40 @@ export function useChatNotifications({
           tone
         });
       }
-      const willPlaySound = channels.playInAppSound && shouldPlay;
+      const willPlaySound = shouldPlay;
       if (DEBUG_VERBOSE) {
         log.info('[CHAT_SOUND_DECISION]', {
           id,
           tone,
+          soundTone,
+          isStatusOnlyMsg,
           visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
           hasFocus,
           isBackgroundLike,
           willPlaySound
         });
       }
-      if (willPlaySound) {
-        console.log('[CHAT_SOUND_PLAY]', {
-          messageId: id,
-          soundEnabled: channels.playInAppSound,
-          tone,
-          allowHidden: isBackgroundLike,
-          notifyGain: NOTIFY_BEEP_GAIN,
-          soundUnlocked
+      if (isStatusOnlyMsg) {
+        console.log('[CHAT_SOUND_SKIPPED]', { messageId: id, reason: 'status', tone });
+      } else if (soundTone === 'silent') {
+        console.log('[CHAT_SOUND_SKIPPED]', { messageId: id, reason: 'silent', tone: soundTone });
+      } else if (!shouldPlay) {
+        if (DEBUG_VERBOSE) {
+          log.debug('[CHAT_SOUND_SKIPPED]', { messageId: id, reason: 'duplicate', tone: soundTone });
+        }
+      } else {
+        console.log('[CHAT_SOUND_ATTEMPT]', { message_id: id });
+        chatTrace('play_sound', {
+          id,
+          client_nonce: lookupClientNonceForMessage(id),
+          room: roomLabel || (msg.room_no != null ? String(msg.room_no) : null),
+          source: 'notify_effect',
+          messages: messages.length,
+          extra: { tone: soundTone, nativeAlreadyPlaysSound }
         });
-        void playNotificationTone(tone, { allowHidden: isBackgroundLike }).then((ok) => {
-          if (DEBUG_VERBOSE) log.info('[CHAT_SOUND_RESULT]', { id, ok, tone });
-          if (ok) {
-            console.log('[CHAT_SOUND_PLAY_OK]', {
-              messageId: id,
-              tone,
-              allowHidden: isBackgroundLike,
-              notifyGain: NOTIFY_BEEP_GAIN
-            });
-          } else {
-            console.log('[CHAT_SOUND_PLAY_FAILED]', {
-              messageId: id,
-              reason: 'play_returned_false',
-              tone,
-              allowHidden: isBackgroundLike,
-              notifyGain: NOTIFY_BEEP_GAIN,
-              diag: peekNotificationAudioDiag()
-            });
-          }
+        void playNotificationTone(soundTone, { nativeAlreadyPlaysSound, messageId: id }).then((ok) => {
+          if (DEBUG_VERBOSE) log.info('[CHAT_SOUND_RESULT]', { id, ok, tone: soundTone });
         });
-      } else if (!channels.playInAppSound) {
-        console.log('[CHAT_SOUND_SKIPPED_DISABLED]', {
-          messageId: id,
-          soundEnabled: false
-        });
-      } else if (DEBUG_VERBOSE) {
-        let reason: string = 'unknown';
-        if (tone === 'silent') reason = 'silent_tone';
-        else if (isBackgroundLike) reason = 'background_like';
-        else if (!shouldPlay) reason = 'duplicate';
-        log.debug('[CHAT_SOUND_SKIPPED]', { id, reason, tone });
       }
 
       // Browser OS notification: for hidden tab OR urgent OR mobile-sent messages.
@@ -732,7 +753,7 @@ export function useChatNotifications({
         hasFocus,
         visibilityState,
         soundUnlocked,
-        allowHidden,
+        nativeAlreadyPlaysSound,
         isBackgroundLike,
         browserDedupeHit,
         shouldShowBrowserNotification
@@ -753,6 +774,14 @@ export function useChatNotifications({
           isBackgroundLike,
           hasFocus,
           visibilityState
+        });
+        chatTrace('notify_popup', {
+          id,
+          client_nonce: lookupClientNonceForMessage(id),
+          room: roomLabel || (msg.room_no != null ? String(msg.room_no) : null),
+          source: 'os_notification',
+          messages: messages.length,
+          extra: { sender_side: msgSide || null, tone, title }
         });
         void showBrowserNotification({
           title,
@@ -831,9 +860,8 @@ export function useChatNotifications({
       // (non-actionable general chatter) and status-only updates (e.g. 근무
       // 가능/청소 중 — flags.status without an actionable request); a status
       // message that also carries a request still counts.
-      const isStatusOnlyMsg = classification.flags.status && !classification.flags.request;
-      const taskbarAttentionEligible = tone !== 'silent' && !isStatusOnlyMsg;
-      if (taskbarAttentionEligible) {
+      const taskbarAttentionEligible = soundTone !== 'silent' && !isStatusOnlyMsg;
+      if (taskbarAttentionEligible && isBackgroundLike) {
         requestNativeTaskbarAttention();
       }
 

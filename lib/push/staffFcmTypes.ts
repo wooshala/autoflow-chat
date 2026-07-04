@@ -8,6 +8,11 @@ export type StaffFcmDataPayload = {
   urgency: 'normal' | 'urgent';
   category?: string;
   auto_tts_default?: 'true' | 'false';
+  /** Local notification title/body when using data-only FCM (all values are strings). */
+  notify_title?: string;
+  notify_body?: string;
+  /** Diagnostic: target Android channel id (v3). */
+  android_channel_id?: string;
 };
 
 export type StaffFcmNotificationPayload = {

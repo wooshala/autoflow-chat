@@ -1,6 +1,13 @@
 import { NextRequest } from 'next/server';
-import { jsonErr, jsonOk } from '@/lib/api/envelope';
+import { formatUnknownError, jsonErr, jsonOk } from '@/lib/api/envelope';
 import { registerStaffDeviceToken } from '@/lib/services/staffDevices';
+
+const REGISTER_ERROR_MSG_MAX = 2000;
+
+function truncateRegisterMessage(msg: string): string {
+  if (msg.length <= REGISTER_ERROR_MSG_MAX) return msg;
+  return `${msg.slice(0, REGISTER_ERROR_MSG_MAX)}…[truncated]`;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,7 +35,7 @@ export async function POST(req: NextRequest) {
       }
     });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = truncateRegisterMessage(formatUnknownError(e));
     if (msg === 'INVITE_REVOKED') {
       return jsonErr('INVITE_REVOKED', 'Staff invite is revoked.', 403);
     }
@@ -38,7 +45,7 @@ export async function POST(req: NextRequest) {
     if (msg === 'FCM_TOKEN_REQUIRED' || msg === 'FCM_TOKEN_INVALID') {
       return jsonErr(msg, 'Valid fcm_token is required.', 400);
     }
-    console.error('[STAFF_DEVICE_REGISTER_FAILED]', { error: msg });
+    console.error('[STAFF_DEVICE_REGISTER_FAILED]', { error: msg, raw: e });
     return jsonErr('STAFF_DEVICE_REGISTER_FAILED', msg, 500);
   }
 }

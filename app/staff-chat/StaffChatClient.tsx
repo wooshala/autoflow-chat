@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import {
   type AutoflowUser,
@@ -10,12 +11,17 @@ import {
   staffKeyLabel
 } from '@/lib/auth';
 import { fetchEnvelope } from '@/lib/api/envelope';
-import { CHAT_SEND_URL, STAFF_INVITES_URL } from '@/lib/chatApi';
+import { CHAT_SEND_URL, STAFF_INVITES_URL, STAFF_LOGIN_ROSTER_URL, STAFF_LOGIN_URL, STAFF_LOGOUT_URL, STAFF_SESSION_URL } from '@/lib/chatApi';
 import { TIMEOUT_MS_CHAT_LIST, TIMEOUT_MS_CHAT_SEND } from '@/lib/api/timeouts';
-import type { ChatMessage } from '@/lib/types';
+import type { ChatMessage, StaffInvite } from '@/lib/types';
+import { formatKSTShort } from '@/lib/formatKST';
+import type { StaffAccountPublic } from '@/lib/services/staffAccounts';
 import { unwrapChatSendEnvelopeData } from '@/lib/api/unwrapChatSendResponse';
 import { useChatLoader } from '@/lib/hooks/useChatLoader';
 import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
+import { useChatRefetchFallback } from '@/lib/hooks/useChatRefetchFallback';
+import { useChatVisibleTrace } from '@/lib/hooks/useChatVisibleTrace';
+import { registerChatSyncProbe, latestMessageMeta } from '@/lib/chat/syncTrace';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
 import { useChatRenderTrace } from '@/lib/hooks/useChatRenderTrace';
 import {
@@ -39,7 +45,7 @@ import {
   isBrowserNotificationSupported,
   showBrowserNotification
 } from '@/lib/chat/browserNotifications';
-import { playNotificationTone, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
+import { unlockNotificationAudio, unlockStaffSound, playStaffSound } from '@/lib/chat/playNotificationTone';
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import { normalizeNotifyBody } from '@/lib/chat/normalizeNotifyBody';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
@@ -66,6 +72,8 @@ import { isVoiceAvailableForLocale } from '@/lib/chat/staffTts';
 import { noteStaffTtsMessageReceived } from '@/lib/chat/staffTtsDiagState';
 import { logStaffTtsTriggerCheck } from '@/lib/chat/staffTtsTriggerCheck';
 import { useStaffRuVoiceAvailability } from '@/lib/hooks/useStaffRuVoiceAvailability';
+import { useStaffNotice } from '@/lib/hooks/useStaffNotice';
+import { useStaffWebSpeech } from '@/lib/hooks/useStaffWebSpeech';
 import { useStaffTtsDiagStatus } from '@/lib/hooks/useStaffTtsDiagStatus';
 import { useNotificationAudioUnlock } from '@/lib/hooks/useNotificationAudioUnlock';
 import { staffChatLog } from '@/lib/chat/staffChatLog';
@@ -74,6 +82,8 @@ import {
   resolveStaffChatSessionIdentity
 } from '@/lib/chat/staffChatSelfMessage';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
+import StaffNativeSoundPicker from '@/components/staff-chat/StaffNativeSoundPicker';
+import StaffNoticeBanner from '@/components/staff-chat/StaffNoticeBanner';
 import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
@@ -85,12 +95,18 @@ import { buildStaffChatRenderTimeline, logStaffChatVisibleMessages } from '@/lib
 import { useChatReadState } from '@/lib/hooks/useChatReadState';
 import { inviteReaderId, pcReaderId } from '@/lib/chat/readerIdentity';
 import {
+  accountPublicToInviteSession,
+  clearLegacyInviteStorageOnce,
+  clearStaffSession,
+  loadStoredSessionToken,
+  saveStaffSession,
+  staffSessionAuthHeaders
+} from '@/lib/auth/staffAccountSession';
+import {
   clearStoredInviteToken,
   inviteToSession,
   loadStoredInviteToken,
   readDeprecatedUserParamFromUrl,
-  readEntryJoinTokenFromUrl,
-  readInviteTokenFromUrl,
   saveStoredInviteToken,
   type StaffInviteSession
 } from '@/lib/auth/staffInviteSession';
@@ -106,8 +122,14 @@ import {
 import {
   loadStaffAlertsEnabled,
   loadStaffAutoTtsEnabled,
+  loadStaffAlertVolume,
+  loadStaffSoundKey,
   saveStaffAlertsEnabled,
-  saveStaffAutoTtsEnabled
+  saveStaffAutoTtsEnabled,
+  saveStaffAlertVolume,
+  saveStaffSoundKey,
+  staffSoundSrc,
+  type StaffSoundKey
 } from '@/lib/chat/staffAlertPrefs';
 import { isInAppForegroundVisible, isOsBackgroundLike } from '@/lib/chat/notifyForeground';
 
@@ -115,12 +137,31 @@ import { isInAppForegroundVisible, isOsBackgroundLike } from '@/lib/chat/notifyF
 const OS_NOTIFY_BODY_MAX = 100;
 
 type ListPhase = 'loading' | 'ready' | 'error';
-type SessionSource = 'localStorage' | 'query_param' | 'invite_token' | 'none';
-type InvitePhase = 'loading' | 'ready' | 'invalid' | 'revoked' | 'join';
+type SessionSource = 'localStorage' | 'query_param' | 'invite_token' | 'account_session' | 'none';
+type InvitePhase = 'loading' | 'ready' | 'invalid' | 'revoked' | 'join' | 'login' | 'deactivated';
+
+/** URL query only — never reads invite localStorage. */
+function readBootstrapUrlParam(
+  searchParams: URLSearchParams,
+  key: string
+): string | null {
+  const fromHook = searchParams.get(key)?.trim();
+  if (fromHook) return fromHook;
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get(key)?.trim() || null;
+}
+
+function logBootstrapPhase1(payload: Record<string, unknown>) {
+  if (typeof console !== 'undefined') {
+    console.info('[STAFF_BOOTSTRAP_PHASE1]', payload);
+  }
+}
 
 function StaffChatPageInner() {
+  const searchParams = useSearchParams();
   const { t, locale, setLocale, hydrated: i18nHydrated } = useI18n('ru');
   const ruVoiceReady = useStaffRuVoiceAvailability();
+  const { notice: staffNotice } = useStaffNotice();
   const {
     diagMode,
     serverTtsAvailable,
@@ -146,6 +187,13 @@ function StaffChatPageInner() {
   const [joinLang, setJoinLang] = useState<StaffLocale>('ru');
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinSubmitting, setJoinSubmitting] = useState(false);
+  const [loginCode, setLoginCode] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [loginRoster, setLoginRoster] = useState<Array<{ accountId: string; displayName: string }>>([]);
+  const [loginRosterLoading, setLoginRosterLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [logoutSubmitting, setLogoutSubmitting] = useState(false);
   const [deprecatedWarned, setDeprecatedWarned] = useState(false);
   const [listPhase, setListPhase] = useState<ListPhase>('loading');
   const [listError, setListError] = useState<string | null>(null);
@@ -191,6 +239,14 @@ function StaffChatPageInner() {
   const [soundEnabled, setSoundEnabled] = useState(() =>
     typeof window !== 'undefined' ? loadStaffAlertsEnabled() : true
   );
+  const [alertVolume, setAlertVolume] = useState(() =>
+    typeof window !== 'undefined' ? loadStaffAlertVolume() : 0.6
+  );
+  const alertVolumeRef = useRef(alertVolume);
+  const [alertSoundKey, setAlertSoundKey] = useState<StaffSoundKey>(() =>
+    typeof window !== 'undefined' ? loadStaffSoundKey() : 'default'
+  );
+  const alertSoundSrcRef = useRef(staffSoundSrc(alertSoundKey));
   const [autoTtsEnabled, setAutoTtsEnabled] = useState(() =>
     typeof window !== 'undefined' ? loadStaffAutoTtsEnabled() : false
   );
@@ -227,6 +283,8 @@ function StaffChatPageInner() {
   const chatSendUserId = staffSession.currentUserId;
   const staffKey = legacyResolved.key;
   const actorName = staffSession.currentSenderName || staffKeyLabel(staffKey);
+  const phraseRequestHeaders = useMemo(() => staffSessionAuthHeaders(), [inviteSession?.inviteId, invitePhase]);
+  const webSpeech = useStaffWebSpeech(staffSession.spokenLang);
 
   const supabase = useMemo(() => createBrowserSupabase(), []);
   const realtimeConnectedRef = useRef(false);
@@ -236,6 +294,7 @@ function StaffChatPageInner() {
   const lastRealtimeInsertPushAtRef = useRef<number | null>(null);
   const safeSinceRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const staffRoomFilterRef = useRef<string | null>(null);
   const [realtimeReconnectToken, setRealtimeReconnectToken] = useState(0);
 
   // Per-staff "🔔 테스트" ping from the admin participant panel. Only the targeted
@@ -251,7 +310,7 @@ function StaffChatPageInner() {
       if (!p || String(p.target_invite_id ?? '') !== myInviteId) return;
       const text = typeof p.text === 'string' && p.text.trim() ? p.text : '테스트입니다.';
       console.log('[STAFF_TEST_PING_RECEIVED]', { invite_id: myInviteId });
-      if (soundEnabled) void playNotificationTone('info');
+      if (soundEnabled) void playStaffSound(alertSoundSrcRef.current, alertVolumeRef.current);
       const { ttsLang } = resolveStaffTtsLangFromSession({
         spokenLang: staffSession.spokenLang,
         role: staffSession.role,
@@ -334,7 +393,10 @@ function StaffChatPageInner() {
     listTimeoutMs: TIMEOUT_MS_CHAT_LIST,
     initialListLimit: STAFF_CHAT_LIST_LIMIT,
     deltaListLimit: STAFF_CHAT_DELTA_LIMIT,
-    staffTimelineMode: true
+    staffTimelineMode: true,
+    syncClient: 'staff',
+    messagesRef,
+    roomFilterRef: staffRoomFilterRef
   });
 
   // Read receipts (Phase 2A): advance my own watermark + show "읽음 N" on my own
@@ -419,98 +481,428 @@ function StaffChatPageInner() {
     [setMessages]
   );
 
-  useEffect(() => {
-    async function bootstrapInvite() {
-      const legacyUser = readDeprecatedUserParamFromUrl();
-      const urlToken = readInviteTokenFromUrl();
-      const joinToken = readEntryJoinTokenFromUrl();
-      const deviceKey = getOrCreateStaffDeviceKey();
+  function applyStaffAccountPublic(account: StaffAccountPublic) {
+    setInviteSession(accountPublicToInviteSession(account));
+    setInvitePhase('ready');
+    setSessionSource('account_session');
+  }
 
-      if (legacyUser && !urlToken && !joinToken) {
+  async function handleStaffLogin() {
+    const code = loginCode.trim();
+    const accountId = selectedAccountId.trim();
+    if (!accountId) {
+      setLoginError(t('staffLoginSelectPlaceholder'));
+      return;
+    }
+    if (!/^\d{4}$/.test(code)) {
+      setLoginError(t('staffLoginInvalidCode'));
+      return;
+    }
+    setLoginSubmitting(true);
+    setLoginError(null);
+    try {
+      const res = await fetchEnvelope<{ sessionToken: string; account: StaffAccountPublic }>(
+        STAFF_LOGIN_URL,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: accountId,
+            login_code: code,
+            device_key: getOrCreateStaffDeviceKey()
+          })
+        }
+      );
+      if (!res.ok) {
+        if (res.error === 'ACCOUNT_DEACTIVATED') {
+          clearStaffSession();
+          setInviteSession(null);
+          setInvitePhase('deactivated');
+          return;
+        }
+        setLoginError(t('staffLoginInvalidCode'));
+        return;
+      }
+      const { sessionToken, account } = res.data;
+      if (!account.userId) {
+        setLoginError(t('staffLoginInvalidCode'));
+        return;
+      }
+      saveStaffSession(sessionToken, { accountId: account.accountId, userId: account.userId });
+      applyStaffAccountPublic(account);
+      staffChatLog('STAFF_CHAT_INVITE_VALIDATE_OK', {
+        tokenSource: 'account_session',
+        displayName: account.displayName,
+        inviteId: account.inviteId
+      });
+    } catch {
+      setLoginError(t('staffLoginInvalidCode'));
+    } finally {
+      setLoginSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (invitePhase !== 'login') return;
+    let cancelled = false;
+    setLoginRosterLoading(true);
+    void fetchEnvelope<{ roster: Array<{ accountId: string; displayName: string }> }>(STAFF_LOGIN_ROSTER_URL)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok && Array.isArray(res.data?.roster)) {
+          setLoginRoster(res.data.roster);
+          if (!selectedAccountId && res.data.roster.length === 1) {
+            setSelectedAccountId(res.data.roster[0].accountId);
+          }
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoginRosterLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invitePhase]);
+
+  async function handleStaffLogout() {
+    if (logoutSubmitting) return;
+    setLogoutSubmitting(true);
+    try {
+      const headers = staffSessionAuthHeaders();
+      if (headers.Authorization) {
+        await fetchEnvelope(STAFF_LOGOUT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({ device_key: getOrCreateStaffDeviceKey() })
+        });
+      }
+    } catch {
+      /* still clear local session */
+    } finally {
+      clearStaffSession();
+      clearStoredInviteToken();
+      setInviteSession(null);
+      setSessionUser(null);
+      setInvitePhase('login');
+      setSelectedAccountId('');
+      setLoginCode('');
+      setLogoutSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    async function bootstrapStaffAuth() {
+      clearLegacyInviteStorageOnce();
+
+      const href = typeof window !== 'undefined' ? window.location.href : '';
+      const search = typeof window !== 'undefined' ? window.location.search : '';
+      const urlInviteToken =
+        readBootstrapUrlParam(searchParams, 't') || readBootstrapUrlParam(searchParams, 'token');
+      const joinToken = readBootstrapUrlParam(searchParams, 'join');
+      const legacyUser =
+        readBootstrapUrlParam(searchParams, 'user') || readDeprecatedUserParamFromUrl();
+      const deviceKey = getOrCreateStaffDeviceKey();
+      const hasStaffSession = Boolean(loadStoredSessionToken());
+      const hasLegacyInviteToken = Boolean(loadStoredInviteToken());
+      const hasUrlToken = Boolean(urlInviteToken);
+      const hasJoinToken = Boolean(joinToken);
+
+      let nextPhase: InvitePhase = 'login';
+
+      const sessionToken = loadStoredSessionToken();
+      if (sessionToken) {
+        try {
+          const result = await fetchEnvelope<{ account: StaffAccountPublic }>(STAFF_SESSION_URL, {
+            headers: { Authorization: `Bearer ${sessionToken}` }
+          });
+          if (result.ok) {
+            applyStaffAccountPublic(result.data.account);
+            logBootstrapPhase1({
+              href,
+              search,
+              hasUrlToken,
+              hasJoinToken,
+              hasLegacyInviteToken,
+              hasStaffSession,
+              nextPhase: 'ready',
+              path: 'session_valid'
+            });
+            return;
+          }
+          if (result.error === 'ACCOUNT_DEACTIVATED') {
+            clearStaffSession();
+            setInviteSession(null);
+            nextPhase = 'deactivated';
+            setInvitePhase(nextPhase);
+            logBootstrapPhase1({
+              href,
+              search,
+              hasUrlToken,
+              hasJoinToken,
+              hasLegacyInviteToken,
+              hasStaffSession,
+              nextPhase,
+              path: 'session_deactivated'
+            });
+            return;
+          }
+          clearStaffSession();
+        } catch {
+          clearStaffSession();
+        }
+      }
+
+      if (legacyUser && !urlInviteToken && !joinToken) {
         setInviteSession(null);
         setDeprecatedWarned(true);
-        setInvitePhase('ready');
-        staffChatLog('STAFF_CHAT_LEGACY_USER_MODE', {
-          userParam: legacyUser,
-          inviteTokenIgnored: Boolean(loadStoredInviteToken()),
-          timelineFilter: 'none'
+        nextPhase = 'ready';
+        setInvitePhase(nextPhase);
+        logBootstrapPhase1({
+          href,
+          search,
+          hasUrlToken,
+          hasJoinToken,
+          hasLegacyInviteToken,
+          hasStaffSession,
+          nextPhase,
+          path: 'legacy_user'
         });
         return;
       }
 
       if (joinToken) setEntryJoinToken(joinToken);
 
-      const storedToken = loadStoredInviteToken();
-      const token = urlToken || storedToken;
-
-      if (token) {
-        if (urlToken) saveStoredInviteToken(urlToken);
+      if (urlInviteToken) {
         try {
           const qs = new URLSearchParams({
-            token,
+            token: urlInviteToken,
             check: 'any',
             device_key: deviceKey
           });
-          const res = await fetch(`${STAFF_INVITES_URL}?${qs.toString()}`);
-          const json = await res.json();
-          if (json?.error === 'INVITE_REVOKED') {
-            clearStoredInviteToken();
+          const result = await fetchEnvelope<{ invite: StaffInvite; userId: string | null }>(
+            `${STAFF_INVITES_URL}?${qs.toString()}`
+          );
+          if (!result.ok) {
+            staffChatLog('STAFF_CHAT_INVITE_VALIDATE_FAIL', {
+              tokenSource: 'url',
+              tokenPrefix: urlInviteToken.slice(0, 8),
+              httpStatus: result.status,
+              error: result.error,
+              message: result.message,
+              urlHadT: true
+            });
+            if (result.error === 'INVITE_REVOKED') {
+              setInviteSession(null);
+              nextPhase = 'revoked';
+              setInvitePhase(nextPhase);
+              logBootstrapPhase1({
+                href,
+                search,
+                hasUrlToken,
+                hasJoinToken,
+                hasLegacyInviteToken,
+                hasStaffSession,
+                nextPhase,
+                path: 'url_invite_revoked'
+              });
+              return;
+            }
+            if (legacyUser) {
+              setInviteSession(null);
+              setDeprecatedWarned(true);
+              nextPhase = 'ready';
+              setInvitePhase(nextPhase);
+              logBootstrapPhase1({
+                href,
+                search,
+                hasUrlToken,
+                hasJoinToken,
+                hasLegacyInviteToken,
+                hasStaffSession,
+                nextPhase,
+                path: 'url_invite_fail_legacy_fallback'
+              });
+              return;
+            }
+            if (joinToken) {
+              nextPhase = 'join';
+              setInvitePhase(nextPhase);
+              logBootstrapPhase1({
+                href,
+                search,
+                hasUrlToken,
+                hasJoinToken,
+                hasLegacyInviteToken,
+                hasStaffSession,
+                nextPhase,
+                path: 'url_invite_fail_join_fallback'
+              });
+              return;
+            }
+            nextPhase = 'invalid';
+            setInvitePhase(nextPhase);
+            logBootstrapPhase1({
+              href,
+              search,
+              hasUrlToken,
+              hasJoinToken,
+              hasLegacyInviteToken,
+              hasStaffSession,
+              nextPhase,
+              path: 'url_invite_invalid'
+            });
+            return;
+          }
+
+          setInviteSession(inviteToSession(result.data.invite, result.data.userId ?? null));
+          nextPhase = 'ready';
+          setInvitePhase(nextPhase);
+          setSessionSource('invite_token');
+          staffChatLog('STAFF_CHAT_INVITE_VALIDATE_OK', {
+            tokenSource: 'url',
+            displayName: result.data.invite.display_name,
+            inviteId: result.data.invite.id
+          });
+          logBootstrapPhase1({
+            href,
+            search,
+            hasUrlToken,
+            hasJoinToken,
+            hasLegacyInviteToken,
+            hasStaffSession,
+            nextPhase,
+            path: 'url_invite_ok'
+          });
+          return;
+        } catch (e: unknown) {
+          staffChatLog('STAFF_CHAT_INVITE_VALIDATE_FAIL', {
+            tokenSource: 'url',
+            tokenPrefix: urlInviteToken.slice(0, 8),
+            error: 'EXCEPTION',
+            message: e instanceof Error ? e.message : String(e),
+            urlHadT: true
+          });
+          if (legacyUser) {
             setInviteSession(null);
-            setInvitePhase('revoked');
+            setDeprecatedWarned(true);
+            nextPhase = 'ready';
+            setInvitePhase(nextPhase);
+            logBootstrapPhase1({
+              href,
+              search,
+              hasUrlToken,
+              hasJoinToken,
+              hasLegacyInviteToken,
+              hasStaffSession,
+              nextPhase,
+              path: 'url_invite_exception_legacy_fallback'
+            });
             return;
           }
-          if (json?.ok && json?.data?.invite) {
-            setInviteSession(inviteToSession(json.data.invite, json.data.userId ?? null));
-            setInvitePhase('ready');
-            setSessionSource('invite_token');
+          if (joinToken) {
+            nextPhase = 'join';
+            setInvitePhase(nextPhase);
+            logBootstrapPhase1({
+              href,
+              search,
+              hasUrlToken,
+              hasJoinToken,
+              hasLegacyInviteToken,
+              hasStaffSession,
+              nextPhase,
+              path: 'url_invite_exception_join_fallback'
+            });
             return;
           }
-        } catch {
-          /* fall through */
-        }
-        if (legacyUser) {
-          setInviteSession(null);
-          setDeprecatedWarned(true);
-          setInvitePhase('ready');
-          staffChatLog('STAFF_CHAT_LEGACY_USER_FALLBACK', {
-            userParam: legacyUser,
-            reason: 'invite_token_invalid',
-            timelineFilter: 'none'
+          nextPhase = 'invalid';
+          setInvitePhase(nextPhase);
+          logBootstrapPhase1({
+            href,
+            search,
+            hasUrlToken,
+            hasJoinToken,
+            hasLegacyInviteToken,
+            hasStaffSession,
+            nextPhase,
+            path: 'url_invite_exception_invalid'
           });
           return;
         }
-        if (joinToken) {
-          setInvitePhase('join');
-          return;
-        }
-        setInvitePhase('invalid');
-        return;
       }
 
       if (joinToken) {
-        setInvitePhase('join');
+        nextPhase = 'join';
+        setInvitePhase(nextPhase);
+        logBootstrapPhase1({
+          href,
+          search,
+          hasUrlToken,
+          hasJoinToken,
+          hasLegacyInviteToken,
+          hasStaffSession,
+          nextPhase,
+          path: 'join_only'
+        });
         return;
       }
 
       if (legacyUser) {
         setDeprecatedWarned(true);
       }
-      setInvitePhase('invalid');
+      nextPhase = 'login';
+      setInvitePhase(nextPhase);
+      logBootstrapPhase1({
+        href,
+        search,
+        hasUrlToken,
+        hasJoinToken,
+        hasLegacyInviteToken,
+        hasStaffSession,
+        nextPhase,
+        path: 'default_login'
+      });
     }
-    void bootstrapInvite();
-  }, []);
+    void bootstrapStaffAuth();
+  }, [searchParams]);
 
   useEffect(() => {
-    if (invitePhase !== 'ready' || !inviteSession?.token) return;
-    const token = inviteSession.token;
+    if (invitePhase !== 'ready') return;
 
-    async function revalidateInvite() {
+    const sessionToken = loadStoredSessionToken();
+    const inviteToken = inviteSession?.token?.trim() || '';
+
+    async function revalidateSession() {
+      if (sessionToken) {
+        try {
+          const result = await fetchEnvelope<{ account: StaffAccountPublic }>(STAFF_SESSION_URL, {
+            headers: { Authorization: `Bearer ${sessionToken}` }
+          });
+          if (!result.ok) {
+            if (result.error === 'ACCOUNT_DEACTIVATED') {
+              clearStaffSession();
+              setInviteSession(null);
+              setInvitePhase('deactivated');
+            } else {
+              clearStaffSession();
+              setInviteSession(null);
+              setInvitePhase('login');
+            }
+          }
+        } catch {
+          /* ignore transient network errors */
+        }
+        return;
+      }
+
+      if (!inviteToken) return;
+
       try {
-        const qs = new URLSearchParams({ token, check: 'any' });
-        const res = await fetch(`${STAFF_INVITES_URL}?${qs.toString()}`);
-        const json = await res.json();
-        if (json?.error === 'INVITE_REVOKED' || res.status === 403) {
-          clearStoredInviteToken();
+        const qs = new URLSearchParams({ token: inviteToken, check: 'any' });
+        const result = await fetchEnvelope<{ invite: StaffInvite; userId: string | null }>(
+          `${STAFF_INVITES_URL}?${qs.toString()}`
+        );
+        if (!result.ok && (result.error === 'INVITE_REVOKED' || result.status === 403)) {
           setInviteSession(null);
           setInvitePhase('revoked');
         }
@@ -519,9 +911,9 @@ function StaffChatPageInner() {
       }
     }
 
-    const intervalId = window.setInterval(() => void revalidateInvite(), 60_000);
+    const intervalId = window.setInterval(() => void revalidateSession(), 60_000);
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void revalidateInvite();
+      if (document.visibilityState === 'visible') void revalidateSession();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -741,6 +1133,7 @@ function StaffChatPageInner() {
     if (typeof window === 'undefined') return;
     const onFirst = () => {
       void unlockNotificationAudio();
+      void unlockStaffSound(alertSoundSrcRef.current);
       window.removeEventListener('pointerdown', onFirst, true);
       window.removeEventListener('keydown', onFirst, true);
     };
@@ -775,6 +1168,25 @@ function StaffChatPageInner() {
     setBrowserNotifyPermission(Notification.permission);
   }, []);
 
+  const { handleRealtimeStatus, requestRefetch } = useChatRefetchFallback({
+    loadFull,
+    isLoadingRef,
+    isMountedRef,
+    reconnectToken: realtimeReconnectToken,
+    listLimit: STAFF_CHAT_LIST_LIMIT,
+    enableIntervalPolling: true,
+    pollIntervalMs: 15000,
+    lastRealtimeActivityAtRef,
+    syncClient: 'staff'
+  });
+
+  useChatVisibleTrace({
+    client: 'staff',
+    messages,
+    roomFilter: roomNo || null,
+    userFilter: null
+  });
+
   useChatRealtime({
     supabase,
     setMessages: setStaffMessages,
@@ -784,6 +1196,9 @@ function StaffChatPageInner() {
     lastRealtimeInsertPushAtRef,
     reconnectToken: realtimeReconnectToken,
     onConnectionStatus: setConnectionStatus,
+    onRealtimeStatus: handleRealtimeStatus,
+    syncClient: 'staff',
+    currentUserId: chatSendUserId,
     onRowEvent: (e) => {
       eventTypeByIdRef.current.set(e.id, e.type);
     }
@@ -806,6 +1221,57 @@ function StaffChatPageInner() {
       return true;
     }
   });
+
+  useEffect(() => {
+    return registerChatSyncProbe('staff', {
+      dumpState: () => ({
+        client: 'staff',
+        message_count: messagesRef.current.length,
+        latest_message_id: latestMessageMeta(messagesRef.current).id,
+        latest_created_at: latestMessageMeta(messagesRef.current).created_at,
+        realtime_status: realtimeConnectedRef.current ? 'SUBSCRIBED' : 'DISCONNECTED',
+        realtime_connected: realtimeConnectedRef.current,
+        reconnect_token: realtimeReconnectToken,
+        selected_room_filter: roomNo || null,
+        user_filter: null,
+        current_user_id: chatSendUserId,
+        current_token_id: inviteSession?.inviteId ?? null,
+        last_fetch_reason: null,
+        last_fetch_at: null
+      }),
+      refetch: (reason) => requestRefetch(reason)
+    });
+  }, [chatSendUserId, inviteSession?.inviteId, realtimeReconnectToken, requestRefetch, roomNo]);
+
+  // Native FCM → foreground timeline refetch.
+  // Android MainActivity.dispatchFcmMessageToWebView() calls this via evaluateJavascript
+  // ONLY when the app is in the foreground. Background stays on the notification-tap →
+  // loadUrl → mount loadFull path. No realtime/loader/merge changes here.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handle = {
+      forceRefetchFromNative(reason = 'native_fcm') {
+        console.log('[STAFF_FCM_REFETCH_REQUEST]', JSON.stringify({ reason, ts: Date.now() }));
+        return Promise.resolve(loadFull(reason))
+          .then((result) => {
+            console.log('[STAFF_FCM_REFETCH_DONE]', JSON.stringify({ reason, ok: true }));
+            return result;
+          })
+          .catch((error) => {
+            console.log(
+              '[STAFF_FCM_REFETCH_DONE]',
+              JSON.stringify({ reason, ok: false, error: String((error as any)?.message ?? error) })
+            );
+          });
+      }
+    };
+    (window as any).__autoFlowStaffChat = handle;
+    return () => {
+      if ((window as any).__autoFlowStaffChat === handle) {
+        delete (window as any).__autoFlowStaffChat;
+      }
+    };
+  }, [loadFull]);
 
   useEffect(() => {
     if (!initialHydrationComplete) return;
@@ -960,9 +1426,10 @@ function StaffChatPageInner() {
               messageId: id,
               soundEnabled: true,
               urgent,
-              foregroundVisible: true
+              foregroundVisible: true,
+              volume: alertVolumeRef.current
             });
-            void playNotificationTone(urgent ? 'urgent' : 'info');
+            void playStaffSound(alertSoundSrcRef.current, alertVolumeRef.current);
           }
         }
 
@@ -1006,7 +1473,7 @@ function StaffChatPageInner() {
           }
 
           if (soundEnabled) {
-            void playNotificationTone(urgent ? 'urgent' : 'info');
+            void playStaffSound(alertSoundSrcRef.current, alertVolumeRef.current);
           }
         }
       }
@@ -1137,6 +1604,7 @@ function StaffChatPageInner() {
       image?: File | null,
       opts?: { roomNo?: string; phraseKey?: string | null }
     ): Promise<boolean> => {
+      const clientPerfStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const msg = String(body || '').trim();
       const r = String(opts?.roomNo ?? roomNo ?? '').trim();
       const phraseKey = opts?.phraseKey !== undefined ? opts.phraseKey : pendingPhraseKey;
@@ -1203,6 +1671,7 @@ function StaffChatPageInner() {
             message: res.message ?? null
           });
           if (res.error === 'INVITE_REVOKED') {
+            clearStaffSession();
             clearStoredInviteToken();
             setInviteSession(null);
             setInvitePhase('revoked');
@@ -1217,11 +1686,15 @@ function StaffChatPageInner() {
           setToast({ kind: 'error', msg: t('sendFailed') });
           return false;
         }
+        const clientPerfEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
         staffChatLog('STAFF_CHAT_SEND_API_SUCCESS', {
           client_nonce: nonce,
           echoed_client_nonce: res.data?.client_nonce ?? null,
           messageId: saved.id,
-          roomNo: saved.room_no ?? r
+          roomNo: saved.room_no ?? r,
+          client_total_ms: Math.round(clientPerfEnd - clientPerfStart),
+          hasImage: Boolean(image),
+          image_size: image?.size ?? null
         });
         registerMessageIdForNonce(nonce, String(saved.id));
         logSendApiResponded(nonce, String(saved.id), saved.created_at);
@@ -1230,6 +1703,7 @@ function StaffChatPageInner() {
           if (prev.some((m) => String(m.id) === String(saved.id))) return prev;
           return [...prev, saved].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
         });
+        void requestRefetch('send_ack');
         setText('');
         setPendingPhraseKey(null);
         setToast({ kind: 'ok', msg: `✅ ${t('sendSuccess')}` });
@@ -1244,7 +1718,7 @@ function StaffChatPageInner() {
         setSending(false);
       }
     },
-    [actorName, chatSendUserId, locale, roomNo, sessionSource, setStaffMessages, staffKey, inviteSession?.inviteId, pendingPhraseKey, t]
+    [actorName, chatSendUserId, locale, roomNo, sessionSource, setStaffMessages, staffKey, inviteSession?.inviteId, pendingPhraseKey, t, requestRefetch]
   );
 
   function clearPendingPhoto() {
@@ -1298,6 +1772,7 @@ function StaffChatPageInner() {
   function toggleSound() {
     if (soundEnabled && !isServerStaffTtsUnlocked()) {
       void unlockNotificationAudio();
+      void unlockStaffSound(alertSoundSrcRef.current);
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -1319,6 +1794,7 @@ function StaffChatPageInner() {
     });
     if (next) {
       void unlockNotificationAudio();
+      void unlockStaffSound(alertSoundSrcRef.current);
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -1327,6 +1803,20 @@ function StaffChatPageInner() {
       resetServerStaffTtsUnlock();
       refreshUnlockSnapshot();
     }
+  }
+
+  function handleAlertVolumeChange(v: number) {
+    const clamped = Math.min(1, Math.max(0, v));
+    setAlertVolume(clamped);
+    alertVolumeRef.current = clamped;
+    saveStaffAlertVolume(clamped);
+  }
+
+  function handleAlertSoundKeyChange(key: StaffSoundKey) {
+    setAlertSoundKey(key);
+    const src = staffSoundSrc(key);
+    alertSoundSrcRef.current = src;
+    saveStaffSoundKey(key);
   }
 
   function showStaffTestNotification() {
@@ -1416,6 +1906,12 @@ function StaffChatPageInner() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    console.log('[STAFF_CHAT_PHOTO_SELECTED]', {
+      file_size: file.size,
+      mime_type: file.type,
+      last_modified: file.lastModified,
+      has_preview: true
+    });
     setPhotoRoom('');
     setPhotoStatusText('');
     setPhotoPhraseKey(null);
@@ -1424,7 +1920,23 @@ function StaffChatPageInner() {
   }
 
   function handleVoiceClick() {
-    setToast({ kind: 'ok', msg: t('voiceSoon') });
+    if (!webSpeech.supported) {
+      setToast({ kind: 'error', msg: t('sttUnsupported') });
+      return;
+    }
+    if (webSpeech.listening) {
+      webSpeech.stop();
+      return;
+    }
+    webSpeech.start(
+      (transcript) => {
+        if (!transcript) return;
+        setText((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
+        window.setTimeout(() => inputRef.current?.focus(), 0);
+      },
+      () => setToast({ kind: 'error', msg: t('sttError') })
+    );
+    setToast({ kind: 'ok', msg: t('sttListening') });
   }
 
   const localeButtons: { code: StaffLocale; flag: string }[] = [
@@ -1452,6 +1964,62 @@ function StaffChatPageInner() {
       <main className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#eceff1] px-6 text-center">
         <p className="text-lg font-bold text-rose-700">{t('revokedInvite')}</p>
         <p className="text-sm text-gray-600">{t('revokedInviteHelp')}</p>
+      </main>
+    );
+  }
+
+  if (invitePhase === 'deactivated') {
+    return (
+      <main className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#eceff1] px-6 text-center">
+        <p className="text-lg font-bold text-rose-700">{t('staffAccountDeactivated')}</p>
+      </main>
+    );
+  }
+
+  if (invitePhase === 'login') {
+    return (
+      <main className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-[#eceff1] px-6">
+        <h1 className="text-lg font-bold text-gray-900">{t('staffLoginTitle')}</h1>
+        <select
+          value={selectedAccountId}
+          onChange={(e) => {
+            setSelectedAccountId(e.target.value);
+            setLoginError(null);
+          }}
+          disabled={loginRosterLoading || loginSubmitting}
+          className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900"
+        >
+          <option value="">{loginRosterLoading ? t('loading') : t('staffLoginSelectPlaceholder')}</option>
+          {loginRoster.map((row) => (
+            <option key={row.accountId} value={row.accountId}>
+              {row.displayName}
+            </option>
+          ))}
+        </select>
+        <input
+          type="password"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={4}
+          autoComplete="off"
+          value={loginCode}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+            setLoginCode(digits);
+            setLoginError(null);
+          }}
+          placeholder={t('staffLoginCodePlaceholder')}
+          className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-3 text-center text-2xl tracking-[0.4em]"
+        />
+        {loginError ? <p className="text-sm text-rose-600">{loginError}</p> : null}
+        <button
+          type="button"
+          disabled={!selectedAccountId || loginCode.length !== 4 || loginSubmitting}
+          onClick={() => void handleStaffLogin()}
+          className="rounded-lg bg-[#FEE500] px-8 py-3 text-sm font-bold text-gray-900 disabled:opacity-50"
+        >
+          {loginSubmitting ? t('sending') : t('staffLoginSubmit')}
+        </button>
       </main>
     );
   }
@@ -1524,6 +2092,12 @@ function StaffChatPageInner() {
             ))}
           </select>
         </div>
+        <StaffNativeSoundPicker
+          soundKey={alertSoundKey}
+          volume={alertVolume}
+          onSoundKeyChange={handleAlertSoundKeyChange}
+          onVolumeChange={handleAlertVolumeChange}
+        />
         {!notificationAudioUnlocked && soundEnabled ? (
           <div className="mx-auto mb-1 max-w-md">
             <button
@@ -1536,6 +2110,14 @@ function StaffChatPageInner() {
           </div>
         ) : null}
         <div className="mx-auto flex max-w-md items-center justify-end gap-1.5">
+          <button
+            type="button"
+            disabled={logoutSubmitting}
+            onClick={() => void handleStaffLogout()}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700"
+          >
+            {t('staffLogout')}
+          </button>
           <div className="flex gap-0.5">
             {localeButtons.map((b) => (
               <button
@@ -1569,16 +2151,7 @@ function StaffChatPageInner() {
               </span>
             ) : null}
           </div>
-          {browserNotifyPermission === 'unsupported' ? (
-            <button
-              type="button"
-              onClick={() => window.alert(t('notifyUnsupportedHelp'))}
-              className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800"
-              title={t('notifyUnsupportedHelp')}
-            >
-              🔔 {t('notifyUnsupported')}
-            </button>
-          ) : (
+          {browserNotifyPermission !== 'unsupported' ? (
             <button
               type="button"
               onClick={handleNotificationEnableClick}
@@ -1597,7 +2170,7 @@ function StaffChatPageInner() {
                   ? t('notifyGranted')
                   : t('notifyDenied')}
             </button>
-          )}
+          ) : null}
         </div>
         {diagMode ? (
           <StaffChatTtsDiagLine
@@ -1618,16 +2191,9 @@ function StaffChatPageInner() {
         ) : null}
       </header>
 
-      <StaffPwaInstallBanner lang={locale} />
+      {staffNotice ? <StaffNoticeBanner notice={staffNotice} /> : null}
 
-      {ruVoiceReady === false ? (
-        <div
-          className="mx-3 mt-2 shrink-0 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2.5 text-center text-xs font-semibold leading-snug text-amber-950"
-          role="status"
-        >
-          {t('ttsNoRussianVoiceBanner')}
-        </div>
-      ) : null}
+      <StaffPwaInstallBanner lang={locale} />
 
       {toast && (
         <div
@@ -1783,6 +2349,10 @@ function StaffChatPageInner() {
                         읽음 {computeReadInfo(m).readCount}
                       </div>
                     ) : null}
+                    {/* 시간 — 월/일 시간 (연도 제외) */}
+                    <div className={`mt-0.5 text-[10px] ${mine ? 'text-right text-blue-100/70' : 'text-gray-400'}`}>
+                      {formatKSTShort(m.created_at)}
+                    </div>
                   </div>
                 </div>
               );
@@ -1848,6 +2418,7 @@ function StaffChatPageInner() {
           refreshToken={phraseRefreshToken}
           editLabel={t('phraseEdit')}
           onEditClick={() => setShowPhraseEditor(true)}
+          requestHeaders={phraseRequestHeaders}
         />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
           <input
@@ -1871,7 +2442,9 @@ function StaffChatPageInner() {
             type="button"
             onClick={handleVoiceClick}
             disabled={sending}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-2xl active:bg-gray-200 disabled:opacity-40"
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl active:bg-gray-200 disabled:opacity-40 ${
+              webSpeech.listening ? 'bg-red-100 ring-2 ring-red-400' : 'bg-gray-100'
+            }`}
             aria-label="음성"
           >
             🎤
@@ -1921,6 +2494,4 @@ function StaffChatPageInner() {
   );
 }
 
-export default function StaffChatPage() {
-  return <StaffChatPageInner />;
-}
+export default StaffChatPageInner;

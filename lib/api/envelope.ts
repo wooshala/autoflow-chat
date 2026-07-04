@@ -46,6 +46,24 @@ export function parseLegacyErrorBody(json: unknown): string | null {
   return null;
 }
 
+/** Supabase PostgrestError 등 plain object throw 대응 */
+export function formatUnknownError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === 'object') {
+    const o = e as Record<string, unknown>;
+    if (typeof o.message === 'string' && o.message.trim()) return o.message;
+    if (typeof o.details === 'string' && o.details.trim()) return o.details;
+    if (typeof o.hint === 'string' && o.hint.trim()) return o.hint;
+    if (typeof o.code === 'string' && o.code.trim()) return o.code;
+    try {
+      return JSON.stringify(o);
+    } catch {
+      return String(e);
+    }
+  }
+  return String(e);
+}
+
 export type FetchEnvelopeOk<T> = { ok: true; data: T; status: number };
 export type FetchEnvelopeFail = {
   ok: false;

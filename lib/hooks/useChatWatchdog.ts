@@ -35,11 +35,6 @@ export function useChatWatchdog({
   onConnectionStatus?: (s: 'connected' | 'degraded' | 'reconnecting') => void;
   onRequestResubscribe?: () => Promise<boolean> | boolean;
 }) {
-  const lastRestoreFullLoadAtRef = useRef(0);
-  const deferredRetryChainRef = useRef<{
-    t1: ReturnType<typeof setTimeout>;
-    t2: ReturnType<typeof setTimeout>;
-  } | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
   const pollingStartedRef = useRef(false);
   const lastDisconnectedPollAtRef = useRef(0);
@@ -53,110 +48,33 @@ export function useChatWatchdog({
   const notConnectedStreakRef = useRef(0);
   const lastRecoverAtRef = useRef(0);
   const lastHiddenPollAtRef = useRef(0);
+  /** Cooldown for realtime_quiet_watchdog_full: cap idle stale polls to once/60s. */
+  const lastQuietFullAtRef = useRef(0);
 
   const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
   useEffect(() => {
     visibilityEffectMountCountRef.current += 1;
     console.log('[CHAT_WATCHDOG_VISIBILITY_MOUNT]', { mountCount: visibilityEffectMountCountRef.current });
-    // Visibility / BFCache restore: perform a guarded full reload only when we likely missed updates.
-    const FULL_RESTORE_THROTTLE_MS = 5000;
-    const RESTORE_IF_INACTIVE_MS = 20000;
-    const DEFERRED_RETRY_MS_1 = 450;
-    const DEFERRED_RETRY_MS_2 = 450 + 1500;
-
-    const requestFullReload = (source: string, reason: string) => {
-      const now = Date.now();
-      if (now - lastRestoreFullLoadAtRef.current < FULL_RESTORE_THROTTLE_MS) {
-        log.debug('[FULL_RELOAD_SKIPPED]', { source, reason: 'restore_throttle' });
-        return;
-      }
-      if (isLoadingRef.current) {
-        log.debug('[FULL_RELOAD_SKIPPED]', { source, reason: 'already_loading' });
-        if (deferredRetryChainRef.current) {
-          return;
-        }
-        const attempt = (tag: string) => {
-          if (!isMountedRef.current) return;
-          if (isLoadingRef.current) {
-            log.debug('[FULL_RELOAD_RETRY_SKIPPED]', { source, tag, reason: 'still_loading' });
-            return;
-          }
-          const chain = deferredRetryChainRef.current;
-          if (chain) {
-            clearTimeout(chain.t1);
-            clearTimeout(chain.t2);
-            deferredRetryChainRef.current = null;
-          }
-          lastRestoreFullLoadAtRef.current = Date.now();
-          log.info('[CHAT_VISIBILITY_RESTORE]', {
-            reason: 'deferred_after_already_loading',
-            tag,
-            source
-          });
-          void loadFullRef.current(`${source}_${tag}`);
-        };
-        const t1 = setTimeout(() => attempt('deferred_450ms'), DEFERRED_RETRY_MS_1);
-        const t2 = setTimeout(() => attempt('deferred_1950ms'), DEFERRED_RETRY_MS_2);
-        deferredRetryChainRef.current = { t1, t2 };
-        return;
-      }
-      lastRestoreFullLoadAtRef.current = now;
-      const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
-      log.info('[CHAT_VISIBILITY_RESTORE]', {
-        reason,
-        ms_since_activity: msSinceActivity
-      });
-      void loadFullRef.current(source);
-    };
+    // visibility / focus refetch: useChatRefetchFallback (shared PC + staff-chat).
 
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
-        const pushEver = lastRealtimeInsertPushAtRef.current != null;
-        const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
-        const empty = messagesRef.current.length === 0;
-        if (!pushEver) {
-          requestFullReload('bfcache_pageshow', 'push_ever_false');
-        } else if (empty) {
-          requestFullReload('bfcache_pageshow', 'messages_empty');
-        } else if (msSinceActivity > RESTORE_IF_INACTIVE_MS) {
-          requestFullReload('bfcache_pageshow', 'inactive_too_long');
-        } else {
-          log.debug('[FULL_RELOAD_SKIPPED]', { source: 'bfcache_pageshow', reason: 'recently_active' });
-        }
-      }
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') return;
+      if (!e.persisted) return;
       const pushEver = lastRealtimeInsertPushAtRef.current != null;
       const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
       const empty = messagesRef.current.length === 0;
-      if (!pushEver) {
-        requestFullReload('visibility_restore', 'push_ever_false');
-        return;
+      if (!pushEver || empty || msSinceActivity > 20000) {
+        log.info('[CHAT_BFCache_PAGESHOW]', {
+          push_ever: pushEver,
+          empty,
+          ms_since_activity: msSinceActivity
+        });
       }
-      if (empty) {
-        requestFullReload('visibility_restore', 'messages_empty');
-        return;
-      }
-      if (msSinceActivity > RESTORE_IF_INACTIVE_MS) {
-        requestFullReload('visibility_restore', 'inactive_too_long');
-        return;
-      }
-      log.debug('[FULL_RELOAD_SKIPPED]', { source: 'visibility_restore', reason: 'recently_active' });
     };
 
     window.addEventListener('pageshow', onPageShow);
-    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('pageshow', onPageShow);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (deferredRetryChainRef.current) {
-        clearTimeout(deferredRetryChainRef.current.t1);
-        clearTimeout(deferredRetryChainRef.current.t2);
-        deferredRetryChainRef.current = null;
-      }
     };
     // loadFull은 loadFullRef로 최신 참조 — deps에 넣지 않아 가시성 리스너는 마운트당 1회만 구독.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ref 객체·loadFullRef는 안정, 콜백은 ref.current로 최신화
@@ -211,6 +129,7 @@ export function useChatWatchdog({
     const REALTIME_SILENCE_MS_AFTER_PUSH = 90000;
     const DISCONNECTED_POLL_MIN_MS = 30000;
     const HIDDEN_POLL_MIN_MS = 30000;
+    const QUIET_FULL_COOLDOWN_MS = 60000;
 
     const tick = () => {
       log.debug('[CHAT_WATCHDOG_INTERVAL_ENTER]');
@@ -304,6 +223,20 @@ export function useChatWatchdog({
         });
         return;
       }
+
+      // Cooldown: once realtime is idle-stale, `stale` stays true every 10s tick
+      // (loadFull does not touch lastRealtimeActivityAtRef by design). Cap the quiet
+      // full-load to once per 60s so it stays a safety net, not a per-tick poll.
+      const nowQuiet = Date.now();
+      if (nowQuiet - lastQuietFullAtRef.current < QUIET_FULL_COOLDOWN_MS) {
+        log.debug('[CHAT_WATCHDOG_SKIP]', {
+          reason: 'quiet_full_cooldown',
+          cooldown_ms: QUIET_FULL_COOLDOWN_MS,
+          ms_since_last_quiet_full: nowQuiet - lastQuietFullAtRef.current
+        });
+        return;
+      }
+      lastQuietFullAtRef.current = nowQuiet;
 
       const since = safeSinceRef.current;
       log.info('[CHAT_WATCHDOG_TICK]', { reason: 'realtime_stale', since: since || null });

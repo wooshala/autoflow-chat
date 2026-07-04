@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
-import { QUICK_PHRASES_ADMIN_URL } from '@/lib/chatApi';
+import { staffSessionAuthHeaders } from '@/lib/auth/staffAccountSession';
+import { QUICK_PHRASES_PERSONAL_URL, QUICK_PHRASES_TRANSLATE_URL } from '@/lib/chatApi';
 import type { MessageKey, StaffLocale } from '@/lib/i18n/messages';
 import type { ChatQuickPhrase } from '@/lib/types';
 
@@ -17,19 +18,23 @@ type Props = {
 export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSaved }: Props) {
   const [phrases, setPhrases] = useState<ChatQuickPhrase[]>([]);
   const [loading, setLoading] = useState(false);
-  const [draftKey, setDraftKey] = useState('');
   const [draftKo, setDraftKo] = useState('');
   const [draftRu, setDraftRu] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editKo, setEditKo] = useState('');
   const [editRu, setEditRu] = useState('');
+  const [translating, setTranslating] = useState(false);
+
+  const sessionHeaders = useMemo(() => staffSessionAuthHeaders(), [open]);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetchEnvelope<{ phrases: ChatQuickPhrase[] }>(QUICK_PHRASES_ADMIN_URL);
+    const res = await fetchEnvelope<{ phrases: ChatQuickPhrase[] }>(QUICK_PHRASES_PERSONAL_URL, {
+      headers: sessionHeaders
+    });
     if (res.ok && res.data?.phrases) setPhrases(res.data.phrases);
     setLoading(false);
-  }, []);
+  }, [sessionHeaders]);
 
   useEffect(() => {
     if (!open) return;
@@ -45,16 +50,32 @@ export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSa
     };
   }, [open]);
 
+  async function translateField(source: string, from: 'ko' | 'ru', to: 'ko' | 'ru'): Promise<string | null> {
+    const text = source.trim();
+    if (!text) return null;
+    setTranslating(true);
+    try {
+      const res = await fetchEnvelope<{ translated: string }>(QUICK_PHRASES_TRANSLATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...sessionHeaders },
+        body: JSON.stringify({ text, from, to })
+      });
+      if (!res.ok) return null;
+      return res.data.translated?.trim() || null;
+    } finally {
+      setTranslating(false);
+    }
+  }
+
   if (!open) return null;
 
   async function handleCreate() {
-    const res = await fetch(QUICK_PHRASES_ADMIN_URL, {
+    const res = await fetch(QUICK_PHRASES_PERSONAL_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phrase_key: draftKey, ko: draftKo, ru: draftRu })
+      headers: { 'Content-Type': 'application/json', ...sessionHeaders },
+      body: JSON.stringify({ ko: draftKo, ru: draftRu })
     });
     if (res.ok) {
-      setDraftKey('');
       setDraftKo('');
       setDraftRu('');
       await load();
@@ -63,9 +84,9 @@ export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSa
   }
 
   async function handleSaveEdit(id: string) {
-    await fetch(QUICK_PHRASES_ADMIN_URL, {
+    await fetch(QUICK_PHRASES_PERSONAL_URL, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...sessionHeaders },
       body: JSON.stringify({ id, ko: editKo, ru: editRu })
     });
     setEditingId(null);
@@ -76,7 +97,10 @@ export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSa
   async function handleDelete(id: string) {
     const msg = t('phraseDeleteConfirm');
     if (!confirm(msg)) return;
-    await fetch(`${QUICK_PHRASES_ADMIN_URL}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await fetch(`${QUICK_PHRASES_PERSONAL_URL}?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: sessionHeaders
+    });
     await load();
     onSaved();
   }
@@ -89,9 +113,9 @@ export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSa
     const next = [...phrases];
     [next[idx], next[swap]] = [next[swap], next[idx]];
     setPhrases(next);
-    await fetch(QUICK_PHRASES_ADMIN_URL, {
+    await fetch(QUICK_PHRASES_PERSONAL_URL, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...sessionHeaders },
       body: JSON.stringify({ ids: next.map((p) => p.id) })
     });
     await load();
@@ -103,7 +127,7 @@ export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSa
       <button type="button" className="absolute inset-0" aria-label={t('phraseClose')} onClick={onClose} />
       <div className="relative mx-auto flex max-h-[min(88dvh,640px)] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-          <h2 className="text-base font-bold text-gray-900">{t('phraseManageTitle')}</h2>
+          <h2 className="text-base font-bold text-gray-900">{t('phrasePersonalTitle')}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -127,12 +151,36 @@ export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSa
                       onChange={(e) => setEditKo(e.target.value)}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base"
                     />
+                    <button
+                      type="button"
+                      disabled={translating || !editKo.trim()}
+                      onClick={() =>
+                        void translateField(editKo, 'ko', 'ru').then((v) => {
+                          if (v) setEditRu(v);
+                        })
+                      }
+                      className="text-xs font-semibold text-blue-700 disabled:opacity-40"
+                    >
+                      {t('phraseTranslateToRu')}
+                    </button>
                     <label className="block text-xs font-semibold text-gray-600">{t('phraseRuLabel')}</label>
                     <input
                       value={editRu}
                       onChange={(e) => setEditRu(e.target.value)}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base"
                     />
+                    <button
+                      type="button"
+                      disabled={translating || !editRu.trim()}
+                      onClick={() =>
+                        void translateField(editRu, 'ru', 'ko').then((v) => {
+                          if (v) setEditKo(v);
+                        })
+                      }
+                      className="text-xs font-semibold text-blue-700 disabled:opacity-40"
+                    >
+                      {t('phraseTranslateToKo')}
+                    </button>
                     <button
                       type="button"
                       onClick={() => void handleSaveEdit(p.id)}
@@ -191,23 +239,41 @@ export default function MobileQuickPhraseEditor({ open, locale, t, onClose, onSa
         <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-3">
           <div className="space-y-2">
             <input
-              value={draftKey}
-              onChange={(e) => setDraftKey(e.target.value)}
-              placeholder={t('phraseKeyLabel')}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
-            <input
               value={draftKo}
               onChange={(e) => setDraftKo(e.target.value)}
               placeholder={t('phraseKoLabel')}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base"
             />
+            <button
+              type="button"
+              disabled={translating || !draftKo.trim()}
+              onClick={() =>
+                void translateField(draftKo, 'ko', 'ru').then((v) => {
+                  if (v) setDraftRu(v);
+                })
+              }
+              className="text-xs font-semibold text-blue-700 disabled:opacity-40"
+            >
+              {t('phraseTranslateToRu')}
+            </button>
             <input
               value={draftRu}
               onChange={(e) => setDraftRu(e.target.value)}
               placeholder={t('phraseRuLabel')}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base"
             />
+            <button
+              type="button"
+              disabled={translating || !draftRu.trim()}
+              onClick={() =>
+                void translateField(draftRu, 'ru', 'ko').then((v) => {
+                  if (v) setDraftKo(v);
+                })
+              }
+              className="text-xs font-semibold text-blue-700 disabled:opacity-40"
+            >
+              {t('phraseTranslateToKo')}
+            </button>
             <button
               type="button"
               onClick={() => void handleCreate()}

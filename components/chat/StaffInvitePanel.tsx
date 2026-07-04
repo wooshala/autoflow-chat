@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
-import { STAFF_INVITES_URL } from '@/lib/chatApi';
+import { STAFF_INVITES_URL, STAFF_PARTICIPANTS_SUMMARY_URL } from '@/lib/chatApi';
 import { formatRelativeKST } from '@/lib/formatKST';
 import {
   STAFF_WORK_STATUS_OPTIONS,
@@ -20,6 +20,8 @@ type Props = {
   /** Chat main area: light collapsible bar. Admin drawer: dark full panel. */
   variant?: 'chat' | 'admin';
   collapsible?: boolean;
+  /** One-line online summary strip (no expand). */
+  summaryOnly?: boolean;
   defaultOpen?: boolean;
   /** Loaded chat messages — used to derive each staff's "마지막 메시지" time. */
   messages?: ChatMessage[];
@@ -90,6 +92,7 @@ function loadEvents(): StaffEvent[] {
 export default function StaffInvitePanel({
   variant = 'admin',
   collapsible = false,
+  summaryOnly = false,
   defaultOpen = true,
   messages
 }: Props) {
@@ -101,6 +104,9 @@ export default function StaffInvitePanel({
   const [testState, setTestState] = useState<Record<string, 'sending' | 'done'>>({});
   const [now, setNow] = useState(() => Date.now());
   const [events, setEvents] = useState<StaffEvent[]>([]);
+  const [activeSummary, setActiveSummary] = useState<{ active_count: number; online_count: number } | null>(
+    null
+  );
 
   const seenIdsRef = useRef<Set<string>>(new Set());
   const prevStatusRef = useRef<Map<string, string>>(new Map());
@@ -181,11 +187,22 @@ export default function StaffInvitePanel({
     [applyInvites]
   );
 
+  const loadSummary = useCallback(async () => {
+    const res = await fetchEnvelope<{ active_count: number; online_count: number }>(
+      STAFF_PARTICIPANTS_SUMMARY_URL
+    );
+    if (res.ok && res.data) setActiveSummary(res.data);
+  }, []);
+
   // Initial load + background polling (kept running even while collapsed, so the
   // panel shows the latest state immediately when reopened).
   useEffect(() => {
     void load();
-    const poll = setInterval(() => void load({ quiet: true }), POLL_MS);
+    if (summaryOnly || variant === 'chat') void loadSummary();
+    const poll = setInterval(() => {
+      void load({ quiet: true });
+      if (summaryOnly || variant === 'chat') void loadSummary();
+    }, POLL_MS);
     const tick = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => {
       clearInterval(poll);
@@ -251,6 +268,8 @@ export default function StaffInvitePanel({
 
   const totalCount = invites.filter((i) => i.enabled).length;
   const onlineCount = invites.filter((i) => statusOf(i, now) === 'online').length;
+  const displayTotal = activeSummary?.active_count ?? totalCount;
+  const displayOnline = activeSummary?.online_count ?? onlineCount;
 
   async function handleRevoke(inv: InviteRow) {
     const name = safeText(inv.display_name, '이 직원');
@@ -457,6 +476,16 @@ export default function StaffInvitePanel({
     </>
   );
 
+  // One-line participant summary for the default /chat ops surface.
+  if (summaryOnly) {
+    return (
+      <div className="shrink-0 border-b border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600">
+        <span className="font-semibold text-gray-800">👥 참여자</span>{' '}
+        {loading && !hasInvites && !activeSummary ? '…' : `${displayTotal}명`} · 🟢 {displayOnline}명 온라인
+      </div>
+    );
+  }
+
   // Collapsible header used inside the /chat surface.
   if (collapsible) {
     return (
@@ -470,7 +499,7 @@ export default function StaffInvitePanel({
           <span className="flex flex-wrap items-baseline gap-x-2 text-sm font-bold text-gray-900">
             <span>👥 참여자 관리</span>
             <span className="text-xs font-normal text-gray-500">
-              {loading && !hasInvites ? '…' : `${totalCount}명`} · 🟢 {onlineCount}명 온라인
+              {loading && !hasInvites && !activeSummary ? '…' : `${displayTotal}명`} · 🟢 {displayOnline}명 온라인
             </span>
           </span>
           <span aria-hidden className="text-gray-400">{open ? '▼' : '▶'}</span>

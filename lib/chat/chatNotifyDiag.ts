@@ -20,33 +20,24 @@ function diagBase() {
 /** Manual: verify loud notification beep independent of message receive path. */
 export async function testLoudNotificationSound(): Promise<boolean> {
   const base = diagBase();
-  console.log('[CHAT_DIAG_SOUND_TEST_START]', { ...base, allowHidden: true });
+  console.log('[CHAT_DIAG_SOUND_TEST_START]', { ...base });
 
   if (!base.soundUnlocked) {
     console.log('[CHAT_DIAG_SOUND_TEST_UNLOCK]', { reason: 'sound_not_unlocked' });
     const unlocked = await unlockNotificationAudio();
     if (!unlocked) {
-      console.log('[CHAT_SOUND_PLAY_FAILED]', {
+      console.log('[CHAT_SOUND_SKIPPED]', {
         source: 'diag_loud_sound_test',
-        reason: 'unlock_failed',
+        reason: 'not_unlocked',
         ...diagBase()
       });
       return false;
     }
   }
 
-  console.log('[CHAT_SOUND_PLAY]', {
-    source: 'diag_loud_sound_test',
-    tone: 'info',
-    allowHidden: true,
-    ...diagBase()
-  });
-
-  const ok = await playNotificationTone('info', { allowHidden: true });
-  if (ok) {
-    console.log('[CHAT_SOUND_PLAY_OK]', { source: 'diag_loud_sound_test', ...diagBase() });
-  } else {
-    console.log('[CHAT_SOUND_PLAY_FAILED]', {
+  const ok = await playNotificationTone('info');
+  if (!ok) {
+    console.log('[CHAT_SOUND_SKIPPED]', {
       source: 'diag_loud_sound_test',
       reason: 'play_returned_false',
       ...diagBase()
@@ -105,12 +96,12 @@ export async function testBrowserOsNotification(): Promise<boolean> {
 }
 
 /**
- * Manual: run hidden-tab notify path (OS notification + allowHidden beep)
+ * Manual: run hidden-tab notify path (OS notification + in-app beep)
  * without requiring the user to switch tabs first.
  */
 export async function testHiddenNotifySimulation(): Promise<{ soundOk: boolean; notifyOk: boolean }> {
   const base = diagBase();
-  console.log('[CHAT_DIAG_HIDDEN_SIM_START]', { ...base, allowHidden: true, simulatedHidden: true });
+  console.log('[CHAT_DIAG_HIDDEN_SIM_START]', { ...base, simulatedHidden: true });
 
   if (!base.soundUnlocked) {
     await unlockNotificationAudio();
@@ -124,24 +115,7 @@ export async function testHiddenNotifySimulation(): Promise<{ soundOk: boolean; 
     source: 'diag_hidden_sim'
   });
 
-  console.log('[CHAT_SOUND_PLAY]', {
-    source: 'diag_hidden_sim',
-    tone: 'info',
-    allowHidden: true,
-    simulatedHidden: true,
-    ...diagBase()
-  });
-
-  const soundOk = await playNotificationTone('info', { allowHidden: true });
-  if (soundOk) {
-    console.log('[CHAT_SOUND_PLAY_OK]', { source: 'diag_hidden_sim', ...diagBase() });
-  } else {
-    console.log('[CHAT_SOUND_PLAY_FAILED]', {
-      source: 'diag_hidden_sim',
-      reason: 'play_returned_false',
-      ...diagBase()
-    });
-  }
+  const soundOk = await playNotificationTone('info', { nativeAlreadyPlaysSound: false });
 
   console.log('[CHAT_DIAG_HIDDEN_SIM_DONE]', { notifyOk, soundOk, ...diagBase() });
   return { soundOk, notifyOk };

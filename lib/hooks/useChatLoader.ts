@@ -3,8 +3,28 @@ import { fetchEnvelope } from '@/lib/api/envelope';
 import { TIMEOUT_MS_CHAT_LIST } from '@/lib/api/timeouts';
 import { CHAT_LIST_URL } from '@/lib/chatApi';
 import type { ChatMessage } from '@/lib/types';
+import { logChatRefetchReason, logChatRefetchResult } from '@/lib/chat/chatRefetchLog';
+import {
+  latestMessageMeta,
+  logChatClientFetchResult,
+  logChatClientFetchStart,
+  newRequestId,
+  parseRefetchReason,
+  countVisibleMessages,
+  type SyncClient
+} from '@/lib/chat/syncTrace';
 import { log } from '@/lib/logger';
-import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
+import { chatTrace, chatTraceContext, callerFromStack } from '@/lib/chat/chatTrace';
+import { mergeChatMessageRow, normalizeChatMessageFields, normalizeTranslatedText } from '@/lib/chat/normalizeChatMessage';
+import {
+  installStaffWebNetworkTrace,
+  logStaffWebNetworkTrace,
+  recordFetchSuccess
+} from '@/lib/chat/networkTrace';
+
+export type ChatLoadFullResult = { ok: boolean; count: number; maxCreatedAt: string | null };
+
+export type ChatLoadFullFn = (source: string, opts?: { limit?: number }) => Promise<ChatLoadFullResult>;
 
 const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
@@ -27,6 +47,63 @@ function maxCreatedAt(msgs: ChatMessage[]): string | null {
   return max || null;
 }
 
+/** Diagnostic-only: translation presence flags for [CHAT_MEMORY_ROW]/[CHAT_FULLLOAD_ROW]. */
+function translationFlags(m: Partial<ChatMessage> | undefined): { has_ru: boolean; has_ko: boolean } {
+  const tt = normalizeTranslatedText(m?.translated_text);
+  return {
+    has_ru: Boolean(tt?.ru && String(tt.ru).trim()),
+    has_ko: Boolean(tt?.ko && String(tt.ko).trim())
+  };
+}
+
+function applyListMerge(
+  prev: ChatMessage[],
+  nextMessages: ChatMessage[],
+  staffTimelineMode: boolean,
+  isFullLoad: boolean
+): { merged: ChatMessage[]; added_count: number; removed_count: number } {
+  if (staffTimelineMode && isFullLoad) {
+    const merged = sortMessagesAsc(
+      nextMessages.filter((m) => m?.id).map((m) => normalizeChatMessageFields(m))
+    );
+    const prevIds = new Set(prev.map((m) => String(m.id)));
+    const mergedIds = new Set(merged.map((m) => String(m.id)));
+    return {
+      merged,
+      added_count: merged.filter((m) => !prevIds.has(String(m.id))).length,
+      removed_count: prev.filter((m) => !mergedIds.has(String(m.id))).length
+    };
+  }
+
+  const byId = new Map<string, ChatMessage>();
+  const prevIds = new Set<string>();
+  const isTmpId = (id: string) => id.startsWith('tmp-') || id.startsWith('tmp_');
+  prev.forEach((m) => {
+    if (!m?.id) return;
+    const id = String(m.id);
+    // On a full load the DB snapshot is authoritative for saved messages. Drop the
+    // optimistic `tmp-` placeholder here so it can never coexist with its saved real
+    // row (duplicate bubble). The real row is (re)added by id via reconcile/realtime;
+    // an in-flight tmp not yet in the DB is re-added by the send reconcile.
+    if (isFullLoad && isTmpId(id)) return;
+    byId.set(id, m);
+    prevIds.add(id);
+  });
+  let added_count = 0;
+  nextMessages.forEach((m) => {
+    if (!m?.id) return;
+    const mid = String(m.id);
+    const prevRow = byId.get(mid);
+    const normalized = normalizeChatMessageFields(m);
+    byId.set(mid, prevRow ? mergeChatMessageRow(prevRow, normalized) : normalized);
+    if (!prevIds.has(mid)) added_count += 1;
+  });
+  const merged = sortMessagesAsc(Array.from(byId.values()));
+  const mergedIds = new Set(merged.map((m) => String(m.id)));
+  const removed_count = prev.filter((m) => m?.id && !mergedIds.has(String(m.id))).length;
+  return { merged, added_count, removed_count };
+}
+
 export type UseChatLoaderOptions = {
   /** 페이지/워치독과 공유: in-flight 로딩 여부 (시퀀스 기준으로만 해제) */
   loadingRef?: MutableRefObject<boolean>;
@@ -38,6 +115,10 @@ export type UseChatLoaderOptions = {
   deltaListLimit?: number;
   /** Staff-chat: log [STAFF_CHAT_API_MESSAGES] / [STAFF_CHAT_SET_MESSAGES] and replace list on full load. */
   staffTimelineMode?: boolean;
+  syncClient?: SyncClient;
+  messagesRef?: MutableRefObject<ChatMessage[]>;
+  roomFilterRef?: MutableRefObject<string | null>;
+  userFilterRef?: MutableRefObject<string | null>;
 };
 
 export function useChatLoader(options?: UseChatLoaderOptions) {
@@ -47,6 +128,10 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const initialListLimit = options?.initialListLimit ?? 50;
   const deltaListLimit = options?.deltaListLimit ?? 40;
   const staffTimelineMode = options?.staffTimelineMode ?? false;
+  const syncClient = options?.syncClient ?? 'pc';
+  const messagesRef = options?.messagesRef;
+  const roomFilterRef = options?.roomFilterRef;
+  const userFilterRef = options?.userFilterRef;
 
   const isMountedRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -65,8 +150,8 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const load = useCallback(
     async (
       source: string = 'manual',
-      opts?: { since?: string; mode?: 'full' | 'delta' }
-    ): Promise<{ ok: boolean; count: number; maxCreatedAt: string | null }> => {
+      opts?: { since?: string; mode?: 'full' | 'delta'; limit?: number }
+    ): Promise<ChatLoadFullResult> => {
       if (!isMountedRef.current) return { ok: false, count: 0, maxCreatedAt: null };
 
       const mySeq = ++loadSeqRef.current;
@@ -80,29 +165,76 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
       loadingRef.current = true;
       lastLoadSourceRef.current = source;
 
+      const listLimit = opts?.limit ?? (opts?.since ? deltaListLimit : initialListLimit);
+      const requestId = newRequestId();
+      const fetchReason = parseRefetchReason(source);
+      const beforeRows = messagesRef?.current ?? [];
+      const beforeMeta = latestMessageMeta(beforeRows);
+      const fetchStarted = performance.now();
+
+      logChatClientFetchStart({
+        client: syncClient,
+        reason: fetchReason,
+        request_id: requestId,
+        before_count: beforeRows.length,
+        latest_before_id: beforeMeta.id,
+        selected_room_filter: roomFilterRef?.current ?? null,
+        user_filter: userFilterRef?.current ?? 'none',
+        limit: listLimit,
+        endpoint: CHAT_LIST_URL
+      });
+
+      chatTrace('loadfull_start', {
+        id: null,
+        source,
+        room: roomFilterRef?.current ?? null,
+        messages: beforeRows.length,
+        extra: {
+          caller: callerFromStack(),
+          reason: fetchReason,
+          mode: opts?.mode ?? (opts?.since ? 'delta' : 'full'),
+          initial_hydration_done: initialHydrationDoneRef.current,
+          visibility: typeof document !== 'undefined' ? document.visibilityState : null,
+          reconnect_token: chatTraceContext.reconnectToken,
+          ts_ms: Date.now(),
+          since: opts?.since ?? null,
+          limit: listLimit,
+          seq: mySeq
+        }
+      });
+
       if (source === 'initial' || source === 'initial_retry') {
         log.debug('[CHAT_LOAD_START]', {
           source,
           since: opts?.since ?? null,
-          limit: opts?.since ? deltaListLimit : initialListLimit,
+          limit: listLimit,
           seq: mySeq
         });
       }
 
       try {
+        if (staffTimelineMode) installStaffWebNetworkTrace();
         const params = new URLSearchParams();
-        params.set('limit', String(opts?.since ? deltaListLimit : initialListLimit));
+        params.set('limit', String(listLimit));
         if (opts?.since) params.set('since', opts.since);
         const listUrl = `${CHAT_LIST_URL}?${params.toString()}`;
         const result = await fetchEnvelope<ChatListData>(listUrl, {
           cache: 'no-store',
           signal: controller.signal,
-          timeoutMs: listTimeoutMs
+          timeoutMs: listTimeoutMs,
+          headers: {
+            'X-Chat-Client': syncClient,
+            'X-Chat-Request-Id': requestId
+          }
         });
 
         if (!result.ok) {
           throw new Error(result.message || `CHAT_LIST_HTTP_${result.status}`);
         }
+
+        // Diagnostic-only: mark a successful list fetch (network reachable) for
+        // [STAFF_WEB_NETWORK_TRACE] "ms_since_last_success".
+        if (staffTimelineMode) recordFetchSuccess();
 
         const nextMessages = Array.isArray(result.data.messages) ? result.data.messages : null;
 
@@ -114,7 +246,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
             count: nextMessages.length,
             mobile_count: mobile,
             pc_count: pc,
-            limit: opts?.since ? deltaListLimit : initialListLimit,
+            limit: listLimit,
             since: opts?.since ?? null,
             user_filter: 'none'
           });
@@ -138,86 +270,116 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         }
 
         const stillCurrent = mySeq === loadSeqRef.current && !controller.signal.aborted && isMountedRef.current;
+        let mergeStats = { added_count: 0, removed_count: 0, after_count: beforeRows.length };
+        let afterMeta = beforeMeta;
+
+        let mergedForTrace: ChatMessage[] = beforeRows;
+
         if (stillCurrent) {
           if (nextMessages) {
             const isFullLoad = !opts?.since;
-            setMessages((prev) => {
-              if (staffTimelineMode && isFullLoad) {
-                const replaced = sortMessagesAsc(
-                  nextMessages
-                    .filter((m) => m?.id)
-                    .map((m) => normalizeChatMessageFields(m))
-                );
-                const droppedNoId = nextMessages.length - replaced.length;
-                console.log('[STAFF_CHAT_SET_MESSAGES]', {
-                  source,
-                  mode: 'replace_full',
-                  count: replaced.length,
-                  api_count: nextMessages.length,
-                  dropped_missing_id: droppedNoId,
-                  before_count: prev.length,
-                  user_filter: 'none'
-                });
-                return replaced;
-              }
+            const { merged, added_count, removed_count } = applyListMerge(
+              beforeRows,
+              nextMessages,
+              staffTimelineMode,
+              isFullLoad
+            );
+            mergeStats = { added_count, removed_count, after_count: merged.length };
+            afterMeta = latestMessageMeta(merged);
+            mergedForTrace = merged;
 
-              const byId = new Map<string, ChatMessage>();
-              const prevIds = new Set<string>();
-              prev.forEach((m) => {
-                if (!m?.id) return;
-                byId.set(String(m.id), m);
-                prevIds.add(String(m.id));
-              });
-              const added: ChatMessage[] = [];
-              let skippedExisting = 0;
-              nextMessages.forEach((m) => {
-                if (!m?.id) return;
-                const mid = String(m.id);
-                const prevRow = byId.get(mid);
-                const normalized = normalizeChatMessageFields(m);
-                byId.set(mid, prevRow ? mergeChatMessageRow(prevRow, normalized) : normalized);
-                if (!prevIds.has(mid)) {
-                  added.push(normalized);
-                } else {
-                  skippedExisting += 1;
-                }
-              });
-              const merged = sortMessagesAsc(Array.from(byId.values()));
-              if (staffTimelineMode) {
-                console.log('[STAFF_CHAT_SET_MESSAGES]', {
-                  source,
-                  mode: 'merge',
-                  count: merged.length,
-                  api_count: nextMessages.length,
-                  before_count: prev.length,
-                  added_count: added.length,
-                  user_filter: 'none'
-                });
-              }
-              log.debug('[SET_MESSAGES_MERGED_LAST_IDS]', {
+            if (staffTimelineMode && isFullLoad) {
+              const droppedNoId = nextMessages.length - merged.length;
+              console.log('[STAFF_CHAT_SET_MESSAGES]', {
                 source,
-                before_count: prev.length,
-                incoming_count: nextMessages.length,
-                merged_count: merged.length,
-                merged_last5_ids: merged.slice(-5).map((m) => m?.id).filter(Boolean)
+                mode: 'replace_full',
+                count: merged.length,
+                api_count: nextMessages.length,
+                dropped_missing_id: droppedNoId,
+                before_count: beforeRows.length,
+                user_filter: 'none'
               });
-              if (DEBUG_VERBOSE) {
-                log.info('[CHAT_LOADER_MERGE_DIFF]', {
-                  source,
-                  before_count: prev.length,
-                  incoming_count: nextMessages.length,
-                  merged_count: merged.length,
-                  added_count: added.length,
-                  skipped_existing_count: skippedExisting,
-                  added_last5: added.slice(-5).map((m: any) => ({
-                    id: m?.id ?? null,
-                    created_at: m?.created_at ?? null,
-                    text: String(m?.message ?? '').slice(0, 40)
-                  }))
-                });
+
+              // DIAGNOSTIC (measurement-only — REPLACE behavior unchanged): prove whether the
+              // staff full-load REPLACE drops in-memory translations. Compare per message_id:
+              // memory(prev=beforeRows, realtime-merged) vs full-load(nextMessages=DB snapshot).
+              const memById = new Map(
+                beforeRows.filter((m) => m?.id).map((m) => [String(m.id), m] as const)
+              );
+              for (const m of beforeRows) {
+                if (!m?.id) continue;
+                const f = translationFlags(m);
+                console.log(
+                  '[CHAT_MEMORY_ROW]',
+                  JSON.stringify({
+                    source,
+                    message_id: String(m.id),
+                    has_ru: f.has_ru,
+                    has_ko: f.has_ko,
+                    original_lang: m.original_lang ?? null,
+                    updated_at: (m as { updated_at?: string | null }).updated_at ?? null
+                  })
+                );
               }
-              return merged;
+              for (const m of nextMessages) {
+                if (!m?.id) continue;
+                const f = translationFlags(m);
+                const prevRow = memById.get(String(m.id));
+                const prevF = prevRow ? translationFlags(prevRow) : null;
+                console.log(
+                  '[CHAT_FULLLOAD_ROW]',
+                  JSON.stringify({
+                    source,
+                    message_id: String(m.id),
+                    has_ru: f.has_ru,
+                    has_ko: f.has_ko,
+                    original_lang: m.original_lang ?? null,
+                    updated_at: (m as { updated_at?: string | null }).updated_at ?? null
+                  })
+                );
+                if (prevF?.has_ru && !f.has_ru) {
+                  console.log(
+                    '[CHAT_TRANSLATION_REGRESSION_DETECTED]',
+                    JSON.stringify({
+                      source,
+                      message_id: String(m.id),
+                      has_ru: false,
+                      has_ko: translationFlags(m).has_ko,
+                      original_lang: m.original_lang ?? null,
+                      updated_at: (m as { updated_at?: string | null }).updated_at ?? null,
+                      memory_has_ru: true,
+                      fullload_has_ru: false,
+                      memory_updated_at: (prevRow as { updated_at?: string | null }).updated_at ?? null
+                    })
+                  );
+                }
+              }
+            } else if (staffTimelineMode) {
+              console.log('[STAFF_CHAT_SET_MESSAGES]', {
+                source,
+                mode: 'merge',
+                count: merged.length,
+                api_count: nextMessages.length,
+                before_count: beforeRows.length,
+                added_count,
+                user_filter: 'none'
+              });
+            }
+
+            chatTrace('set_messages', {
+              id: afterMeta.id,
+              source: `loader_${isFullLoad ? 'full' : 'delta'}`,
+              room: roomFilterRef?.current ?? null,
+              messages: merged.length,
+              extra: {
+                load_source: source,
+                api_count: nextMessages.length,
+                added_count,
+                removed_count
+              }
             });
+            setMessages(merged);
+            if (messagesRef) messagesRef.current = merged;
           } else {
             log.error('[CHAT_LIST_SHAPE_MISMATCH]', { source });
           }
@@ -229,15 +391,27 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
           created_at: m?.created_at || null
         }));
 
-        if (source === 'initial' || source === 'initial_retry') {
-          log.debug('[CHAT_LIST_RESPONSE]', {
-            source,
-            count: nextMessages?.length || 0,
-            first3
+        if (stillCurrent && nextMessages) {
+          const { visible } = countVisibleMessages(mergedForTrace, {
+            roomFilter: roomFilterRef?.current,
+            userFilter: userFilterRef?.current ?? null
           });
-          log.debug('[CHAT_LIST_LOAD_OK]', {
-            source,
-            count: nextMessages?.length || 0
+          logChatClientFetchResult({
+            client: syncClient,
+            reason: fetchReason,
+            request_id: requestId,
+            before_count: beforeRows.length,
+            after_count: mergeStats.after_count,
+            latest_before_id: beforeMeta.id,
+            latest_after_id: afterMeta.id,
+            latest_after_created_at: afterMeta.created_at,
+            added_count: mergeStats.added_count,
+            removed_count: mergeStats.removed_count,
+            duration_ms: Math.round(performance.now() - fetchStarted),
+            visible_count: visible.length,
+            selected_room_filter: roomFilterRef?.current ?? null,
+            user_filter: userFilterRef?.current ?? 'none',
+            ok: true
           });
         }
 
@@ -256,6 +430,26 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
           setInitialLoadStatus('ok');
         }
 
+        chatTrace('loadfull_end', {
+          id: afterMeta.id,
+          source,
+          room: roomFilterRef?.current ?? null,
+          messages: mergeStats.after_count,
+          extra: {
+            reason: fetchReason,
+            mode: opts?.mode ?? (opts?.since ? 'delta' : 'full'),
+            initial_hydration_done: initialHydrationDoneRef.current,
+            visibility: typeof document !== 'undefined' ? document.visibilityState : null,
+            reconnect_token: chatTraceContext.reconnectToken,
+            ts_ms: Date.now(),
+            seq: mySeq,
+            still_current: stillCurrent,
+            ok: true,
+            api_count: nextMessages?.length ?? 0,
+            added_count: mergeStats.added_count,
+            removed_count: mergeStats.removed_count
+          }
+        });
         return {
           ok: true,
           count: nextMessages?.length || 0,
@@ -282,6 +476,13 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
           error: error?.message || String(error)
         });
 
+        // Diagnostic-only: capture device/WebView network state at the moment the
+        // list fetch (Vercel /api/chat/list) failed — pairs with realtime/Supabase
+        // failures to flag "device_network_unavailable_likely".
+        if (staffTimelineMode) {
+          logStaffWebNetworkTrace({ phase: `list_fetch_error:${source}`, target: CHAT_LIST_URL, error });
+        }
+
         if (source === 'initial' || source === 'initial_retry') {
           log.debug('[CHAT_INITIAL_LOAD]', {
             source,
@@ -302,10 +503,13 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         }
       }
     },
-    [loadingRef, listTimeoutMs, initialListLimit, deltaListLimit, staffTimelineMode]
+    [loadingRef, listTimeoutMs, initialListLimit, deltaListLimit, staffTimelineMode, syncClient, messagesRef, roomFilterRef, userFilterRef]
   );
 
-  const loadFull = useCallback(async (source: string) => load(source, { mode: 'full' }), [load]);
+  const loadFull = useCallback<ChatLoadFullFn>(
+    async (source, opts) => load(source, { mode: 'full', limit: opts?.limit }),
+    [load]
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -323,6 +527,12 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
       const first = await loadFull('initial');
       if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
       if (first?.ok) {
+        logChatRefetchReason('mount');
+        logChatRefetchResult('mount', {
+          ok: true,
+          count: first.count,
+          latest_created_at: first.maxCreatedAt
+        });
         setInitialLoadStatus('ok');
         return;
       }

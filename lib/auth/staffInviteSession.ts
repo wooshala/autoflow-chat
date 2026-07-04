@@ -67,13 +67,44 @@ export function inviteToSession(invite: StaffInvite, userId: string | null): Sta
   };
 }
 
-export function readInviteTokenFromUrl(): string | null {
-  if (typeof window === 'undefined') return null;
+export type InviteTokenSource = 'url' | 'storage';
+
+/** Read participant invite token from URL query (`t` preferred, `token` alias). */
+export function readInviteTokenFromSearchParams(sp: URLSearchParams | null | undefined): string | null {
+  if (!sp) return null;
   try {
-    return new URLSearchParams(window.location.search).get('t')?.trim() || null;
+    return sp.get('t')?.trim() || sp.get('token')?.trim() || null;
   } catch {
     return null;
   }
+}
+
+export function readInviteTokenFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return readInviteTokenFromSearchParams(new URLSearchParams(window.location.search));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Bootstrap token priority: URL `?t=` / `?token=` always wins over localStorage.
+ * When URL token differs from stored, stale storage is cleared before validation.
+ */
+export function resolveBootstrapInviteToken(urlToken: string | null): {
+  token: string | null;
+  source: InviteTokenSource | null;
+  clearedStaleStorage: boolean;
+} {
+  const stored = loadStoredInviteToken();
+  if (urlToken) {
+    const clearedStaleStorage = Boolean(stored && stored !== urlToken);
+    if (clearedStaleStorage) clearStoredInviteToken();
+    return { token: urlToken, source: 'url', clearedStaleStorage };
+  }
+  if (stored) return { token: stored, source: 'storage', clearedStaleStorage: false };
+  return { token: null, source: null, clearedStaleStorage: false };
 }
 
 export function readDeprecatedUserParamFromUrl(): string | null {

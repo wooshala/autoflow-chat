@@ -1,4 +1,5 @@
 import type { NotificationTone } from '@/lib/chat/notificationTone';
+import { tryClaimMessageSound } from '@/lib/chat/chatNotifyMessageDedupe';
 import { getNotifySoundKey } from '@/lib/chat/notifySound';
 import { NOTIFY_PLAY_VOLUME, playPreferredNotifySound } from '@/lib/chat/notifySoundPlay';
 
@@ -63,12 +64,16 @@ function getNotifyAudio(): HTMLAudioElement | null {
   return notifyAudio;
 }
 
-/** Play the real notification sound file at full volume. Primary playback path. */
+/** Play the real notification sound file. Primary playback path. */
 async function playNotifyAudioFile(): Promise<boolean> {
+  return playNotifyAudioFileWithVolume(NOTIFY_PLAY_VOLUME);
+}
+
+async function playNotifyAudioFileWithVolume(volume: number): Promise<boolean> {
   const audio = getNotifyAudio();
   if (!audio) return false;
   try {
-    audio.volume = NOTIFY_PLAY_VOLUME;
+    audio.volume = Math.min(1, Math.max(0, volume));
     audio.currentTime = 0;
     await audio.play();
     console.log('[CHAT_SOUND_AUDIO_FILE_PLAY_OK]', { src: NOTIFY_SOUND_SRC, volume: audio.volume });
@@ -300,8 +305,12 @@ export async function unlockNotificationAudio(): Promise<boolean> {
 }
 
 export type PlayNotificationToneOptions = {
-  /** Best-effort beep when tab hidden (often blocked; OS notification sound is primary). */
-  allowHidden?: boolean;
+  /** When true, skip web audio — Tauri native (rodio) already played on the OS path. */
+  nativeAlreadyPlaysSound?: boolean;
+  /** When set, dedupe sound playback per message.id within TTL window. */
+  messageId?: string;
+  /** Override volume (0–1). When omitted, uses NOTIFY_PLAY_VOLUME. */
+  volume?: number;
 };
 
 export async function playNotificationTone(
@@ -309,72 +318,81 @@ export async function playNotificationTone(
   options?: PlayNotificationToneOptions
 ): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  if (tone === 'silent') return false;
-
-  const hidden =
-    typeof document !== 'undefined' &&
-    (document.hidden || document.visibilityState !== 'visible');
-  if (hidden && !options?.allowHidden) {
-    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'not_visible', tone });
+  if (tone === 'silent') {
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'silent', tone, message_id: options?.messageId ?? null });
     return false;
+  }
+
+  const messageId = options?.messageId?.trim() || '';
+  if (messageId) {
+    if (!tryClaimMessageSound(messageId)) {
+      console.log('[CHAT_SOUND_SUPPRESSED_DUPLICATE]', { message_id: messageId });
+      return false;
+    }
   }
 
   const diag = peekNotificationAudioDiag();
   if (!audioUnlocked) {
-    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'not_unlocked', tone, hidden, diag });
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'not_unlocked', tone, diag });
     return false;
   }
 
   if (getNotifySoundKey() === 'mute') {
-    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'notify_sound_mute', tone });
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'muted', tone });
     return false;
   }
 
-  // In the Tauri shell the native notification (rodio) plays the sound for the
-  // background/OS path — skip the webaudio sound here to avoid a double.
+  const soundKey = getNotifySoundKey();
+  if (!soundKey) {
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'no_sound_key', tone });
+    return false;
+  }
+
+  // Tauri background path: native_notify + rodio already handled sound — avoid double.
   const nativeBridge =
     typeof window !== 'undefined' &&
     Boolean((window as { __AUTOFLOW_NATIVE_BRIDGE__?: boolean }).__AUTOFLOW_NATIVE_BRIDGE__);
-  if (nativeBridge && options?.allowHidden) {
-    console.log('[NOTIFY_SOUND_SKIP_TAURI_NATIVE]', { tone });
+  if (nativeBridge && options?.nativeAlreadyPlaysSound) {
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'native_background', tone });
     return false;
   }
 
+  const effectiveVolume = options?.volume != null && Number.isFinite(options.volume)
+    ? Math.min(1, Math.max(0, options.volume))
+    : NOTIFY_PLAY_VOLUME;
+
   // Primary: user-selected notification sound (file or soft synth profile).
-  const prefOk = await playPreferredNotifySound({ tone, volume: NOTIFY_PLAY_VOLUME, audioContext: sharedCtx });
-  if (prefOk) return true;
+  const prefOk = await playPreferredNotifySound({ tone, volume: effectiveVolume, audioContext: sharedCtx });
+  if (prefOk) {
+    console.log('[CHAT_SOUND_PLAYED]', { tone, path: 'preferred', soundKey });
+    return true;
+  }
 
   // Legacy file fallback if preference playback failed.
-  const fileOk = await playNotifyAudioFile();
-  if (fileOk) return true;
+  const fileOk = await playNotifyAudioFileWithVolume(effectiveVolume);
+  if (fileOk) {
+    console.log('[CHAT_SOUND_PLAYED]', { tone, path: 'audio_file', soundKey });
+    return true;
+  }
 
   // Fallback only: WebAudio oscillator beeps.
   if (!sharedCtx) {
-    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'no_fallback_ctx', tone, hidden, diag });
+    console.log('[CHAT_SOUND_SKIPPED]', { reason: 'no_fallback_ctx', tone, diag });
     return false;
   }
 
   const ctx = sharedCtx;
   const stateBefore = ctx.state;
-  console.log('[CHAT_SOUND_PLAY]', {
-    tone,
-    stateBefore,
-    hidden,
-    allowHidden: Boolean(options?.allowHidden),
-    notifyGain: NOTIFY_BEEP_GAIN,
-    diag
-  });
 
   try {
     if (ctx.state === 'suspended') {
       try {
         await ctx.resume();
       } catch (resumeErr: unknown) {
-        console.log('[CHAT_SOUND_PLAY_FAILED]', {
-          phase: 'resume',
+        console.log('[CHAT_SOUND_SKIPPED]', {
+          reason: 'no_fallback_ctx',
           tone,
-          stateBefore,
-          stateAfter: ctx.state,
+          phase: 'resume_failed',
           ...playErrorFields(resumeErr)
         });
         return false;
@@ -382,32 +400,74 @@ export async function playNotificationTone(
     }
 
     const stateAfterResume = ctx.state;
-    console.log('[CHAT_SOUND_PLAY_CTX]', { tone, stateBefore, stateAfterResume, notifyGain: NOTIFY_BEEP_GAIN });
-
     if (stateAfterResume !== 'running') {
-      console.log('[CHAT_SOUND_PLAY_FAILED]', {
-        phase: 'ctx_not_running',
+      console.log('[CHAT_SOUND_SKIPPED]', {
+        reason: 'no_fallback_ctx',
         tone,
+        phase: 'ctx_not_running',
         stateBefore,
         stateAfterResume
       });
       return false;
     }
 
-    console.log('[NOTIFY_SOUND_OSC]', { tone, reason: 'fallback_oscillator', notifyGain: NOTIFY_BEEP_GAIN });
     await playMessageNotificationBeeps(ctx, tone);
-
-    console.log('[CHAT_SOUND_PLAY_OK]', { tone, state: ctx.state, notifyGain: NOTIFY_BEEP_GAIN });
+    console.log('[CHAT_SOUND_PLAYED]', { tone, path: 'oscillator', soundKey });
     return true;
   } catch (error: unknown) {
-    console.log('[CHAT_SOUND_PLAY_FAILED]', {
-      phase: 'beep',
+    console.log('[CHAT_SOUND_SKIPPED]', {
+      reason: 'no_fallback_ctx',
       tone,
-      stateBefore,
-      stateAfter: ctx.state,
-      notifyGain: NOTIFY_BEEP_GAIN,
+      phase: 'beep_failed',
       ...playErrorFields(error)
     });
     return false;
   }
 }
+
+const staffAudioCache = new Map<string, HTMLAudioElement>();
+
+function getStaffAudio(src: string): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null;
+  let el = staffAudioCache.get(src);
+  if (!el) {
+    el = new Audio(src);
+    el.preload = 'auto';
+    staffAudioCache.set(src, el);
+  }
+  return el;
+}
+
+export async function unlockStaffSound(src: string): Promise<boolean> {
+  const audio = getStaffAudio(src);
+  if (!audio) return false;
+  try {
+    audio.volume = 0;
+    audio.currentTime = 0;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function playStaffSound(src: string, volume: number): Promise<boolean> {
+  const audio = getStaffAudio(src);
+  if (!audio) return false;
+  try {
+    audio.volume = Math.min(1, Math.max(0, volume));
+    audio.currentTime = 0;
+    await audio.play();
+    console.log('[STAFF_SOUND_PLAYED]', { src, volume: audio.volume });
+    return true;
+  } catch (err: unknown) {
+    console.log('[STAFF_SOUND_PLAY_FAILED]', { src, ...playErrorFields(err) });
+    return false;
+  }
+}
+
+/** @deprecated Use unlockStaffSound / playStaffSound with explicit src. */
+export const unlockStaffDefaultSound = () => unlockStaffSound('/sounds/default.wav');
+export const playStaffDefaultSound = (volume: number) => playStaffSound('/sounds/default.wav', volume);

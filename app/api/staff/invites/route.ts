@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { jsonErr, jsonOk } from '@/lib/api/envelope';
+import { jsonErr, jsonOk, formatUnknownError } from '@/lib/api/envelope';
 import {
   getActiveStaffEntryInvite,
   rotateStaffEntryInvite,
@@ -7,6 +7,7 @@ import {
 } from '@/lib/services/staffEntryInvites';
 import {
   createStaffInvite,
+  isStaffInviteActive,
   joinStaffViaEntry,
   listStaffInvites,
   resolveInviteUserId,
@@ -49,21 +50,33 @@ export async function GET(req: NextRequest) {
         url: staffEntryInviteUrl(entry.token, origin)
       });
     } catch (e: unknown) {
-      return jsonErr('ENTRY_INVITE_FAILED', e instanceof Error ? e.message : String(e), 500);
+      const detail = formatUnknownError(e);
+      console.error('[STAFF_ENTRY_INVITE_GET_FAILED]', { siteId, detail, raw: e });
+      return jsonErr('ENTRY_INVITE_FAILED', detail, 500);
     }
   }
 
   const token = req.nextUrl.searchParams.get('token')?.trim();
   if (token) {
     const checkAny = req.nextUrl.searchParams.get('check') === 'any';
+    const tokenPrefix = token.slice(0, 8);
     try {
       const invite = checkAny
         ? await resolveStaffInviteByTokenAny(token, siteId)
         : await resolveStaffInviteByToken(token, siteId);
       if (!invite) {
+        console.warn('[STAFF_INVITE_GET]', { phase: 'not_found', siteId, tokenPrefix, checkAny });
         return jsonErr('INVALID_INVITE', '유효하지 않은 초대 링크', 404);
       }
-      if (!invite.enabled) {
+      if (!isStaffInviteActive(invite)) {
+        console.warn('[STAFF_INVITE_GET]', {
+          phase: 'inactive',
+          siteId,
+          tokenPrefix,
+          inviteId: invite.id,
+          enabled: invite.enabled,
+          revoked_at: invite.revoked_at ?? null
+        });
         return jsonErr('INVITE_REVOKED', '채팅방에서보내졌습니다. 관리자에게 문의하세요.', 403);
       }
       await touchStaffInviteSeen(invite.id);
@@ -78,7 +91,9 @@ export async function GET(req: NextRequest) {
         url: staffInviteUrl(invite.token, origin)
       });
     } catch (e: unknown) {
-      return jsonErr('INVITE_RESOLVE_FAILED', e instanceof Error ? e.message : String(e), 500);
+      const detail = formatUnknownError(e);
+      console.error('[STAFF_INVITE_GET]', { phase: 'resolve_failed', siteId, tokenPrefix, detail });
+      return jsonErr('INVITE_RESOLVE_FAILED', detail, 500);
     }
   }
 

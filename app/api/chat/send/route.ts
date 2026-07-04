@@ -3,6 +3,7 @@ import { sendStaffPushAfterMessage } from '@/lib/push/sendStaffPushAfterMessage'
 import { buildChatTranslations } from '@/lib/chat/translateMessageForChat';
 import { parseSendPriority } from '@/lib/chat/messagePriority';
 import { emitLatency } from '@/lib/chat/latencyTrace';
+import { logChatSendTrace, newRequestId } from '@/lib/chat/syncTrace';
 import { waitUntil } from '@vercel/functions';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
@@ -446,12 +447,15 @@ async function runTranslationPostProcess(input: {
 }
 
 export async function POST(req: NextRequest) {
+  const request_id = newRequestId();
   const requestStarted = Date.now();
   const apiReceivedAt = requestStarted;
   console.log('[CHAT_SEND_START]');
   logSupabaseEnvCtx('[DIAG_SUPABASE_CTX_SEND]');
   try {
+    const formDataStarted = Date.now();
     const formData = await req.formData();
+    const formDataMs = Date.now() - formDataStarted;
 
     const client_nonce = String(formData.get('client_nonce') || formData.get('client_request_id') || '').trim() || null;
     const client_send_ts_raw = Number(formData.get('client_send_ts'));
@@ -476,15 +480,23 @@ export async function POST(req: NextRequest) {
       console.log('[CHAT_SEND_ACTOR_NAME]', { actor_name, user_id: user_id || null });
     }
     const image = formData.get('image');
+    console.log('[CHAT_FORMDATA_PARSED]', {
+      formdata_ms: formDataMs,
+      elapsed_ms: Date.now() - requestStarted,
+      has_image: image instanceof File,
+      client_nonce
+    });
     console.log('[CHAT_FILE_RECEIVED]', {
       exists: image instanceof File,
       name: image instanceof File ? image.name : null,
       size: image instanceof File ? image.size : null,
-      type: image instanceof File ? image.type : null
+      type: image instanceof File ? image.type : null,
+      elapsed_ms: Date.now() - requestStarted
     });
 
     let image_url: string | null = null;
     let image_storage_path: string | null = null;
+    let storageUploadMs: number | null = null;
 
     // 파일이 있으면 업로드 (단일 업로드 플로우)
     if (image instanceof File) {
@@ -496,17 +508,25 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        const uploadStarted = Date.now();
         console.log('[CHAT_FILE_UPLOAD_START]', {
           image_name: image.name,
           image_size: image.size,
-          image_type: image.type
+          image_type: image.type,
+          elapsed_ms: uploadStarted - requestStarted
         });
         const uploaded = await uploadImage(image);
         image_url = uploaded.image_url;
         image_storage_path = uploaded.storage_path;
+        const uploadMs = Date.now() - uploadStarted;
+        storageUploadMs = uploadMs;
         console.log('[CHAT_FILE_UPLOAD_OK]', {
           image_url,
-          image_storage_path
+          image_storage_path,
+          storage_upload_ms: uploaded.profile?.storage_upload_ms ?? null,
+          array_buffer_ms: uploaded.profile?.array_buffer_ms ?? null,
+          total_upload_image_ms: uploadMs,
+          elapsed_ms: Date.now() - requestStarted
         });
       } catch (uploadError: any) {
         console.error('[CHAT_FILE_UPLOAD_ERROR]', {
@@ -576,13 +596,13 @@ export async function POST(req: NextRequest) {
       translated_text: null,
       back_translated_text: null
     });
-    const has_translation = false; // translation arrives later via async UPDATE
-    const dbInsertedAt = Date.now();
+    const insertFinishedAt = Date.now();
+    const db_insert_ms = insertFinishedAt - insertStarted;
     console.log('[CHAT_SEND_DB_INSERTED]', {
       client_nonce,
       message_id: saved.id,
-      ts: dbInsertedAt,
-      db_insert_ms: dbInsertedAt - insertStarted
+      ts: insertFinishedAt,
+      db_insert_ms
     });
     emitLatency('DB_INSERTED', {
       message_id: saved.id,
@@ -590,13 +610,11 @@ export async function POST(req: NextRequest) {
       sender_side,
       room: room_no,
       source: latSource,
-      has_translation,
-      // server-local cumulative from request arrival (no longer includes translation)
-      elapsed_ms: dbInsertedAt - requestStarted,
-      db_insert_ms: dbInsertedAt - insertStarted,
-      // cross-machine cumulative from the user's click (skew caveat)
-      since_click_ms: client_send_ts ? dbInsertedAt - client_send_ts : null,
-      ts: dbInsertedAt
+      has_translation: false,
+      elapsed_ms: insertFinishedAt - requestStarted,
+      db_insert_ms,
+      since_click_ms: client_send_ts ? insertFinishedAt - client_send_ts : null,
+      ts: insertFinishedAt
     });
 
     // Async translation (non-blocking): UPDATEs the row after response; receivers
@@ -702,6 +720,12 @@ export async function POST(req: NextRequest) {
       has_message: Boolean(message.trim())
     });
 
+    console.log('[STAFF_FCM_ENQUEUE]', {
+      message_id: saved.id,
+      room_no: saved.room_no,
+      sender_side: saved.sender_side ?? null,
+      user_id: saved.user_id ?? null
+    });
     void sendStaffPushAfterMessage(saved).catch((e: unknown) => {
       console.log('[STAFF_FCM_ENQUEUE_FAILED]', {
         message_id: saved.id,
@@ -736,10 +760,30 @@ export async function POST(req: NextRequest) {
     }
 
     const apiRespondedAt = Date.now();
+    const traceSource = sender_side === 'mobile' ? 'mobile' : 'pc';
+    logChatSendTrace({
+      request_id,
+      client_nonce,
+      source: traceSource,
+      user_id,
+      sender_name: sender_name || actor_name,
+      room_no,
+      body_preview: message.slice(0, 80) || null,
+      insert_started_at: insertStarted,
+      insert_finished_at: insertFinishedAt,
+      saved_message_id: saved.id,
+      saved_created_at: saved.created_at,
+      db_insert_ms,
+      response_sent_at: apiRespondedAt
+    });
     console.log('[CHAT_SEND_API_RESPONDED]', {
       client_nonce,
       message_id: saved.id,
       elapsed_ms: apiRespondedAt - requestStarted,
+      formdata_ms: formDataMs,
+      storage_upload_ms: storageUploadMs,
+      db_insert_ms,
+      has_image: image instanceof File,
       ts: apiRespondedAt
     });
     emitLatency('API_RESPONDED', {
@@ -748,8 +792,7 @@ export async function POST(req: NextRequest) {
       sender_side,
       room: room_no,
       source: latSource,
-      has_translation,
-      // total server processing time (insert + bookkeeping; translation is async now)
+      has_translation: false,
       elapsed_ms: apiRespondedAt - requestStarted,
       since_click_ms: client_send_ts ? apiRespondedAt - client_send_ts : null,
       ts: apiRespondedAt
@@ -760,6 +803,8 @@ export async function POST(req: NextRequest) {
     });
     const responseData = {
       message: saved,
+      saved_message_id: saved.id,
+      saved_created_at: saved.created_at,
       ...(client_nonce ? { client_nonce } : {})
     };
     const responsePayload = { ok: true as const, data: responseData };

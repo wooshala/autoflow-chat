@@ -24,6 +24,7 @@ type Props = {
   onEditClick?: () => void;
   editLabel?: string;
   refreshToken?: number;
+  requestHeaders?: Record<string, string>;
 };
 
 export default function QuickPhraseBar({
@@ -36,18 +37,21 @@ export default function QuickPhraseBar({
   selectedLabel = '',
   onEditClick,
   editLabel = '편집',
-  refreshToken = 0
+  refreshToken = 0,
+  requestHeaders = {}
 }: Props) {
   const [phrases, setPhrases] = useState<ChatQuickPhrase[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   const loadPhrases = useCallback(async () => {
-    const res = await fetchEnvelope<{ phrases: ChatQuickPhrase[] }>(QUICK_PHRASES_URL);
+    const res = await fetchEnvelope<{ phrases: ChatQuickPhrase[] }>(QUICK_PHRASES_URL, {
+      headers: requestHeaders
+    });
     if (res.ok && Array.isArray(res.data?.phrases)) {
       setPhrases(res.data.phrases);
     }
     setHydrated(true);
-  }, []);
+  }, [requestHeaders]);
 
   useEffect(() => {
     void loadPhrases();
@@ -56,7 +60,7 @@ export default function QuickPhraseBar({
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [loadPhrases, refreshToken]);
+  }, [loadPhrases, refreshToken, requestHeaders]);
 
   function handlePhraseTap(phrase: ChatQuickPhrase) {
     if (disabled) return;
