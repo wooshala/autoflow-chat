@@ -1558,13 +1558,28 @@ function StaffChatPageInner() {
     setPendingPhoto({ file, previewUrl });
   }
 
-  // Android Push-to-Talk (STT, ru-RU). Transcript flows through the existing
-  // send() path — no new send path, no contract change. Browser (no native
-  // bridge) hides the mic button entirely.
+  // Android Push-to-Talk (STT, ru-RU). The transcript is written into the
+  // EXISTING input; the staff reviews it and presses the existing send button.
+  // No auto-send, no new send path. Browser (no native bridge) hides the mic.
   const stt = useStaffPushToTalk({
-    onTranscript: (transcript) => send(transcript),
-    onError: () => setToast({ kind: 'error', msg: '음성 인식을 사용할 수 없습니다.' }),
-    disabled: !canSendMessages || sending
+    onResult: (transcript) => {
+      setText((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
+      // Focus the existing input and move the cursor to the end so the staff can
+      // edit immediately. rAF waits for the value to commit before setting range.
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.focus();
+        const end = el.value.length;
+        try {
+          el.setSelectionRange(end, end);
+        } catch {
+          /* ignore */
+        }
+      });
+    },
+    onFailure: () => setToast({ kind: 'error', msg: '음성을 인식하지 못했습니다. 다시 말씀해주세요.' }),
+    disabled: !canSendMessages
   });
 
   const localeButtons: { code: StaffLocale; flag: string }[] = [
@@ -1685,15 +1700,14 @@ function StaffChatPageInner() {
       className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#eceff1]"
       style={{ ['--staff-composer-height' as string]: `${composerHeight}px` }}
     >
-      {/* Push-to-Talk 오버레이 (녹음/인식/전송 중). RMS 막대만 표시. */}
+      {/* Push-to-Talk 오버레이 (녹음/인식/완료). RMS 막대만 표시. 자동 전송 없음. */}
       <StaffSttOverlay
         phase={stt.phase}
         rmsElRef={stt.rmsElRef}
         labels={{
           listening: '듣는 중...',
-          recognizing: '인식 중...',
-          sending: '전송 중...',
-          hint: '손을 떼면 자동 전송됩니다.'
+          recognizing: '음성을 문자로 변환하고 있습니다...',
+          done: '입력창에서 확인 후 전송하세요.'
         }}
       />
       {/* 상단: 언어 · 소리 · 알림 */}

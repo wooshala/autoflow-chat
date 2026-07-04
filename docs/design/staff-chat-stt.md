@@ -6,9 +6,11 @@ room selection, Quick Phrase, admin `/chat`, DB, or API.
 
 ## Goal
 Add Russian Push-to-Talk voice input to the Android Staff app (`/staff-chat`).
-The recognized transcript is sent through the **existing** `send(text)` path, so
-`client_nonce`, `room_no`, translation, telemetry, and latency trace are all
-reused unchanged.
+The recognized transcript is written into the **existing message input**; the
+staff reviews it and presses the existing send button. **No auto-send, no new
+send path.** The existing `send()` (client_nonce / room_no / translation /
+telemetry) is exercised only when the staff sends manually — exactly as for
+typed text.
 
 ## Branches
 - React: `feature/staff-chat-stt-ru` (base: `main`)
@@ -37,25 +39,28 @@ reused unchanged.
 effect). If absent, the 🎤 button is **hidden**; text input is unchanged.
 
 ### Contract rules
-- **React owns the state machine.** `SENDING` is React-only (native does not know
-  about send). Native emits RECORDING/RECOGNIZING/IDLE/ERROR hints only.
-- **Duplicate-send guard:** React sets `awaitingResult` on `stop()`, consumes it on
-  the first `onSttResult`; later results/taps are ignored.
+- **React owns the state machine.** Native emits RECORDING/RECOGNIZING/IDLE/ERROR
+  hints only. STT never sends — it only fills the input.
+- **Duplicate guard:** React sets `awaitingResult` on `stop()`, consumes it on the
+  first `onSttResult`; later results/taps are ignored.
+- **RECOGNIZING timeout:** if no result within 5s of `stop()`, React fails the
+  utterance (cancel native, no input change, toast).
 
 ## State machine
 ```
-IDLE ─start()─▶ RECORDING ─stop()─▶ RECOGNIZING ─onSttResult(non-empty)─▶ SENDING ─send done─▶ IDLE
-        (re-entry blocked)   (cancel() only exit)   (empty/error ─▶ IDLE, no send)   (no re-send while SENDING)
+IDLE ─start()─▶ RECORDING ─stop()─▶ RECOGNIZING ─onSttResult(non-empty)─▶ fill input ─▶ IDLE
+        (re-entry blocked)   (cancel() only exit)   (empty / error / 5s timeout ─▶ IDLE, no input change, toast)
 ```
 
-### Cancel rules (never send)
+### No-input / failure rules (never send, never change input)
 | case | handling |
 | --- | --- |
-| short tap (< 300 ms) | `cancel()` |
-| drag / touch cancel  | `cancel()` |
-| empty STT result     | IDLE, no send |
-| STT error            | toast, IDLE, no send |
-| permission denied    | `onSttError('permission_denied')`, IDLE |
+| short tap (< 300 ms) | `cancel()`, no input change |
+| drag / touch cancel  | `cancel()`, no input change |
+| empty STT result     | IDLE, toast "음성을 인식하지 못했습니다. 다시 말씀해주세요." |
+| STT error            | IDLE, toast |
+| RECOGNIZING timeout (5s) | cancel native, IDLE, toast |
+| permission denied    | `onSttError('permission_denied')`, IDLE, toast |
 
 ## React changes (`app/staff-chat/StaffChatClient.tsx`, +overlay)
 - State: `sttPhase` (`idle|recording|recognizing|sending`), `sttAvailable` (effect-set).
@@ -65,10 +70,17 @@ IDLE ─start()─▶ RECORDING ─stop()─▶ RECOGNIZING ─onSttResult(non-e
   (`onTouchStart/onTouchEnd/onTouchCancel`). `held < 300ms` → `cancel()`, else `stop()`.
 - Register `window.onSttState/onSttResult/onSttError/onSttRms` in a mount effect with
   cleanup; latest `send`/phase reached via refs (stale-closure safe); single owner.
-- `onSttResult(text)`: ignore unless `awaitingResult`; consume; trim; empty → IDLE;
-  else `sttPhase='sending'` and call existing **`send(text)`**.
-- Overlay when `sttPhase!=='idle'`: 🎤 + "녹음 시작"→"듣는 중" + RMS bar + "손을 떼면 자동
-  전송". RMS bar only; no interim text (v1).
+- `onSttResult(text)`: ignore unless `awaitingResult`; consume; trim; empty/error/
+  timeout → IDLE + unified failure toast ("음성을 인식하지 못했습니다. 다시 말씀해주세요."),
+  **no input change**; else write into the existing input via `setText` (append),
+  **focus it and move the cursor to the end**, show the "done" hint ~1s, then IDLE.
+  **Never calls `send()`.**
+- Overlay phases (RMS bar only; no interim text, v1):
+  - recording → "듣는 중..."
+  - recognizing → "음성을 문자로 변환하고 있습니다..."
+  - done (~1s) → "입력창에서 확인 후 전송하세요."
+- Placeholder guides short input: ko "짧게 말씀해주세요. 예) 507 끝 / 수건 2장",
+  ru "Говорите коротко. Напр.: 507 готово / 2 полотенца".
 - Untouched: `send()`, text/photo send, room, translation, TTS, telemetry, nonce, trace.
 
 ## Android changes (`feature/staff-android-stt`, additive)
