@@ -112,11 +112,11 @@ DB 스키마 변경 없음(테이블 기존 존재). REST read-only 검증.
 
 메시지 목록 "불러오지 못했습니다" 증상. **웹(StaffChatClient / useChatLoader / useChatWatchdog) 측이며 3C·FCM과 무관.**
 
-### 확보된 증거
-- ✅ `/api/chat/list` = **HTTP 200** (서버 / RLS / env 정상)
-- ✅ 로그 순서 관찰: `CHAT_WATCHDOG_HIDDEN_POLL` → `CHAT_LIST_LOAD_ABORT`
-- ✅ WebView에서 재현
-- ✅ 프로덕션 origin/main에도 동일 로직 존재(`useChatLoader.ts` / `useChatWatchdog.ts`, `CHAT_LIST_LOAD_ABORT`×3 / `HIDDEN_POLL`×4)
+### 현재 확보된 사실
+- `/api/chat/list` = **HTTP 200 정상**
+- `CHAT_WATCHDOG_HIDDEN_POLL` 이후 `CHAT_LIST_LOAD_ABORT` 발생 확인
+- WebView 환경에서 재현 확인
+- 프로덕션 origin/main에도 동일 로직 존재(`useChatLoader.ts` / `useChatWatchdog.ts`)
 
 ### 코드상 메커니즘 (관찰된 사실)
 - `CHAT_LIST_LOAD_ABORT`는 `useChatLoader.ts`에서 `AbortController.abort()` 경로로 로깅된다 —
@@ -124,14 +124,15 @@ DB 스키마 변경 없음(테이블 기존 존재). REST read-only 검증.
 - `useChatWatchdog.ts`는 `document.hidden === true`면 30초마다 HIDDEN_POLL로
   `loadFull('hidden_tab_poll')`를 트리거한다(line 148–156).
 
-### 아직 확보하지 못한 증거
-- ❌ `document.hidden = true`를 **직접 측정한 증거 없음**
-- ❌ `webView.onResume()` / `onPause()` 미호출과의 **인과관계 미입증**
+### 현재 증명된 것 / 확정하지 않는 것
+현재는 다음만 증명되었다.
 
-### 가설 (미확정)
-WebView의 visibility 상태(`document.hidden` 또는 `visibilityState`)가 예상과 다르게 유지되어,
-watchdog hidden poll이 초기 load와 **경쟁(race)** 하며 이를 abort할 가능성이 있다.
-**현재는 가설이며, 다음 Phase에서 `document.hidden` / `visibilityState`를 실측하여 확정한다.**
+> watchdog와 list load가 경쟁(race)하여 AbortController가 load를 취소한다.
+
+`document.hidden`, `visibilityState`, `onResume()` / `onPause()`와의 인과관계는
+아직 실측되지 않았으므로 **확정하지 않는다.**
+
+다음 Phase에서 visibility 상태를 계측하여 원인을 확정한다.
 
 ---
 
