@@ -51,6 +51,21 @@ export default function RoomSelectorBar({
         <span className={`${labelClass} pt-2`}>{sectionLabel}</span>
         <div className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain ${scrollMaxClass}`}>
           <div className={`flex w-max items-center pr-1 ${compactMobile || large ? 'gap-2' : 'gap-1.5'}`}>
+            {/* 객실 없음: 선택 해제 → onSelect('') → room_no null */}
+            <button
+              key="__none__"
+              ref={selectedRoom === '' ? selectedRef : undefined}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelect('')}
+              className={`${chipClass} whitespace-nowrap ${
+                selectedRoom === ''
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-200'
+                  : 'border-gray-200 bg-gray-50 text-gray-800 active:border-blue-300 active:bg-blue-50'
+              }`}
+            >
+              객실 없음
+            </button>
             {STAFF_ROOM_OPTIONS.map((room) => {
               const selected = selectedRoom === room;
               return (
