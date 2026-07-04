@@ -39,8 +39,15 @@ import {
   isBrowserNotificationSupported,
   showBrowserNotification
 } from '@/lib/chat/browserNotifications';
-import { playStaffDefaultSound, unlockStaffDefaultSound, unlockNotificationAudio } from '@/lib/chat/playNotificationTone';
-import { loadStaffAlertVolume, saveStaffAlertVolume } from '@/lib/chat/staffAlertPrefs';
+import { unlockNotificationAudio, unlockStaffSound, playStaffSound } from '@/lib/chat/playNotificationTone';
+import {
+  loadStaffAlertVolume,
+  loadStaffSoundKey,
+  saveStaffAlertVolume,
+  saveStaffSoundKey,
+  staffSoundSrc,
+  type StaffSoundKey
+} from '@/lib/chat/staffAlertPrefs';
 import { getMessageDisplayParts } from '@/lib/chat/displayMessageText';
 import { normalizeNotifyBody } from '@/lib/chat/normalizeNotifyBody';
 import { isUrgentMessage } from '@/lib/chat/messagePriority';
@@ -215,6 +222,10 @@ function StaffChatPageInner() {
     typeof window !== 'undefined' ? loadStaffAlertVolume() : 0.6
   );
   const alertVolumeRef = useRef(alertVolume);
+  const [alertSoundKey, setAlertSoundKey] = useState<StaffSoundKey>(() =>
+    typeof window !== 'undefined' ? loadStaffSoundKey() : 'default'
+  );
+  const alertSoundSrcRef = useRef(staffSoundSrc(alertSoundKey));
   const [autoTtsEnabled, setAutoTtsEnabled] = useState(() =>
     typeof window !== 'undefined' ? loadStaffAutoTtsEnabled() : false
   );
@@ -275,7 +286,7 @@ function StaffChatPageInner() {
       if (!p || String(p.target_invite_id ?? '') !== myInviteId) return;
       const text = typeof p.text === 'string' && p.text.trim() ? p.text : '테스트입니다.';
       console.log('[STAFF_TEST_PING_RECEIVED]', { invite_id: myInviteId });
-      if (soundEnabled) void playStaffDefaultSound(alertVolumeRef.current);
+      if (soundEnabled) void playStaffSound(alertSoundSrcRef.current, alertVolumeRef.current);
       const { ttsLang } = resolveStaffTtsLangFromSession({
         spokenLang: staffSession.spokenLang,
         role: staffSession.role,
@@ -802,7 +813,7 @@ function StaffChatPageInner() {
     if (typeof window === 'undefined') return;
     const onFirst = () => {
       void unlockNotificationAudio();
-      void unlockStaffDefaultSound();
+      void unlockStaffSound(alertSoundSrcRef.current);
       window.removeEventListener('pointerdown', onFirst, true);
       window.removeEventListener('keydown', onFirst, true);
     };
@@ -1024,7 +1035,7 @@ function StaffChatPageInner() {
               urgent,
               foregroundVisible: true
             });
-            void playStaffDefaultSound(alertVolumeRef.current);
+            void playStaffSound(alertSoundSrcRef.current, alertVolumeRef.current);
           }
         }
 
@@ -1068,7 +1079,7 @@ function StaffChatPageInner() {
           }
 
           if (soundEnabled) {
-            void playStaffDefaultSound(alertVolumeRef.current);
+            void playStaffSound(alertSoundSrcRef.current, alertVolumeRef.current);
           }
         }
       }
@@ -1362,10 +1373,17 @@ function StaffChatPageInner() {
     saveStaffAlertVolume(v);
   }
 
+  function handleAlertSoundKeyChange(key: StaffSoundKey) {
+    setAlertSoundKey(key);
+    const src = staffSoundSrc(key);
+    alertSoundSrcRef.current = src;
+    saveStaffSoundKey(key);
+  }
+
   function toggleSound() {
     if (soundEnabled && !isServerStaffTtsUnlocked()) {
       void unlockNotificationAudio();
-      void unlockStaffDefaultSound();
+      void unlockStaffSound(alertSoundSrcRef.current);
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -1387,7 +1405,7 @@ function StaffChatPageInner() {
     });
     if (next) {
       void unlockNotificationAudio();
-      void unlockStaffDefaultSound();
+      void unlockStaffSound(alertSoundSrcRef.current);
       unlockStaffTts();
       armServerStaffTtsUnlock();
       refreshUnlockSnapshot();
@@ -1732,7 +1750,12 @@ function StaffChatPageInner() {
           />
         ) : null}
         {soundEnabled ? (
-          <StaffNativeSoundPicker volume={alertVolume} onVolumeChange={handleAlertVolumeChange} />
+          <StaffNativeSoundPicker
+            soundKey={alertSoundKey}
+            volume={alertVolume}
+            onSoundKeyChange={handleAlertSoundKeyChange}
+            onVolumeChange={handleAlertVolumeChange}
+          />
         ) : null}
       </header>
 

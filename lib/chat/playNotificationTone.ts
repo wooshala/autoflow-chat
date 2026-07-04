@@ -299,20 +299,21 @@ export async function unlockNotificationAudio(): Promise<boolean> {
   }
 }
 
-const STAFF_DEFAULT_SOUND_SRC = '/sounds/default.wav';
-let staffDefaultAudio: HTMLAudioElement | null = null;
+const staffAudioCache = new Map<string, HTMLAudioElement>();
 
-function getStaffDefaultAudio(): HTMLAudioElement | null {
+function getStaffAudio(src: string): HTMLAudioElement | null {
   if (typeof window === 'undefined') return null;
-  if (!staffDefaultAudio) {
-    staffDefaultAudio = new Audio(STAFF_DEFAULT_SOUND_SRC);
-    staffDefaultAudio.preload = 'auto';
+  let el = staffAudioCache.get(src);
+  if (!el) {
+    el = new Audio(src);
+    el.preload = 'auto';
+    staffAudioCache.set(src, el);
   }
-  return staffDefaultAudio;
+  return el;
 }
 
-export async function unlockStaffDefaultSound(): Promise<boolean> {
-  const audio = getStaffDefaultAudio();
+export async function unlockStaffSound(src: string): Promise<boolean> {
+  const audio = getStaffAudio(src);
   if (!audio) return false;
   try {
     audio.volume = 0;
@@ -326,18 +327,24 @@ export async function unlockStaffDefaultSound(): Promise<boolean> {
   }
 }
 
-export async function playStaffDefaultSound(volume: number): Promise<boolean> {
-  const audio = getStaffDefaultAudio();
+export async function playStaffSound(src: string, volume: number): Promise<boolean> {
+  const audio = getStaffAudio(src);
   if (!audio) return false;
   try {
     audio.volume = Math.min(1, Math.max(0, volume));
     audio.currentTime = 0;
     await audio.play();
+    console.log('[STAFF_SOUND_PLAYED]', { src, volume: audio.volume });
     return true;
-  } catch {
+  } catch (err: unknown) {
+    console.log('[STAFF_SOUND_PLAY_FAILED]', { src, ...playErrorFields(err) });
     return false;
   }
 }
+
+/** @deprecated Use unlockStaffSound / playStaffSound with explicit src. */
+export const unlockStaffDefaultSound = () => unlockStaffSound('/sounds/default.wav');
+export const playStaffDefaultSound = (volume: number) => playStaffSound('/sounds/default.wav', volume);
 
 export type PlayNotificationToneOptions = {
   /** Best-effort beep when tab hidden (often blocked; OS notification sound is primary). */
