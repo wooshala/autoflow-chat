@@ -1662,7 +1662,7 @@ function StaffChatPageInner() {
             >
               🔊 {soundEnabled ? t('soundOn') : t('soundOff')}
             </button>
-            {ruVoiceReady === false ? (
+            {ruVoiceReady === false && (autoTtsEnabled || diagMode) ? (
               <span className="max-w-[4.5rem] text-[10px] font-bold leading-tight text-amber-700">
                 {t('ttsVoiceUnavailable')}
               </span>
@@ -1719,7 +1719,7 @@ function StaffChatPageInner() {
 
       <StaffPwaInstallBanner lang={locale} />
 
-      {ruVoiceReady === false ? (
+      {ruVoiceReady === false && (autoTtsEnabled || diagMode) ? (
         <div
           className="mx-3 mt-2 shrink-0 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2.5 text-center text-xs font-semibold leading-snug text-amber-950"
           role="status"
