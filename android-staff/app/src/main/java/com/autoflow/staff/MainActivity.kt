@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private var cameraPhotoUri: Uri? = null
     private val sessionPollHandler = Handler(Looper.getMainLooper())
     private var sessionPollActive = false
+    private var sttBridge: StaffSttBridge? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +41,9 @@ class MainActivity : Activity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
+        // Push-to-Talk (STT) bridge: window.AutoFlowStaffStt. Additive; loads only our own URL.
+        sttBridge = StaffSttBridge(this, webView)
+        webView.addJavascriptInterface(sttBridge!!, "AutoFlowStaffStt")
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                 captureInviteTokenFromUrl(url)
@@ -110,6 +114,7 @@ class MainActivity : Activity() {
         stopStaffSessionPoll()
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
+        sttBridge?.release()
         super.onDestroy()
     }
 
@@ -166,6 +171,10 @@ class MainActivity : Activity() {
                 val params = pendingFileChooserParams
                 pendingFileChooserParams = null
                 launchFileChooser(params)
+            }
+            StaffSttBridge.REQUEST_RECORD_AUDIO -> {
+                val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+                sttBridge?.onRecordAudioPermissionResult(granted)
             }
         }
     }
