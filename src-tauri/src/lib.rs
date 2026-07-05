@@ -97,24 +97,78 @@ fn set_alert(app: &tauri::AppHandle, on: bool) {
     }
 }
 
+/// Handle WinRT toast activation: foreground the main window and relay the click
+/// to the injected notify-bridge (no sound replay on click).
+#[cfg(windows)]
+fn handle_toast_activation(app: &tauri::AppHandle, notify_id: &str) {
+    use tauri::Emitter;
+
+    let handle = app.clone();
+    let id = notify_id.to_string();
+    let focus_handle = handle.clone();
+    let _ = handle.run_on_main_thread(move || {
+        focus_main(&focus_handle);
+        let _ = focus_handle.emit(
+            "autoflow://notify-click",
+            serde_json::json!({ "id": id.clone() }),
+        );
+        log::info!("[NATIVE_TOAST_ACTIVATED] id={}", id);
+    });
+}
+
 /// Show the Windows OS toast. We build it directly (not via the notification
 /// plugin) so we can force SILENT — the plugin/notify-rust path always plays the
 /// Windows default beep, which duplicated AutoFlow's own sound. AutoFlow plays
 /// the single selected sound via rodio (play_sound_key).
 #[cfg(windows)]
-fn show_native_toast(app: &tauri::AppHandle, title: &str, body: &str, silent: bool) {
+fn show_native_toast(
+    app: &tauri::AppHandle,
+    notify_id: &str,
+    title: &str,
+    body: &str,
+    silent: bool,
+) {
     use tauri_winrt_notification::{Sound, Toast};
     // Prefer the app's registered AppUserModelID (shows "AutoFlow" once installed);
     // fall back to the always-present PowerShell AUMID when unpackaged.
     let app_id = app.config().identifier.clone();
-    let sound: Option<Sound> = if silent { None } else { Some(Sound::Default) };
-    let build = |aid: &str| Toast::new(aid).title(title).text1(body).sound(sound);
+    let title = title.to_string();
+    let body = body.to_string();
+    let notify_id = notify_id.to_string();
+    let toast_sound = || {
+        if silent {
+            None
+        } else {
+            Some(Sound::Default)
+        }
+    };
+    let build = |aid: &str| {
+        let handle = app.clone();
+        let id = notify_id.clone();
+        Toast::new(aid)
+            .title(&title)
+            .text1(&body)
+            .sound(toast_sound())
+            .on_activated(move |_action| {
+                handle_toast_activation(&handle, &id);
+                Ok(())
+            })
+    };
     match build(&app_id).show() {
-        Ok(()) => log::info!("[NATIVE_TOAST_SHOWN] aid={} silent={}", app_id, silent),
+        Ok(()) => log::info!(
+            "[NATIVE_TOAST_SHOWN] aid={} id={} silent={}",
+            app_id,
+            notify_id,
+            silent
+        ),
         Err(e1) => {
             log::warn!("[NATIVE_TOAST_AUMID_FAILED] aid={} err={}", app_id, e1);
             match build(Toast::POWERSHELL_APP_ID).show() {
-                Ok(()) => log::info!("[NATIVE_TOAST_SHOWN_FALLBACK] silent={}", silent),
+                Ok(()) => log::info!(
+                    "[NATIVE_TOAST_SHOWN_FALLBACK] id={} silent={}",
+                    notify_id,
+                    silent
+                ),
                 Err(e2) => log::warn!("[NATIVE_TOAST_FAILED] err={}", e2),
             }
         }
@@ -122,7 +176,13 @@ fn show_native_toast(app: &tauri::AppHandle, title: &str, body: &str, silent: bo
 }
 
 #[cfg(not(windows))]
-fn show_native_toast(app: &tauri::AppHandle, title: &str, body: &str, _silent: bool) {
+fn show_native_toast(
+    app: &tauri::AppHandle,
+    _notify_id: &str,
+    title: &str,
+    body: &str,
+    _silent: bool,
+) {
     use tauri_plugin_notification::NotificationExt;
     if let Err(e) = app
         .notification()
@@ -153,7 +213,7 @@ fn native_notify(
     };
     // Default silent: the OS toast is visual-only; AutoFlow owns the sound.
     let want_silent = silent.unwrap_or(true);
-    show_native_toast(&app, &title, &body, want_silent);
+    show_native_toast(&app, &id, &title, &body, want_silent);
     let key = sound_key.as_deref().unwrap_or("default");
     play_sound_key(key);
     set_alert(&app, true);
@@ -176,7 +236,21 @@ fn focus_main_window(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Must register before other plugins so duplicate launches focus the existing
+    // instance instead of spawning a second process/window.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, _args, _cwd| {
+                log::info!("[SINGLE_INSTANCE] duplicate launch → focus existing window");
+                focus_main(app);
+            },
+        ));
+    }
+
+    builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -219,7 +293,7 @@ pub fn run() {
 
             // ── Main window: remote /chat + injected native bridge ─────────
             let reachable = server_reachable();
-            log::info!("[AUTOFLOW_BOOT] reachable={} shell=0.1.2", reachable);
+            log::info!("[AUTOFLOW_BOOT] reachable={} shell=0.1.4", reachable);
 
             // Cache-bust the page HTML per launch so a freshly deployed /chat
             // (web fixes) always loads — WebView2 otherwise serves a stale

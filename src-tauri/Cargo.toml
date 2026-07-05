@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.2"
+version = "0.1.4"
 description = "AutoFlow desktop shell"
 authors = ["you"]
 license = ""
@@ -33,6 +33,7 @@ tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
 rodio = "0.20"
 
 # Windows: build the OS toast directly so we can force it SILENT (no Windows
