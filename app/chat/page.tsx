@@ -109,6 +109,18 @@ export default function ChatPage() {
   const [submitting, setSubmitting] = useState(false);
   const [urgentMode, setUrgentMode] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+  const [staffCounts, setStaffCounts] = useState<{ online: number; total: number }>({ online: 0, total: 0 });
+  // Developer diagnostics are hidden in normal operation; shown only with ?debug=1
+  // (or via 설정 > 고급 > 개발자 진단, which sets debugMode true).
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get('debug') === '1') setDebugMode(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [isMobileViewport, setIsMobileViewport] = useState(readMobileChatViewport);
   /** soft delete 진행 중 message id — 중복 요청 방지 */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
@@ -654,25 +666,6 @@ export default function ChatPage() {
               </button>
             ) : null}
             <div className="font-bold text-white">AutoFlow 채팅</div>
-            <div
-              className="mt-1 rounded border border-lime-400/80 bg-lime-950/80 px-2 py-1 font-mono text-sm font-bold text-lime-300"
-              data-testid="chat-deploy-rev"
-            >
-              rev={CHAT_CLIENT_REV} · {CHAT_PAGE_SOURCE}
-            </div>
-            {/* 서브타이틀: 카카오 포인트 노랑 */}
-            <div className="text-xs text-yellow-400">직원 협업 + 유지보수 등록</div>
-            <TauriUpdatePanel />
-            <button
-              type="button"
-              onClick={() => setShowAdminPanel((open) => !open)}
-              className="mt-2 rounded-lg border border-yellow-500/50 bg-gray-700 px-3 py-1.5 text-xs font-semibold text-yellow-300 hover:bg-gray-600"
-            >
-              {showAdminPanel ? '상태 문구 닫기' : '상태 문구 관리'}
-            </button>
-            {sessionUser ? (
-              <div className="mt-0.5 text-xs font-semibold text-gray-400">로그인: {sessionUser.name}</div>
-            ) : null}
             {!canSendToServer ? (
               <div className="mt-1 text-xs font-semibold text-red-400">
                 전송/티켓 생성이 비활성화되었습니다. 관리자 설정이 필요합니다.
@@ -701,15 +694,6 @@ export default function ChatPage() {
                     : '탭 밖 OS 알림 허용 (필수)'}
                 </button>
               ) : null}
-              {browserNotifyPermission === 'granted' && (
-                <button
-                  type="button"
-                  onClick={handleTestNotificationClick}
-                  className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-medium text-gray-300 hover:bg-gray-600"
-                >
-                  테스트 알림
-                </button>
-              )}
               <span className="text-gray-400">
                 브라우저 알림:{' '}
                 {browserNotifyPermission === 'granted'
@@ -728,6 +712,15 @@ export default function ChatPage() {
                     ? 'degraded'
                     : 'reconnecting'}
               </span>
+              <span className="text-gray-400">온라인 {staffCounts.online}명</span>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen((open) => !open)}
+                className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-semibold text-gray-200 hover:bg-gray-600"
+                aria-expanded={settingsOpen}
+              >
+                ⚙ 설정
+              </button>
             </div>
             <button
               onClick={() => {
@@ -742,12 +735,96 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <ChatNotifyDiagBar onRequestPermission={handleNotificationClick} />
-      {/* ChatNotifyDiagBar: components/chat/ChatNotifyDiagBar.tsx — always mounted, no conditional */}
+      {/* 개발자 진단: ?debug=1 또는 설정 > 고급에서만 노출 (기본 운영 화면에서는 숨김) */}
+      {debugMode ? (
+        <div className="border-b border-amber-500/80 bg-amber-950/90">
+          <div
+            className="px-3 pt-2 font-mono text-sm font-bold text-lime-300"
+            data-testid="chat-deploy-rev"
+          >
+            rev={CHAT_CLIENT_REV} · {CHAT_PAGE_SOURCE}
+          </div>
+          <ChatNotifyDiagBar variant="debug" onRequestPermission={handleNotificationClick} />
+        </div>
+      ) : null}
+
+      {/* 운영 설정 시트 (⚙ 설정) — 알림음/테스트/업데이트/상태문구/로그아웃/고급 */}
+      {settingsOpen ? (
+        <section className="border-b border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-200" aria-label="설정">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-bold text-white">설정</span>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(false)}
+              className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+            >
+              닫기
+            </button>
+          </div>
+          <ChatNotifyDiagBar variant="operator" onRequestPermission={handleNotificationClick} />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {browserNotifyPermission === 'granted' ? (
+              <button
+                type="button"
+                onClick={handleTestNotificationClick}
+                className="rounded-lg border border-gray-600 bg-gray-700 px-2.5 py-1 text-xs font-medium text-gray-200 hover:bg-gray-600"
+              >
+                테스트 알림
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleNotificationClick}
+                className="rounded-lg border border-sky-500/70 bg-sky-950/50 px-2.5 py-1 text-xs font-semibold text-sky-100 hover:bg-sky-900/60"
+              >
+                브라우저 알림 권한 요청
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowAdminPanel((open) => !open)}
+              className="rounded-lg border border-yellow-500/50 bg-gray-700 px-2.5 py-1 text-xs font-semibold text-yellow-300 hover:bg-gray-600"
+            >
+              {showAdminPanel ? '상태 문구 닫기' : '상태 문구 관리'}
+            </button>
+          </div>
+          <div className="mt-2">
+            <TauriUpdatePanel />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-700 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/login', reason: 'manual_logout' });
+                logoutAndGoLogin(router);
+              }}
+              className="rounded-lg border border-gray-600 px-2.5 py-1 text-xs text-gray-300 hover:bg-gray-700"
+            >
+              로그아웃
+            </button>
+            <button
+              type="button"
+              onClick={() => setDebugMode(true)}
+              className="rounded-lg border border-gray-600 px-2.5 py-1 text-xs text-gray-400 hover:bg-gray-700"
+            >
+              고급: 개발자 진단 열기
+            </button>
+            {sessionUser ? (
+              <span className="ml-auto text-xs text-gray-500">로그인: {sessionUser.name}</span>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
 
-      <StaffInvitePanel variant="chat" collapsible defaultOpen messages={messages} />
+      <StaffInvitePanel
+        variant="chat"
+        collapsible
+        defaultOpen={false}
+        messages={messages}
+        onCountsChange={setStaffCounts}
+      />
 
       <StaffChatAdminSection open={showAdminPanel} />
 

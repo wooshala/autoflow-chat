@@ -23,6 +23,9 @@ type Props = {
   defaultOpen?: boolean;
   /** Loaded chat messages — used to derive each staff's "마지막 메시지" time. */
   messages?: ChatMessage[];
+  /** Report participant counts so the header can show them (display only; the
+   * presence/invite logic here is unchanged). */
+  onCountsChange?: (counts: { online: number; total: number }) => void;
 };
 
 /** Broadcast channel for the per-staff "🔔 테스트" ping (ephemeral, no DB row). */
@@ -95,7 +98,8 @@ export default function StaffInvitePanel({
   variant = 'admin',
   collapsible = false,
   defaultOpen = true,
-  messages
+  messages,
+  onCountsChange
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const [showQr, setShowQr] = useState(true);
@@ -264,6 +268,11 @@ export default function StaffInvitePanel({
 
   const totalCount = invites.filter((i) => i.enabled).length;
   const onlineCount = invites.filter((i) => statusOf(i, now) === 'online').length;
+
+  // Report counts upward (display only) so the chat header can show 온라인 수.
+  useEffect(() => {
+    onCountsChange?.({ online: onlineCount, total: totalCount });
+  }, [onlineCount, totalCount, onCountsChange]);
 
   async function handleRevoke(inv: InviteRow) {
     const name = safeText(inv.display_name, '이 직원');
