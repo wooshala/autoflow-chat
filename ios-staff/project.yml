@@ -1,0 +1,56 @@
+# XcodeGen spec — run on macOS: brew install xcodegen && xcodegen generate
+name: AutoFlowStaff
+options:
+  bundleIdPrefix: com.autoflow
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 11.6.0
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "1"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  AutoFlowStaff:
+    type: application
+    platform: iOS
+    sources:
+      - path: AutoFlowStaff
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.autoflow.staff
+        INFOPLIST_FILE: AutoFlowStaff/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AutoFlowStaff/AutoFlowStaff.entitlements
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG STAFF_DEBUG
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: STAFF_RELEASE
+    dependencies:
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseMessaging
+    preBuildScripts: []
+
+schemes:
+  AutoFlowStaff:
+    build:
+      targets:
+        AutoFlowStaff: all
+    run:
+      config: Debug
+    archive:
+      config: Release
