@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
@@ -341,7 +341,11 @@ pub fn run() {
 
             // ── Main window: remote /chat + injected native bridge ─────────
             let reachable = server_reachable();
-            log::info!("[AUTOFLOW_BOOT] reachable={} shell=0.1.4", reachable);
+            log::info!(
+                "[AUTOFLOW_BOOT] reachable={} shell={}",
+                reachable,
+                env!("CARGO_PKG_VERSION")
+            );
 
             // Cache-bust the page HTML per launch so a freshly deployed /chat
             // (web fixes) always loads — WebView2 otherwise serves a stale
@@ -365,6 +369,41 @@ pub fn run() {
             .center()
             .initialization_script(BRIDGE_JS)
             .build()?;
+
+            // ── Native window menu bar (Windows top menu) ──────────────────
+            // Always-visible, discoverable native UI so users can refresh a
+            // stale web bundle WITHOUT any /chat web change or web deploy.
+            // Primary action + Ctrl+Shift+R accelerator; advanced reset hidden
+            // under a "고급" submenu.
+            let win_refresh_i = MenuItem::with_id(
+                app,
+                "win_reload_fresh",
+                "최신 화면으로 새로고침",
+                true,
+                Some("CmdOrCtrl+Shift+R"),
+            )?;
+            let win_clear_i = MenuItem::with_id(
+                app,
+                "win_clear_data",
+                "앱 데이터 초기화 (재로그인 필요)",
+                true,
+                None::<&str>,
+            )?;
+            let adv_sub = Submenu::with_items(app, "고급", true, &[&win_clear_i])?;
+            let sep = PredefinedMenuItem::separator(app)?;
+            let refresh_sub = Submenu::with_items(
+                app,
+                "🔄 최신 화면으로 새로고침",
+                true,
+                &[&win_refresh_i, &sep, &adv_sub],
+            )?;
+            let window_menu = Menu::with_items(app, &[&refresh_sub])?;
+            win.set_menu(window_menu)?;
+            win.on_menu_event(move |win, event| match event.id.as_ref() {
+                "win_reload_fresh" => do_reload_fresh(win.app_handle()),
+                "win_clear_data" => do_clear_app_data(win.app_handle()),
+                _ => {}
+            });
 
             // X button → hide to tray (do not quit). Focus → clear alert.
             let win_evt = win.clone();
