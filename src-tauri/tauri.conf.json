@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AutoFlow",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "com.autoflow.frontops",
   "build": {
     "frontendDist": "https://autoflow-mvp.vercel.app",
