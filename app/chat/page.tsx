@@ -1108,16 +1108,6 @@ export default function ChatPage() {
               닫기
             </button>
           </div>
-          {/* 캐시 문제 해결: 최신 화면으로 새로고침 (안전 — 로그인/설정 보존) */}
-          <button
-            type="button"
-            onClick={() => {
-              void refreshLatest();
-            }}
-            className="mb-3 w-full rounded-lg border border-sky-500/70 bg-sky-900/50 px-3 py-2 text-sm font-bold text-sky-100 hover:bg-sky-800/60"
-          >
-            🔄 최신 화면으로 새로고침
-          </button>
           <ChatNotifyDiagBar variant="operator" onRequestPermission={handleNotificationClick} />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {browserNotifyPermission === 'granted' ? (
@@ -1147,6 +1137,21 @@ export default function ChatPage() {
           </div>
           <div className="mt-2">
             <TauriUpdatePanel />
+          </div>
+          {/* 캐시 문제 해결: 큰 새로고침 버튼 ("앱 업데이트 확인" 아래). 로그인 유지. */}
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => {
+                void refreshLatest();
+              }}
+              className="w-full rounded-xl border-2 border-sky-400 bg-sky-600 px-4 py-3 text-base font-extrabold text-white shadow-sm hover:bg-sky-500"
+            >
+              🔄 최신 화면으로 새로고침
+            </button>
+            <p className="mt-1.5 text-xs text-gray-400">
+              새 기능이 안 보이거나 화면이 예전처럼 보일 때 사용하세요. 로그인은 유지됩니다.
+            </p>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-700 pt-2">
             <button
