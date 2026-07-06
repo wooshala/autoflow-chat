@@ -10,6 +10,7 @@ import ChatMessages from '@/components/ChatMessages';
 import StaffChatAdminSection from '@/components/chat/StaffChatAdminSection';
 import StaffInvitePanel from '@/components/chat/StaffInvitePanel';
 import TauriUpdatePanel from '@/components/chat/TauriUpdatePanel';
+import { refreshLatest, resetAppData } from '@/lib/tauri/refreshApp';
 import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import { CHAT_DELETE_URL, CHAT_MANUAL_TICKET_URL, CHAT_SEND_URL } from '@/lib/chatApi';
 import ChatToastStack from '@/components/chat/ChatToastStack';
@@ -1137,6 +1138,21 @@ export default function ChatPage() {
           <div className="mt-2">
             <TauriUpdatePanel />
           </div>
+          {/* 캐시 문제 해결: 큰 새로고침 버튼 ("앱 업데이트 확인" 아래). 로그인 유지. */}
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => {
+                void refreshLatest();
+              }}
+              className="w-full rounded-xl border-2 border-sky-400 bg-sky-600 px-4 py-3 text-base font-extrabold text-white shadow-sm hover:bg-sky-500"
+            >
+              🔄 최신 화면으로 새로고침
+            </button>
+            <p className="mt-1.5 text-xs text-gray-400">
+              새 기능이 안 보이거나 화면이 예전처럼 보일 때 사용하세요. 로그인은 유지됩니다.
+            </p>
+          </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-700 pt-2">
             <button
               type="button"
@@ -1154,6 +1170,21 @@ export default function ChatPage() {
               className="rounded-lg border border-gray-600 px-2.5 py-1 text-xs text-gray-400 hover:bg-gray-700"
             >
               고급: 개발자 진단 열기
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    '앱 데이터를 초기화하고 새로고침합니다.\n로그인 정보가 삭제되어 다시 로그인해야 합니다.\n계속할까요?'
+                  )
+                ) {
+                  void resetAppData();
+                }
+              }}
+              className="rounded-lg border border-rose-600/60 bg-rose-950/40 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-900/50"
+            >
+              앱 데이터 초기화 (재로그인 필요)
             </button>
             {sessionUser ? (
               <span className="ml-auto text-xs text-gray-500">로그인: {sessionUser.name}</span>

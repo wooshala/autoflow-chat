@@ -234,6 +234,51 @@ fn focus_main_window(app: tauri::AppHandle) {
     focus_main(&app);
 }
 
+/// Cache-busted /chat URL (same origin) so a freshly deployed bundle loads.
+/// Uses `&` when the base URL already carries a query string, `?` otherwise.
+fn fresh_chat_url() -> String {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let sep = if REMOTE_CHAT_URL.contains('?') { '&' } else { '?' };
+    format!("{}{}afts={}", REMOTE_CHAT_URL, sep, ts)
+}
+
+/// Basic refresh (safe): navigate the main webview to a fresh cache-busted URL.
+/// Same-origin navigation → localStorage/session (login, settings) preserved.
+fn do_reload_fresh(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let url = fresh_chat_url();
+        let _ = win.eval(&format!("window.location.replace('{}')", url));
+        let _ = win.set_focus();
+        log::info!("[RELOAD_FRESH] {}", url);
+    }
+}
+
+/// Advanced reset: clear ALL browsing data (cache + cookies + storage → logout),
+/// then reload fresh. Login is intentionally cleared.
+fn do_clear_app_data(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.clear_all_browsing_data();
+        let url = fresh_chat_url();
+        let _ = win.eval(&format!("window.location.replace('{}')", url));
+        log::info!("[CLEAR_WEBVIEW_CACHE] cleared all browsing data + reload {}", url);
+    }
+}
+
+/// "최신 화면으로 새로고침" — safe, preserves login/settings.
+#[tauri::command]
+fn reload_fresh(app: tauri::AppHandle) {
+    do_reload_fresh(&app);
+}
+
+/// "앱 데이터 초기화" (고급) — clears cache + storage (logout) + reload.
+#[tauri::command]
+fn clear_webview_cache(app: tauri::AppHandle) {
+    do_clear_app_data(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -267,8 +312,10 @@ pub fn run() {
 
             // ── System tray ────────────────────────────────────────────────
             let open_i = MenuItem::with_id(app, "open", "AutoFlow 열기", true, None::<&str>)?;
+            let refresh_i =
+                MenuItem::with_id(app, "refresh", "🔄 최신 화면으로 새로고침", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&open_i, &refresh_i, &quit_i])?;
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("AutoFlow")
@@ -276,6 +323,7 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => focus_main(app),
+                    "refresh" => do_reload_fresh(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -303,7 +351,8 @@ pub fn run() {
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let chat_url = format!("{}?afts={}", REMOTE_CHAT_URL, ts);
+            let sep = if REMOTE_CHAT_URL.contains('?') { '&' } else { '?' };
+            let chat_url = format!("{}{}afts={}", REMOTE_CHAT_URL, sep, ts);
 
             let win = WebviewWindowBuilder::new(
                 &handle,
@@ -335,7 +384,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             native_notify,
             focus_main_window,
-            play_sound
+            play_sound,
+            reload_fresh,
+            clear_webview_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
