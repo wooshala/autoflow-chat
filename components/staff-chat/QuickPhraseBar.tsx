@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { QUICK_PHRASES_URL } from '@/lib/chatApi';
-import { phraseText } from '@/lib/services/quickPhrases';
+import { phraseText } from '@/lib/services/quickPhrasesText';
 import type { StaffLocale } from '@/lib/i18n/messages';
 import type { ChatQuickPhrase } from '@/lib/types';
 

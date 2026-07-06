@@ -84,6 +84,7 @@ import {
   resolveStaffChatSessionIdentity
 } from '@/lib/chat/staffChatSelfMessage';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
+import { ChatPhotoLightboxProvider, ChatPhotoThumb } from '@/components/chat/ChatPhotoLightbox';
 import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
@@ -1970,10 +1971,11 @@ function StaffChatPageInner() {
                       ) : null}
                     </div>
                     {m.image_url ? (
-                      <img
+                      <ChatPhotoThumb
                         src={m.image_url}
                         alt=""
-                        className="mt-1 max-h-40 rounded-lg object-cover"
+                        className="mt-1"
+                        imgClassName="max-h-40 rounded-lg object-cover"
                       />
                     ) : null}
                     {primary ? (
@@ -2155,5 +2157,9 @@ function StaffChatPageInner() {
 }
 
 export default function StaffChatPage() {
-  return <StaffChatPageInner />;
+  return (
+    <ChatPhotoLightboxProvider>
+      <StaffChatPageInner />
+    </ChatPhotoLightboxProvider>
+  );
 }

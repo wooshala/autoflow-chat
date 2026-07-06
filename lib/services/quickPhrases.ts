@@ -141,7 +141,3 @@ export async function reorderQuickPhrases(ids: string[], siteId = getSiteId()): 
     if (error) throw error;
   }
 }
-
-export function phraseText(phrase: ChatQuickPhrase, locale: 'ko' | 'ru'): string {
-  return locale === 'ru' ? phrase.ru : phrase.ko;
-}

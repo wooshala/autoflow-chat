@@ -38,6 +38,16 @@ import {
 } from '@/lib/api/timeouts';
 import { log } from '@/lib/logger';
 import { CHAT_CLIENT_REV, CHAT_PAGE_SOURCE } from '@/lib/chat/chatClientRev';
+import type { LostFoundMessageLink } from '@/lib/ops-events/lostFoundUi';
+import type { LostFoundItem } from '@/lib/ops-events/types';
+import { isChatOpsConsoleEnabled } from '@/lib/ops-events/flags';
+import ChatOpsConsoleHeader from '@/components/chat/ops-console/ChatOpsConsoleHeader';
+import ChatOperationPanel from '@/components/chat/ops-console/ChatOperationPanel';
+import ChatParticipantSidebar, {
+  buildParticipantsFromMessages,
+  buildRoomsFromMessages
+} from '@/components/chat/ops-console/ChatParticipantSidebar';
+import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -114,6 +124,34 @@ export default function ChatPage() {
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
+  const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
+  const opsConsoleEnabled = isChatOpsConsoleEnabled();
+  const showOpsConsole = opsConsoleEnabled && !isMobileViewport;
+  const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
+  const [lostFoundItems, setLostFoundItems] = useState<LostFoundItem[]>([]);
+  const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
+
+  const loadLostFoundIndex = useCallback(async () => {
+    if (!lostFoundEnabled) return;
+    const r = await fetchEnvelope<{ items: LostFoundItem[] }>('/api/ops-events/lost-found', {
+      cache: 'no-store',
+      timeoutMs: TIMEOUT_MS_CHAT_AUX
+    });
+    if (!r.ok) return;
+    const items = r.data.items || [];
+    setLostFoundItems(items);
+    const next: Record<string, LostFoundMessageLink> = {};
+    for (const item of items) {
+      if (item.origin_message_id) {
+        next[item.origin_message_id] = { id: item.id, event_no: item.event_no };
+      }
+    }
+    setLostFoundByMessageId(next);
+  }, [lostFoundEnabled]);
+
+  useEffect(() => {
+    void loadLostFoundIndex();
+  }, [loadLostFoundIndex]);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'degraded' | 'reconnecting'>('reconnecting');
   const [realtimeReconnectToken, setRealtimeReconnectToken] = useState(0);
   // 숙박일지(관리모드)에서 넘어온 경우의 복귀 URL. http(s) 절대 URL만 허용(스킴 인젝션 차단).
@@ -568,6 +606,54 @@ export default function ChatPage() {
     );
   }
 
+  async function registerLostFound(msg: ChatMessage) {
+    if (!sessionUser || !msg?.id) return;
+    if (!chatSendUserId) {
+      alert(missingSendEnvMsg);
+      return;
+    }
+    if (!msg.image_url && !msg.image_storage_path) {
+      alert('사진 메시지만 분실물 등록할 수 있습니다.');
+      return;
+    }
+    const descInput = window.prompt(
+      '분실물 설명',
+      msg.message?.trim() || (msg.room_no ? `${msg.room_no}호 분실물` : '분실물')
+    );
+    if (!descInput?.trim()) return;
+
+    const result = await fetchEnvelope<{ item: LostFoundItem }>(
+      '/api/ops-events/lost-found',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin_message_id: msg.id,
+          item_description: descInput.trim(),
+          actor_id: chatSendUserId
+        }),
+        timeoutMs: TIMEOUT_MS_CHAT_AUX
+      }
+    );
+    if (!result.ok) {
+      if (result.status === 409 || result.error === 'CONFLICT') {
+        alert('이미 등록된 사진입니다.');
+        await loadLostFoundIndex();
+        return;
+      }
+      log.error('[LOST_FOUND_REGISTER_CLIENT_ERROR]', result);
+      alert(result.message || '분실물 등록에 실패했습니다.');
+      return;
+    }
+    const item = result.data.item;
+    setLostFoundByMessageId((prev) => ({
+      ...prev,
+      [msg.id]: { id: item.id, event_no: item.event_no }
+    }));
+    setLostFoundItems((prev) => [item, ...prev.filter((row) => row.id !== item.id)]);
+    void loadLostFoundIndex();
+  }
+
   function clearInput() {
     setText('');
     setUrgentMode(false);
@@ -636,8 +722,268 @@ export default function ChatPage() {
     }
   }
 
+  const consoleParticipants = useMemo(() => buildParticipantsFromMessages(messages), [messages]);
+  const consoleRooms = useMemo(() => buildRoomsFromMessages(messages), [messages]);
+  const recentPhotoMessage = useMemo(() => {
+    const list = messages.filter((m) => m.image_url && !m.is_deleted);
+    const filtered = consoleRoomNo ? list.filter((m) => m.room_no === consoleRoomNo) : list;
+    return filtered.length > 0 ? filtered[filtered.length - 1]! : null;
+  }, [messages, consoleRoomNo]);
+
+  const browserNotifyShortLabel =
+    browserNotifyPermission === 'granted'
+      ? '브라우저 알림 허용됨'
+      : browserNotifyPermission === 'denied'
+        ? '브라우저 알림 차단'
+        : '브라우저 알림 미설정';
+
+  const chatMessageList = (
+    <section ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      <ChatMessages
+        messages={messages}
+        currentUserId={sessionUser ? chatSendUserId : null}
+        isAdmin={Boolean(sessionUser)}
+        deletingMessageId={deletingMessageId}
+        onDeleteMessage={handleDeleteMessage}
+        onCreateManualTicket={createManualTicket}
+        lostFoundEnabled={lostFoundEnabled}
+        lostFoundByMessageId={lostFoundByMessageId}
+        onRegisterLostFound={lostFoundEnabled ? registerLostFound : undefined}
+        stayOnChat={showOpsConsole}
+      />
+    </section>
+  );
+
+  const maintenancePanel = showMaintenance ? (
+    <div className="border-t border-gray-700 bg-gray-800 px-3 pt-3 pb-2">
+      <div className="mb-2 text-xs font-bold text-gray-300">문제 유형</div>
+      <div className="mb-3 grid grid-cols-5 gap-2">
+        {ISSUE_TYPES.map((type) => (
+          <button
+            key={type}
+            onClick={() => setIssueType(type)}
+            className={`rounded-xl p-2 text-xs font-bold ${issueType === type ? ISSUE_UI[type].badge + ' ring-2 ring-yellow-400' : 'bg-gray-700 text-gray-300'}`}
+          >
+            <div>{ISSUE_UI[type].emoji}</div>
+            <div>{type}</div>
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        disabled={submitting}
+        onClick={() => void submitMaintenance()}
+        className="w-full rounded-xl bg-[#FEE500] px-4 py-3 text-sm font-bold text-gray-900 disabled:opacity-50"
+      >
+        유지보수 등록
+      </button>
+    </div>
+  ) : null;
+
+  const chatComposer = (
+    <div className="shrink-0 border-t border-gray-700 bg-gray-800 px-3 py-3">
+      {showEmojiPicker && (
+        <div className="absolute bottom-36 left-2 z-50">
+          <EmojiPicker
+            onEmojiClick={(e: EmojiClickData) => {
+              setText((prev) => prev + e.emoji);
+              setShowEmojiPicker(false);
+            }}
+            height={380}
+            width={320}
+          />
+        </div>
+      )}
+      <div className="mb-2 flex items-center gap-2">
+        <button
+          onClick={() => setKeypadOpen(true)}
+          className={`rounded-full px-3 py-1.5 text-xs font-bold ${roomNo ? 'border border-yellow-400 bg-[#FEE500] text-gray-900' : 'border border-dashed border-gray-600 bg-gray-700 text-gray-400'}`}
+        >
+          {roomNo ? `🏠 ${roomNo}호` : '🏠 객실 선택'}
+        </button>
+        {roomNo && (
+          <button onClick={() => setRoomNo('')} className="text-xs text-gray-400">
+            초기화
+          </button>
+        )}
+        {photo && (
+          <span className="rounded-full bg-emerald-900/40 px-2 py-1 text-xs text-emerald-400">사진 선택됨</span>
+        )}
+        {!showMaintenance && (roomNo || photo) && (
+          <button
+            onClick={() => setShowMaintenance(true)}
+            className="ml-auto rounded-full bg-[#FEE500] px-3 py-1.5 text-xs font-bold text-gray-900"
+          >
+            🔧 유지보수
+          </button>
+        )}
+      </div>
+      {preview && <img src={preview} alt="preview" className="mb-2 h-20 w-20 rounded-xl object-cover" />}
+      <div className="flex items-end gap-2">
+        <button type="button" onClick={() => fileRef.current?.click()} className="h-11 w-11 shrink-0 rounded-full bg-gray-700 text-xl">
+          📷
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowEmojiPicker((v) => !v)}
+          className={`h-11 w-11 shrink-0 rounded-full text-xl ${showEmojiPicker ? 'bg-yellow-400' : 'bg-gray-700'}`}
+        >
+          😊
+        </button>
+        <button
+          type="button"
+          onClick={() => setUrgentMode((v) => !v)}
+          className={`h-11 shrink-0 rounded-lg border px-2 text-xs font-bold ${
+            urgentMode ? 'border-orange-400 bg-orange-500 text-white' : 'border-gray-600 bg-gray-800 text-gray-300'
+          }`}
+          aria-pressed={urgentMode}
+          title="긴급 메시지"
+        >
+          긴급 {urgentMode ? 'ON' : 'OFF'}
+        </button>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void sendMessage();
+            }
+          }}
+          enterKeyHint="send"
+          placeholder="메시지를 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈)"
+          rows={1}
+          className="max-h-24 min-h-[44px] flex-1 resize-none rounded-2xl border border-gray-600 bg-gray-700 px-4 py-3 text-sm text-white outline-none placeholder:text-gray-400 focus:border-yellow-400"
+        />
+        <button
+          type="button"
+          disabled={!canSend || submitting}
+          onClick={() => clearInput()}
+          className="h-11 shrink-0 rounded-lg border border-gray-600 px-2 text-xs text-gray-400 hover:bg-gray-700 disabled:pointer-events-none disabled:opacity-40"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          disabled={!canSend || submitting}
+          onClick={() => {
+            log.debug('[SEND_CLICK]', { canSend, submitting });
+            void sendMessage();
+          }}
+          className="h-11 w-11 shrink-0 rounded-full bg-[#FEE500] text-lg font-bold text-gray-900 disabled:opacity-40"
+        >
+          {submitting ? '…' : '▶'}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setPhoto(file);
+            setPreview(URL.createObjectURL(file));
+          }}
+        />
+      </div>
+    </div>
+  );
+
+  const keypadOverlay = keypadOpen ? (
+    <div className="absolute inset-0 flex items-end bg-black/40">
+      <div className="w-full rounded-t-3xl bg-white p-4">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-300" />
+        <div className="mb-3 text-sm font-bold">객실 번호 입력</div>
+        <div className="mb-3 rounded-2xl bg-gray-100 px-4 py-3 text-3xl font-extrabold text-gray-900">{keypadNum || '-'}</div>
+        <div className="grid grid-cols-3 gap-3">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => (
+            <button
+              key={n}
+              onClick={() => setKeypadNum((p) => (p + n).slice(0, 4))}
+              className="h-14 rounded-2xl bg-gray-100 text-2xl font-semibold"
+            >
+              {n}
+            </button>
+          ))}
+          <button onClick={() => setKeypadOpen(false)} className="h-14 rounded-2xl text-sm font-semibold text-gray-500">
+            닫기
+          </button>
+          <button
+            onClick={() => setKeypadNum((p) => (p + '0').slice(0, 4))}
+            className="h-14 rounded-2xl bg-gray-100 text-2xl font-semibold"
+          >
+            0
+          </button>
+          <button onClick={() => setKeypadNum((p) => p.slice(0, -1))} className="h-14 rounded-2xl text-xl">
+            ⌫
+          </button>
+        </div>
+        <button
+          onClick={() => {
+            setRoomNo(keypadNum);
+            setKeypadOpen(false);
+          }}
+          className="mt-3 w-full rounded-2xl bg-[#FEE500] px-4 py-3 font-bold text-gray-900"
+        >
+          확인
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  if (showOpsConsole) {
+    return (
+      <ChatPhotoLightboxProvider>
+      <main className="relative flex h-screen flex-col bg-white">
+        <ChatOpsConsoleHeader
+          connectionStatus={connectionStatus}
+          onlineCount={Math.max(consoleParticipants.filter((p) => p.online).length, 1)}
+          browserNotifyLabel={browserNotifyShortLabel}
+          onOpenSettings={() => setShowAdminPanel((o) => !o)}
+          onLogout={() => {
+            log.info('[LOGIN_REDIRECT]', { from: '/chat', to: '/login', reason: 'manual_logout' });
+            logoutAndGoLogin(router);
+          }}
+        />
+        <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
+        <StaffChatAdminSection open={showAdminPanel} />
+        <div className="flex min-h-0 flex-1">
+          <ChatParticipantSidebar
+            participants={consoleParticipants}
+            rooms={consoleRooms}
+            selectedRoomNo={consoleRoomNo}
+            onSelectRoom={setConsoleRoomNo}
+          />
+          <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
+            <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
+              <span className="font-bold">대화 타임라인</span>
+              {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
+            </div>
+            {chatMessageList}
+            {maintenancePanel}
+            {chatComposer}
+          </div>
+          <ChatOperationPanel
+            selectedRoomNo={consoleRoomNo}
+            recentPhotoMessage={recentPhotoMessage}
+            lostFoundItems={lostFoundItems}
+            lostFoundEnabled={lostFoundEnabled}
+            onRegisterLostFound={lostFoundEnabled ? registerLostFound : undefined}
+            onSelectRoom={setConsoleRoomNo}
+            stayOnChat
+          />
+        </div>
+        {keypadOverlay}
+      </main>
+      </ChatPhotoLightboxProvider>
+    );
+  }
+
   return (
-    // 채팅 배경: 카카오 연파랑
+    <ChatPhotoLightboxProvider>
     <main className="flex h-screen flex-col bg-[#B2C7D9]">
 
       {/* 헤더: 다크 그레이 테마 */}
@@ -710,6 +1056,15 @@ export default function ChatPage() {
                   테스트 알림
                 </button>
               )}
+              {lostFoundEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => router.push('/ops/lost-found')}
+                  className="rounded-lg border border-emerald-600/70 bg-emerald-950/40 px-2 py-1 font-semibold text-emerald-200 hover:bg-emerald-900/50"
+                >
+                  분실물
+                </button>
+              ) : null}
               <span className="text-gray-400">
                 브라우저 알림:{' '}
                 {browserNotifyPermission === 'granted'
@@ -751,152 +1106,17 @@ export default function ChatPage() {
 
       <StaffChatAdminSection open={showAdminPanel} />
 
-      {/* 메시지 목록 — 배경 main에서 상속 */}
-      <section ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        <ChatMessages
-          messages={messages}
-          currentUserId={sessionUser ? chatSendUserId : null}
-          isAdmin={Boolean(sessionUser)}
-          deletingMessageId={deletingMessageId}
-          onDeleteMessage={handleDeleteMessage}
-          onCreateManualTicket={createManualTicket}
-        />
-      </section>
+      {chatMessageList}
 
-      {/* 유지보수 패널: 다크 테마 */}
-      {showMaintenance && (
-        <div className="border-t border-gray-700 bg-gray-800 px-3 pt-3 pb-2">
-          <div className="mb-2 text-xs font-bold text-gray-300">문제 유형</div>
-          <div className="grid grid-cols-5 gap-2 mb-3">
-            {ISSUE_TYPES.map((type) => (
-              <button key={type} onClick={() => setIssueType(type)} className={`rounded-xl p-2 text-xs font-bold ${issueType === type ? ISSUE_UI[type].badge + ' ring-2 ring-yellow-400' : 'bg-gray-700 text-gray-300'}`}>
-                <div>{ISSUE_UI[type].emoji}</div>
-                <div>{type}</div>
-              </button>
-            ))}
-          </div>
-          {/* 유지보수 등록: 카카오 노랑 버튼 */}
-          <button type="button" disabled={submitting} onClick={() => void submitMaintenance()} className="w-full rounded-xl bg-[#FEE500] text-gray-900 px-4 py-3 text-sm font-bold disabled:opacity-50">유지보수 등록</button>
-        </div>
-      )}
+      {maintenancePanel}
 
-      {/* 입력 영역: 다크 테마 */}
-      <div className="bg-gray-800 border-t border-gray-700 px-3 py-3 shrink-0">
-        {/* 이모지 피커 팝업 */}
-        {showEmojiPicker && (
-          <div className="absolute bottom-36 left-2 z-50">
-            <EmojiPicker
-              onEmojiClick={(e: EmojiClickData) => {
-                setText((prev) => prev + e.emoji);
-                setShowEmojiPicker(false);
-              }}
-              height={380}
-              width={320}
-            />
-          </div>
-        )}
-        <div className="mb-2 flex items-center gap-2">
-          {/* 객실 선택: 선택 시 노랑 강조 */}
-          <button onClick={() => setKeypadOpen(true)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${roomNo ? 'bg-[#FEE500] text-gray-900 border border-yellow-400' : 'bg-gray-700 text-gray-400 border border-dashed border-gray-600'}`}>
-            {roomNo ? `🏠 ${roomNo}호` : '🏠 객실 선택'}
-          </button>
-          {roomNo && <button onClick={() => setRoomNo('')} className="text-xs text-gray-400">초기화</button>}
-          {photo && <span className="text-xs rounded-full bg-emerald-900/40 px-2 py-1 text-emerald-400">사진 선택됨</span>}
-          {!showMaintenance && (roomNo || photo) && <button onClick={() => setShowMaintenance(true)} className="ml-auto rounded-full bg-[#FEE500] text-gray-900 px-3 py-1.5 text-xs font-bold">🔧 유지보수</button>}
-        </div>
-        {preview && <img src={preview} alt="preview" className="mb-2 h-20 w-20 rounded-xl object-cover" />}
-        <div className="flex items-end gap-2">
-          {/* 카메라 버튼 */}
-          <button type="button" onClick={() => fileRef.current?.click()} className="h-11 w-11 shrink-0 rounded-full bg-gray-700 text-xl">
-            📷
-          </button>
-          {/* 이모지 버튼 */}
-          <button
-            type="button"
-            onClick={() => setShowEmojiPicker((v) => !v)}
-            className={`h-11 w-11 shrink-0 rounded-full text-xl ${showEmojiPicker ? 'bg-yellow-400' : 'bg-gray-700'}`}
-          >
-            😊
-          </button>
-          <button
-            type="button"
-            onClick={() => setUrgentMode((v) => !v)}
-            className={`h-11 shrink-0 rounded-lg border px-2 text-xs font-bold ${
-              urgentMode
-                ? 'border-orange-400 bg-orange-500 text-white'
-                : 'border-gray-600 bg-gray-800 text-gray-300'
-            }`}
-            aria-pressed={urgentMode}
-            title="긴급 메시지"
-          >
-            긴급 {urgentMode ? 'ON' : 'OFF'}
-          </button>
-          {/* 입력창: 다크 스타일 */}
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing) return;
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void sendMessage();
-              }
-            }}
-            enterKeyHint="send"
-            placeholder="메시지를 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈)"
-            rows={1}
-            className="min-h-[44px] max-h-24 flex-1 resize-none rounded-2xl border border-gray-600 bg-gray-700 text-white placeholder-gray-400 px-4 py-3 outline-none focus:border-yellow-400 text-sm"
-          />
-          <button
-            type="button"
-            disabled={!canSend || submitting}
-            onClick={() => clearInput()}
-            className="h-11 shrink-0 rounded-lg border border-gray-600 px-2 text-xs text-gray-400 disabled:opacity-40 disabled:pointer-events-none hover:bg-gray-700"
-          >
-            취소
-          </button>
-          {/* 전송 버튼: 카카오 노랑 */}
-          <button
-            type="button"
-            disabled={!canSend || submitting}
-            onClick={() => {
-              log.debug('[SEND_CLICK]', { canSend, submitting });
-              void sendMessage();
-            }}
-            className="h-11 w-11 shrink-0 rounded-full bg-[#FEE500] text-gray-900 font-bold text-lg disabled:opacity-40"
-          >
-            {submitting ? '…' : '▶'}
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            setPhoto(file);
-            setPreview(URL.createObjectURL(file));
-          }} />
-        </div>
-      </div>
+      {chatComposer}
 
-      {/* 객실 키패드 오버레이 — 흰색 유지 (모달이라 독립적) */}
-      {keypadOpen && (
-        <div className="absolute inset-0 bg-black/40 flex items-end">
-          <div className="w-full rounded-t-3xl bg-white p-4">
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-300" />
-            <div className="mb-3 text-sm font-bold">객실 번호 입력</div>
-            <div className="mb-3 rounded-2xl bg-gray-100 px-4 py-3 text-3xl font-extrabold text-gray-900">{keypadNum || '-'}</div>
-            <div className="grid grid-cols-3 gap-3">
-              {['1','2','3','4','5','6','7','8','9'].map((n) => <button key={n} onClick={() => setKeypadNum((p) => (p + n).slice(0, 4))} className="h-14 rounded-2xl bg-gray-100 text-2xl font-semibold">{n}</button>)}
-              <button onClick={() => setKeypadOpen(false)} className="h-14 rounded-2xl text-sm font-semibold text-gray-500">닫기</button>
-              <button onClick={() => setKeypadNum((p) => (p + '0').slice(0, 4))} className="h-14 rounded-2xl bg-gray-100 text-2xl font-semibold">0</button>
-              <button onClick={() => setKeypadNum((p) => p.slice(0, -1))} className="h-14 rounded-2xl text-xl">⌫</button>
-            </div>
-            {/* 확인: 카카오 노랑 */}
-            <button onClick={() => { setRoomNo(keypadNum); setKeypadOpen(false); }} className="mt-3 w-full rounded-2xl bg-[#FEE500] text-gray-900 px-4 py-3 font-bold">확인</button>
-          </div>
-        </div>
-      )}
+      {keypadOverlay}
 
       <div className="px-3 pb-1 text-right text-[10px] text-gray-500">build: {buildTag}</div>
       <Navigation active="chat" />
     </main>
+    </ChatPhotoLightboxProvider>
   );
 }

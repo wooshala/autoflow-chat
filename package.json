@@ -7,6 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "staging:step2": "node scripts/staging/step2-setup.mjs",
+    "staging:verify": "node scripts/staging/verify-isolation.mjs",
+    "staging:prod-snapshot": "node scripts/staging/production-snapshot.mjs",
+    "staging:phase1-migration": "node scripts/staging/apply-phase1-migration.mjs",
+    "staging:phase1-verify": "node scripts/staging/verify-phase1.mjs",
+    "staging:staff-accounts-seed": "node scripts/staging/apply-staff-accounts-seed.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

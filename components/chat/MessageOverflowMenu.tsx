@@ -11,9 +11,17 @@ export type MessageOverflowItem = {
 type Props = {
   items: MessageOverflowItem[];
   align?: 'left' | 'right';
+  /** e.g. absolute positioning on photo overlay */
+  triggerClassName?: string;
+  wrapperClassName?: string;
 };
 
-export default function MessageOverflowMenu({ items, align = 'right' }: Props) {
+export default function MessageOverflowMenu({
+  items,
+  align = 'right',
+  triggerClassName,
+  wrapperClassName
+}: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -29,13 +37,19 @@ export default function MessageOverflowMenu({ items, align = 'right' }: Props) {
   if (!items.length) return null;
 
   return (
-    <div ref={rootRef} className={`relative ${align === 'right' ? 'ml-auto' : ''}`}>
+    <div
+      ref={rootRef}
+      className={`relative ${wrapperClassName || ''} ${!wrapperClassName && align === 'right' ? 'ml-auto' : ''}`}
+    >
       <button
         type="button"
         aria-label="메시지 더보기"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="rounded px-1 py-0.5 text-[11px] font-bold text-gray-500 opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 group-focus-within:opacity-100"
+        className={
+          triggerClassName ||
+          'rounded px-1 py-0.5 text-[11px] font-bold text-gray-500 opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 group-focus-within:opacity-100'
+        }
       >
         ⋮
       </button>
