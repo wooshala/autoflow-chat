@@ -1,9 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
+import { IS_MOCK } from '@/lib/env';
 
 // Admin client URL must be the project root (NOT /rest/v1).
-// Force Primary/root URL to bypass any load balancer URL that may be used on the client.
-const FORCED_SUPABASE_ADMIN_URL = 'https://zraynckvincilfbekbld.supabase.co';
-const primarySupabaseUrl = process.env.SUPABASE_PRIMARY_URL || FORCED_SUPABASE_ADMIN_URL;
+// Phase 0.5: no implicit Production fallback — SUPABASE_PRIMARY_URL is required in production mode.
+const primarySupabaseUrlRaw = process.env.SUPABASE_PRIMARY_URL?.trim() || '';
+if (!primarySupabaseUrlRaw && !IS_MOCK) {
+  throw new Error(
+    'Missing SUPABASE_PRIMARY_URL. Admin Supabase client refuses to start without an explicit primary URL (no Production fallback).'
+  );
+}
+const primarySupabaseUrl = primarySupabaseUrlRaw || null;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,8 +27,9 @@ export const supabase = hasSupabase
   ? createClient(supabaseUrl!, supabaseAnonKey!)
   : null;
 
-export const supabaseAdmin = primarySupabaseUrl && (supabaseServiceRoleKey || supabaseAnonKey)
-  ? createClient(primarySupabaseUrl, supabaseServiceRoleKey || supabaseAnonKey!)
-  : null;
+export const supabaseAdmin =
+  primarySupabaseUrl && (supabaseServiceRoleKey || supabaseAnonKey)
+    ? createClient(primarySupabaseUrl, supabaseServiceRoleKey || supabaseAnonKey!)
+    : null;
 
  

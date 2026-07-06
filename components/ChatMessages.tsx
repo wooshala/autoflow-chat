@@ -9,6 +9,8 @@ import { getMessageDisplayParts } from "@/lib/chat/displayMessageText";
 import { isEmojiOnlyMessage } from "@/lib/chat/isEmojiOnlyMessage";
 import { isUrgentMessage } from "@/lib/chat/messagePriority";
 import MessageOverflowMenu from "@/components/chat/MessageOverflowMenu";
+import { ChatPhotoThumb } from "@/components/chat/ChatPhotoLightbox";
+import type { LostFoundMessageLink } from "@/lib/ops-events/lostFoundUi";
 
 type Props = {
   messages: ChatMessage[];
@@ -17,6 +19,11 @@ type Props = {
   deletingMessageId?: string | null;
   onDeleteMessage?: (msg: ChatMessage) => void | Promise<void>;
   onCreateManualTicket?: (msg: ChatMessage) => void;
+  lostFoundEnabled?: boolean;
+  lostFoundByMessageId?: Record<string, LostFoundMessageLink>;
+  onRegisterLostFound?: (msg: ChatMessage) => void;
+  /** Layout PoC: keep /chat — do not navigate to /ops/lost-found */
+  stayOnChat?: boolean;
 };
 
 function translated(msg: ChatMessage, lang: string) {
@@ -64,7 +71,11 @@ export default function ChatMessages({
   isAdmin = false,
   deletingMessageId = null,
   onDeleteMessage,
-  onCreateManualTicket
+  onCreateManualTicket,
+  lostFoundEnabled = false,
+  lostFoundByMessageId = {},
+  onRegisterLostFound,
+  stayOnChat = false
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -135,9 +146,35 @@ export default function ChatMessages({
         }
 
         const showManualTicketAction =
-          !isDeleted && !msg.ticket_id && !emojiOnly && typeof onCreateManualTicket === "function";
-        const overflowItems = showManualTicketAction
-          ? [{ id: "manual-ticket", label: "수동 티켓 생성", onClick: () => onCreateManualTicket!(msg) }]
+          !isDeleted &&
+          !msg.ticket_id &&
+          !emojiOnly &&
+          !msg.image_url &&
+          typeof onCreateManualTicket === 'function';
+        const lostFoundLink = lostFoundByMessageId[String(msg.id)];
+        const isPhotoMessage = !isDeleted && Boolean(msg.image_url);
+        const showPhotoLostFoundMenu =
+          lostFoundEnabled &&
+          isPhotoMessage &&
+          !lostFoundLink &&
+          typeof onRegisterLostFound === 'function';
+        const overflowItems: Array<{ id: string; label: string; onClick: () => void }> = [];
+        if (showManualTicketAction) {
+          overflowItems.push({
+            id: 'manual-ticket',
+            label: '수동 티켓 생성',
+            onClick: () => onCreateManualTicket!(msg)
+          });
+        }
+        const photoLostFoundItems = showPhotoLostFoundMenu
+          ? [
+              {
+                id: 'lost-found',
+                label: '분실물 등록',
+                onClick: () => onRegisterLostFound!(msg)
+              },
+              { id: 'cancel', label: '취소', onClick: () => {} }
+            ]
           : [];
 
         return (
@@ -236,14 +273,50 @@ export default function ChatMessages({
 
                   {/* 객실 번호 — 굵게 + 배경 강조 (업무 식별 포인트) */}
                   {!isDeleted && msg.room_no && (
-                    <div
-                      className={`mb-1 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
-                        isPc ? "bg-black/10 text-gray-900" : "bg-blue-50 text-blue-700"
-                      }`}
-                    >
-                      🏠 {msg.room_no}호
+                    <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
+                          isPc ? 'bg-black/10 text-gray-900' : 'bg-blue-50 text-blue-700'
+                        }`}
+                      >
+                        🏠 {msg.room_no}호
+                      </span>
+                      {lostFoundLink ? (
+                        stayOnChat ? (
+                          <span className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
+                            👜 분실물
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            title="분실물 상세 보기"
+                            onClick={() => router.push(`/ops/lost-found/${lostFoundLink.id}`)}
+                            className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200"
+                          >
+                            👜 분실물
+                          </button>
+                        )
+                      ) : null}
                     </div>
                   )}
+                  {!isDeleted && !msg.room_no && lostFoundLink ? (
+                    <div className="mb-1">
+                      {stayOnChat ? (
+                        <span className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
+                          👜 분실물
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          title="분실물 상세 보기"
+                          onClick={() => router.push(`/ops/lost-found/${lostFoundLink.id}`)}
+                          className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200"
+                        >
+                          👜 분실물
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
 
                   {!isDeleted && statusLabel && msg.image_url ? (
                     <div
@@ -264,11 +337,21 @@ export default function ChatMessages({
                       {isImageOnly ? (
                         <div className="mb-1 text-xs opacity-80">[사진 메시지]</div>
                       ) : null}
-                      <img
-                        src={msg.image_url}
-                        alt="업로드"
-                        className="mt-1 h-40 w-full rounded-xl object-cover"
-                      />
+                      <div className="relative group/photo mt-1">
+                        {photoLostFoundItems.length > 0 ? (
+                          <MessageOverflowMenu
+                            items={photoLostFoundItems}
+                            align={isPc ? 'right' : 'left'}
+                            wrapperClassName="absolute top-1 right-1 z-10"
+                            triggerClassName="rounded-md bg-white/95 px-1.5 py-0.5 text-sm font-bold text-gray-700 shadow ring-1 ring-gray-200 opacity-0 transition-opacity hover:bg-white group-hover/photo:opacity-100 group-focus-within/photo:opacity-100"
+                          />
+                        ) : null}
+                        <ChatPhotoThumb
+                          src={msg.image_url}
+                          alt="업로드"
+                          imgClassName="h-40 w-full rounded-xl object-cover"
+                        />
+                      </div>
                       {!statusLabel && !isGenericPhotoCaption(displayPrimary || msg.message || '') ? (
                         <div
                           className={`mt-1 whitespace-pre-wrap break-words ${
