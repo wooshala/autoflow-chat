@@ -351,7 +351,8 @@ pub fn run() {
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let chat_url = format!("{}?afts={}", REMOTE_CHAT_URL, ts);
+            let sep = if REMOTE_CHAT_URL.contains('?') { '&' } else { '?' };
+            let chat_url = format!("{}{}afts={}", REMOTE_CHAT_URL, sep, ts);
 
             let win = WebviewWindowBuilder::new(
                 &handle,

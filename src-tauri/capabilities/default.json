@@ -4,7 +4,10 @@
   "description": "AutoFlow: remote /chat + native notification, tray, in-app updater.",
   "windows": ["main"],
   "remote": {
-    "urls": ["https://autoflow-mvp.vercel.app"]
+    "urls": [
+      "https://autoflow-mvp.vercel.app",
+      "https://autoflow-*-autoflowmvp.vercel.app"
+    ]
   },
   "permissions": [
     "core:default",
