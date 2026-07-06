@@ -235,12 +235,14 @@ fn focus_main_window(app: tauri::AppHandle) {
 }
 
 /// Cache-busted /chat URL (same origin) so a freshly deployed bundle loads.
+/// Uses `&` when the base URL already carries a query string, `?` otherwise.
 fn fresh_chat_url() -> String {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    format!("{}?afts={}", REMOTE_CHAT_URL, ts)
+    let sep = if REMOTE_CHAT_URL.contains('?') { '&' } else { '?' };
+    format!("{}{}afts={}", REMOTE_CHAT_URL, sep, ts)
 }
 
 /// Basic refresh (safe): navigate the main webview to a fresh cache-busted URL.
