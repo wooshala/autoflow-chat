@@ -9,6 +9,7 @@ import { getMessageDisplayParts } from "@/lib/chat/displayMessageText";
 import { isEmojiOnlyMessage } from "@/lib/chat/isEmojiOnlyMessage";
 import { isUrgentMessage } from "@/lib/chat/messagePriority";
 import MessageOverflowMenu from "@/components/chat/MessageOverflowMenu";
+import ChatPhotoOpsAction from "@/components/chat/ChatPhotoOpsAction";
 import { ChatPhotoThumb } from "@/components/chat/ChatPhotoLightbox";
 import type { LostFoundMessageLink } from "@/lib/ops-events/lostFoundUi";
 
@@ -22,8 +23,14 @@ type Props = {
   lostFoundEnabled?: boolean;
   lostFoundByMessageId?: Record<string, LostFoundMessageLink>;
   onRegisterLostFound?: (msg: ChatMessage) => void;
-  /** Layout PoC: keep /chat — do not navigate to /ops/lost-found */
+  onRegisterMaintenanceFromPhoto?: (msg: ChatMessage) => void;
+  onPhotoOpsOther?: () => void;
+  /** LF-3B: show photo → ops-event action strip */
+  photoOpsUxEnabled?: boolean;
+  /** Never navigate to /ops/lost-found from /chat */
   stayOnChat?: boolean;
+  eventCenterEnabled?: boolean;
+  onOpenLostFoundDetail?: (id: string) => void;
 };
 
 function translated(msg: ChatMessage, lang: string) {
@@ -75,13 +82,31 @@ export default function ChatMessages({
   lostFoundEnabled = false,
   lostFoundByMessageId = {},
   onRegisterLostFound,
-  stayOnChat = false
+  onRegisterMaintenanceFromPhoto,
+  onPhotoOpsOther,
+  photoOpsUxEnabled = false,
+  stayOnChat = false,
+  eventCenterEnabled = false,
+  onOpenLostFoundDetail
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef(messages.length);
   const router = useRouter();
+  const canOpenInEventCenter = Boolean(eventCenterEnabled && onOpenLostFoundDetail);
+
+  function handleLostFoundOpen(id: string, e?: React.MouseEvent) {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (canOpenInEventCenter) {
+      onOpenLostFoundDetail!(id);
+    }
+  }
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length > prevMessageCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevMessageCountRef.current = messages.length;
   }, [messages]);
 
   return (
@@ -153,11 +178,8 @@ export default function ChatMessages({
           typeof onCreateManualTicket === 'function';
         const lostFoundLink = lostFoundByMessageId[String(msg.id)];
         const isPhotoMessage = !isDeleted && Boolean(msg.image_url);
-        const showPhotoLostFoundMenu =
-          lostFoundEnabled &&
-          isPhotoMessage &&
-          !lostFoundLink &&
-          typeof onRegisterLostFound === 'function';
+        const showPhotoOpsAction = photoOpsUxEnabled && isPhotoMessage;
+        const showRoomLostFoundBadge = lostFoundLink && !(photoOpsUxEnabled && isPhotoMessage);
         const overflowItems: Array<{ id: string; label: string; onClick: () => void }> = [];
         if (showManualTicketAction) {
           overflowItems.push({
@@ -166,16 +188,6 @@ export default function ChatMessages({
             onClick: () => onCreateManualTicket!(msg)
           });
         }
-        const photoLostFoundItems = showPhotoLostFoundMenu
-          ? [
-              {
-                id: 'lost-found',
-                label: '분실물 등록',
-                onClick: () => onRegisterLostFound!(msg)
-              },
-              { id: 'cancel', label: '취소', onClick: () => {} }
-            ]
-          : [];
 
         return (
           // 카카오: 내 메시지=오른쪽, 상대=왼쪽 + 아바타
@@ -281,39 +293,39 @@ export default function ChatMessages({
                       >
                         🏠 {msg.room_no}호
                       </span>
-                      {lostFoundLink ? (
-                        stayOnChat ? (
-                          <span className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
-                            👜 분실물
-                          </span>
-                        ) : (
+                      {showRoomLostFoundBadge ? (
+                        canOpenInEventCenter ? (
                           <button
                             type="button"
-                            title="분실물 상세 보기"
-                            onClick={() => router.push(`/ops/lost-found/${lostFoundLink.id}`)}
+                            title="Event Center에서 분실물 상세 보기"
+                            onClick={(e) => handleLostFoundOpen(lostFoundLink.id, e)}
                             className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200"
                           >
                             👜 분실물
                           </button>
+                        ) : (
+                          <span className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
+                            👜 분실물
+                          </span>
                         )
                       ) : null}
                     </div>
                   )}
-                  {!isDeleted && !msg.room_no && lostFoundLink ? (
+                  {!isDeleted && !msg.room_no && showRoomLostFoundBadge ? (
                     <div className="mb-1">
-                      {stayOnChat ? (
-                        <span className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
-                          👜 분실물
-                        </span>
-                      ) : (
+                      {canOpenInEventCenter ? (
                         <button
                           type="button"
-                          title="분실물 상세 보기"
-                          onClick={() => router.push(`/ops/lost-found/${lostFoundLink.id}`)}
+                          title="Event Center에서 분실물 상세 보기"
+                          onClick={(e) => handleLostFoundOpen(lostFoundLink!.id, e)}
                           className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200"
                         >
                           👜 분실물
                         </button>
+                      ) : (
+                        <span className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
+                          👜 분실물
+                        </span>
                       )}
                     </div>
                   ) : null}
@@ -338,20 +350,22 @@ export default function ChatMessages({
                         <div className="mb-1 text-xs opacity-80">[사진 메시지]</div>
                       ) : null}
                       <div className="relative group/photo mt-1">
-                        {photoLostFoundItems.length > 0 ? (
-                          <MessageOverflowMenu
-                            items={photoLostFoundItems}
-                            align={isPc ? 'right' : 'left'}
-                            wrapperClassName="absolute top-1 right-1 z-10"
-                            triggerClassName="rounded-md bg-white/95 px-1.5 py-0.5 text-sm font-bold text-gray-700 shadow ring-1 ring-gray-200 opacity-0 transition-opacity hover:bg-white group-hover/photo:opacity-100 group-focus-within/photo:opacity-100"
-                          />
-                        ) : null}
                         <ChatPhotoThumb
                           src={msg.image_url}
                           alt="업로드"
                           imgClassName="h-40 w-full rounded-xl object-cover"
                         />
                       </div>
+                      {showPhotoOpsAction ? (
+                        <ChatPhotoOpsAction
+                          msg={msg}
+                          lostFoundLink={lostFoundLink}
+                          lostFoundEnabled={lostFoundEnabled}
+                          onLostFoundPhotoClick={onRegisterLostFound}
+                          onRegisterMaintenance={onRegisterMaintenanceFromPhoto}
+                          onOther={onPhotoOpsOther}
+                        />
+                      ) : null}
                       {!statusLabel && !isGenericPhotoCaption(displayPrimary || msg.message || '') ? (
                         <div
                           className={`mt-1 whitespace-pre-wrap break-words ${
