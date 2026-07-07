@@ -137,19 +137,23 @@ export default function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
+  /** LF-3B UX PoC: photo → ops-event entry (Preview; gated with lost-found flag) */
+  const photoOpsUxEnabled = lostFoundEnabled;
+  const [opsUxToast, setOpsUxToast] = useState<string | null>(null);
   const opsConsoleEnabled = isChatOpsConsoleEnabled();
   const showOpsConsole = opsConsoleEnabled && !isMobileViewport;
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
   const [lostFoundItems, setLostFoundItems] = useState<LostFoundItem[]>([]);
+  const [openLostFoundDetailId, setOpenLostFoundDetailId] = useState<string | null>(null);
   const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
 
-  const loadLostFoundIndex = useCallback(async () => {
-    if (!lostFoundEnabled) return;
+  const loadLostFoundIndex = useCallback(async (): Promise<LostFoundItem[]> => {
+    if (!lostFoundEnabled) return [];
     const r = await fetchEnvelope<{ items: LostFoundItem[] }>('/api/ops-events/lost-found', {
       cache: 'no-store',
       timeoutMs: TIMEOUT_MS_CHAT_AUX
     });
-    if (!r.ok) return;
+    if (!r.ok) return [];
     const items = r.data.items || [];
     setLostFoundItems(items);
     const next: Record<string, LostFoundMessageLink> = {};
@@ -159,6 +163,7 @@ export default function ChatPage() {
       }
     }
     setLostFoundByMessageId(next);
+    return items;
   }, [lostFoundEnabled]);
 
   useEffect(() => {
@@ -237,6 +242,23 @@ export default function ChatPage() {
       tag: 'chat-notify-test'
     });
   }, []);
+
+  const showOpsUxToast = useCallback((message: string) => {
+    setOpsUxToast(message);
+    window.setTimeout(() => setOpsUxToast(null), 2600);
+  }, []);
+
+  const openLostFoundInEventCenter = useCallback(
+    (id: string) => {
+      if (!lostFoundEnabled) return;
+      if (!showOpsConsole) {
+        showOpsUxToast('분실물 상세는 Event Center(데스크톱)에서 확인하세요.');
+        return;
+      }
+      setOpenLostFoundDetailId(id);
+    },
+    [lostFoundEnabled, showOpsConsole, showOpsUxToast]
+  );
 
   const { toasts, onToastClick, removeToast, permission: browserNotifyPermission, requestBrowserPermission } =
     useChatNotifications({
@@ -628,11 +650,19 @@ export default function ChatPage() {
       alert('사진 메시지만 분실물 등록할 수 있습니다.');
       return;
     }
-    const descInput = window.prompt(
-      '분실물 설명',
-      msg.message?.trim() || (msg.room_no ? `${msg.room_no}호 분실물` : '분실물')
-    );
-    if (!descInput?.trim()) return;
+    if (msg.ticket_id) {
+      alert('이미 시설고장으로 등록된 사진입니다.');
+      return;
+    }
+
+    const existingLink = lostFoundByMessageId[msg.id];
+    if (existingLink) {
+      openLostFoundInEventCenter(existingLink.id);
+      return;
+    }
+
+    const itemDescription =
+      msg.message?.trim() || (msg.room_no ? `${msg.room_no}호 분실물` : '분실물');
 
     const result = await fetchEnvelope<{ item: LostFoundItem }>(
       '/api/ops-events/lost-found',
@@ -641,7 +671,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           origin_message_id: msg.id,
-          item_description: descInput.trim(),
+          item_description: itemDescription,
           actor_id: chatSendUserId
         }),
         timeoutMs: TIMEOUT_MS_CHAT_AUX
@@ -649,8 +679,13 @@ export default function ChatPage() {
     );
     if (!result.ok) {
       if (result.status === 409 || result.error === 'CONFLICT') {
-        alert('이미 등록된 사진입니다.');
-        await loadLostFoundIndex();
+        const items = await loadLostFoundIndex();
+        const existing = items.find((row) => row.origin_message_id === msg.id);
+        if (existing) {
+          openLostFoundInEventCenter(existing.id);
+        } else {
+          alert('이미 등록된 사진입니다.');
+        }
         return;
       }
       log.error('[LOST_FOUND_REGISTER_CLIENT_ERROR]', result);
@@ -664,6 +699,98 @@ export default function ChatPage() {
     }));
     setLostFoundItems((prev) => [item, ...prev.filter((row) => row.id !== item.id)]);
     void loadLostFoundIndex();
+    openLostFoundInEventCenter(item.id);
+  }
+
+  function handleLostFoundPhotoClick(msg: ChatMessage) {
+    void registerLostFound(msg);
+  }
+
+  async function registerMaintenanceFromPhoto(msg: ChatMessage) {
+    if (!sessionUser || !msg?.id || !msg.image_url) return;
+    if (!chatSendUserId) {
+      alert(missingSendEnvMsg);
+      return;
+    }
+    if (msg.ticket_id) {
+      alert('이미 시설고장으로 등록된 사진입니다.');
+      return;
+    }
+    if (lostFoundByMessageId[msg.id]) {
+      alert('이미 분실물로 등록된 사진입니다.');
+      return;
+    }
+
+    const roomInput = msg.room_no || window.prompt('객실번호를 입력하세요 (예: 201)', msg.room_no || '');
+    if (!roomInput) return;
+    const roomNo = roomInput.replace(/[^\d]/g, '').slice(0, 4);
+    if (!roomNo) return;
+    const issueInput = window.prompt('이슈 유형 입력 (설비/청소/전기/가전/침구/기타)', '설비') || '설비';
+    const issueType = (ISSUE_TYPES.includes(issueInput as IssueType) ? issueInput : '설비') as IssueType;
+    const description = msg.message?.trim() || `${roomNo}호 시설고장`;
+
+    const fd = new FormData();
+    fd.append('room_no', roomNo);
+    fd.append('issue_type', issueType);
+    fd.append('description', description);
+    fd.append('created_by', chatSendUserId);
+
+    try {
+      const imgRes = await fetch(msg.image_url);
+      const blob = await imgRes.blob();
+      fd.append('image', new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' }));
+    } catch (e) {
+      log.error('[MAINTENANCE_PHOTO_FETCH_ERROR]', e);
+    }
+
+    const createdRes = await fetchEnvelope<{ ticket?: { id: string }; error?: string }>('/api/maintenance/create', {
+      method: 'POST',
+      body: fd,
+      envelope: false,
+      timeoutMs: TIMEOUT_MS_MAINTENANCE_CREATE
+    });
+    if (!createdRes.ok) {
+      log.error('[MAINTENANCE_PHOTO_CREATE_CLIENT_ERROR]', createdRes);
+      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    const createdData = createdRes.data;
+    if (!createdData?.ticket?.id) {
+      alert(typeof createdData?.error === 'string' ? createdData.error : '시설고장 등록 실패');
+      return;
+    }
+
+    const newTicketId = createdData.ticket.id;
+    const linkResult = await fetchEnvelope<{
+      message: { id: string; ticket_id: string; room_no: string | null; ai_action: string };
+    }>(CHAT_MANUAL_TICKET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message_id: msg.id,
+        ticket_id: newTicketId,
+        room_no: roomNo
+      }),
+      timeoutMs: TIMEOUT_MS_CHAT_AUX
+    });
+    if (!linkResult.ok) {
+      log.error('[MAINTENANCE_PHOTO_LINK_CLIENT_ERROR]', linkResult);
+      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    const linked = linkResult.data.message;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msg.id
+          ? ({
+              ...m,
+              ticket_id: newTicketId,
+              room_no: roomNo,
+              ai_action: (linked?.ai_action || 'ticket_created_manual') as ChatMessage['ai_action']
+            } as ChatMessage)
+          : m
+      )
+    );
   }
 
   function clearInput() {
@@ -760,8 +887,13 @@ export default function ChatPage() {
         onCreateManualTicket={createManualTicket}
         lostFoundEnabled={lostFoundEnabled}
         lostFoundByMessageId={lostFoundByMessageId}
-        onRegisterLostFound={lostFoundEnabled ? registerLostFound : undefined}
-        stayOnChat={showOpsConsole}
+        onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
+        onRegisterMaintenanceFromPhoto={photoOpsUxEnabled ? registerMaintenanceFromPhoto : undefined}
+        onPhotoOpsOther={photoOpsUxEnabled ? () => showOpsUxToast('준비 중입니다.') : undefined}
+        photoOpsUxEnabled={photoOpsUxEnabled}
+        stayOnChat={lostFoundEnabled || showOpsConsole || photoOpsUxEnabled}
+        eventCenterEnabled={lostFoundEnabled && showOpsConsole}
+        onOpenLostFoundDetail={lostFoundEnabled && showOpsConsole ? openLostFoundInEventCenter : undefined}
       />
     </section>
   );
@@ -961,6 +1093,11 @@ export default function ChatPage() {
           }}
         />
         <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
+        {opsUxToast ? (
+          <div className="pointer-events-none fixed bottom-24 left-1/2 z-[10000] -translate-x-1/2 rounded-lg bg-gray-900/90 px-4 py-2 text-sm font-medium text-white shadow-lg">
+            {opsUxToast}
+          </div>
+        ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
         <div className="flex min-h-0 flex-1">
           <ChatParticipantSidebar
@@ -983,9 +1120,12 @@ export default function ChatPage() {
             recentPhotoMessage={recentPhotoMessage}
             lostFoundItems={lostFoundItems}
             lostFoundEnabled={lostFoundEnabled}
-            onRegisterLostFound={lostFoundEnabled ? registerLostFound : undefined}
+            actorId={chatSendUserId}
+            onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
             onSelectRoom={setConsoleRoomNo}
-            stayOnChat
+            onRefreshLostFoundList={() => void loadLostFoundIndex()}
+            openLostFoundDetailId={openLostFoundDetailId}
+            onOpenLostFoundDetailIdConsumed={() => setOpenLostFoundDetailId(null)}
           />
         </div>
         {keypadOverlay}
@@ -1163,6 +1303,11 @@ export default function ChatPage() {
       ) : null}
 
       <ChatToastStack toasts={toasts} onToastClick={onToastClick} onDismiss={removeToast} />
+      {opsUxToast ? (
+        <div className="pointer-events-none fixed bottom-24 left-1/2 z-[10000] -translate-x-1/2 rounded-lg bg-gray-900/90 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          {opsUxToast}
+        </div>
+      ) : null}
 
       <StaffInvitePanel
         variant="chat"

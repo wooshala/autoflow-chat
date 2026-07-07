@@ -1,8 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { LOST_FOUND_STATUS_UI } from '@/lib/ops-events/lostFoundFsm';
 import { MOCK_MAINTENANCE_ROWS, MOCK_RECENT_WORK_ROWS } from '@/lib/chat/opsConsoleMock';
+import ChatLostFoundSection from '@/components/chat/ops-console/ChatLostFoundSection';
 import type { LostFoundItem } from '@/lib/ops-events/types';
 import type { ChatMessage } from '@/lib/types';
 import { formatKSTShort } from '@/lib/formatKST';
@@ -12,10 +12,12 @@ type Props = {
   recentPhotoMessage: ChatMessage | null;
   lostFoundItems: LostFoundItem[];
   lostFoundEnabled: boolean;
+  actorId: string | null;
   onRegisterLostFound?: (msg: ChatMessage) => void;
   onSelectRoom: (roomNo: string | null) => void;
-  /** Layout PoC: keep /chat — do not navigate to /ops/lost-found */
-  stayOnChat?: boolean;
+  onRefreshLostFoundList: () => void;
+  openLostFoundDetailId?: string | null;
+  onOpenLostFoundDetailIdConsumed?: () => void;
 };
 
 export default function ChatOperationPanel({
@@ -23,17 +25,22 @@ export default function ChatOperationPanel({
   recentPhotoMessage,
   lostFoundItems,
   lostFoundEnabled,
+  actorId,
   onRegisterLostFound,
   onSelectRoom,
-  stayOnChat = false
+  onRefreshLostFoundList,
+  openLostFoundDetailId,
+  onOpenLostFoundDetailIdConsumed
 }: Props) {
-  const router = useRouter();
   const roomLabel = selectedRoomNo ? `${selectedRoomNo}호` : '전체';
+  const filteredItems = selectedRoomNo
+    ? lostFoundItems.filter((item) => item.snap_room_no === selectedRoomNo)
+    : lostFoundItems;
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-l border-gray-200 bg-gray-50 lg:w-80">
       <div className="border-b border-gray-200 bg-white px-3 py-2.5">
-        <div className="text-xs font-bold text-gray-500">선택 객실</div>
+        <div className="text-xs font-bold text-gray-500">Event Center</div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="text-lg font-extrabold text-gray-900">{roomLabel}</span>
           {selectedRoomNo ? (
@@ -49,7 +56,6 @@ export default function ChatOperationPanel({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {/* 최근 사진 — real */}
         <section className="rounded-xl border border-gray-200 bg-white p-3">
           <div className="text-xs font-bold text-gray-800">최근 사진 메시지</div>
           {recentPhotoMessage?.image_url ? (
@@ -69,7 +75,6 @@ export default function ChatOperationPanel({
           )}
         </section>
 
-        {/* 빠른 등록 */}
         <section className="rounded-xl border border-amber-200 bg-amber-50/80 p-3">
           <div className="text-xs font-bold text-amber-900">빠른 등록</div>
           {recentPhotoMessage?.image_url ? (
@@ -105,87 +110,21 @@ export default function ChatOperationPanel({
           </div>
         </section>
 
-        {/* 분실물 — real */}
         <section className="rounded-xl border border-gray-200 bg-white p-3">
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-bold text-gray-800">분실물</div>
-            {lostFoundEnabled && !stayOnChat ? (
-              <button
-                type="button"
-                onClick={() => router.push('/ops/lost-found')}
-                className="text-[10px] font-semibold text-blue-600"
-              >
-                전체
-              </button>
-            ) : null}
+          <div className="text-xs font-bold text-gray-800">분실물</div>
+          <div className="mt-2">
+            <ChatLostFoundSection
+              items={filteredItems}
+              allItems={lostFoundItems}
+              lostFoundEnabled={lostFoundEnabled}
+              actorId={actorId}
+              onRefreshList={onRefreshLostFoundList}
+              openDetailId={openLostFoundDetailId}
+              onOpenDetailIdConsumed={onOpenLostFoundDetailIdConsumed}
+            />
           </div>
-          <ul className="mt-2 space-y-2">
-            {lostFoundItems.length === 0 ? (
-              <li className="text-xs text-gray-400">등록 없음</li>
-            ) : (
-              lostFoundItems.slice(0, 5).map((item) => {
-                const ui = LOST_FOUND_STATUS_UI[item.status];
-                return (
-                  <li key={item.id}>
-                    {stayOnChat ? (
-                      <div className="flex w-full gap-2 rounded-lg bg-gray-50 p-2 text-left">
-                        {item.snap_image_url ? (
-                          <img
-                            src={item.snap_image_url}
-                            alt=""
-                            className="h-12 w-12 shrink-0 rounded-md object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-gray-200 text-[10px] text-gray-500">
-                            —
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-bold text-gray-900">
-                            {item.snap_room_no ? `${item.snap_room_no}호` : item.event_no}
-                          </div>
-                          <div className="text-[10px] text-gray-500">{formatKSTShort(item.created_at)}</div>
-                          <span className={`mt-0.5 inline-block rounded-full px-1.5 py-0 text-[10px] font-bold ${ui.badge}`}>
-                            {ui.label}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/ops/lost-found/${item.id}`)}
-                        className="flex w-full gap-2 rounded-lg bg-gray-50 p-2 text-left hover:bg-gray-100"
-                      >
-                        {item.snap_image_url ? (
-                          <img
-                            src={item.snap_image_url}
-                            alt=""
-                            className="h-12 w-12 shrink-0 rounded-md object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-gray-200 text-[10px] text-gray-500">
-                            —
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-bold text-gray-900">
-                            {item.snap_room_no ? `${item.snap_room_no}호` : item.event_no}
-                          </div>
-                          <div className="text-[10px] text-gray-500">{formatKSTShort(item.created_at)}</div>
-                          <span className={`mt-0.5 inline-block rounded-full px-1.5 py-0 text-[10px] font-bold ${ui.badge}`}>
-                            {ui.label}
-                          </span>
-                        </div>
-                      </button>
-                    )}
-                  </li>
-                );
-              })
-            )}
-          </ul>
         </section>
 
-        {/* 시설 고장 — mock */}
         <section className="rounded-xl border border-gray-200 bg-white p-3">
           <div className="text-xs font-bold text-gray-800">시설 고장</div>
           <span className="text-[10px] text-gray-400">(PoC mock)</span>
@@ -204,7 +143,6 @@ export default function ChatOperationPanel({
           </ul>
         </section>
 
-        {/* 최근 작업 — mock */}
         <section className="rounded-xl border border-gray-200 bg-white p-3">
           <div className="text-xs font-bold text-gray-800">최근 작업 / 상태 요약</div>
           <span className="text-[10px] text-gray-400">(PoC mock)</span>
