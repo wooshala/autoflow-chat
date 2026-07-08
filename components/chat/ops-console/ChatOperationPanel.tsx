@@ -1,9 +1,12 @@
 'use client';
 
-import { MOCK_MAINTENANCE_ROWS, MOCK_RECENT_WORK_ROWS } from '@/lib/chat/opsConsoleMock';
+import { useState } from 'react';
+import { MOCK_MAINTENANCE_ROWS } from '@/lib/chat/opsConsoleMock';
 import ChatLostFoundSection from '@/components/chat/ops-console/ChatLostFoundSection';
 import type { LostFoundItem } from '@/lib/ops-events/types';
 import type { ChatMessage } from '@/lib/types';
+
+type EventTab = 'lost_found' | 'maintenance' | 'other';
 
 type Props = {
   selectedRoomNo: string | null;
@@ -18,6 +21,12 @@ type Props = {
   onRefreshLostFoundList: () => void;
 };
 
+const TABS: { id: EventTab; label: string }[] = [
+  { id: 'lost_found', label: '분실물' },
+  { id: 'maintenance', label: '시설고장' },
+  { id: 'other', label: '기타' }
+];
+
 export default function ChatOperationPanel({
   selectedRoomNo,
   lostFoundItems,
@@ -26,6 +35,7 @@ export default function ChatOperationPanel({
   onSelectRoom,
   onRefreshLostFoundList
 }: Props) {
+  const [tab, setTab] = useState<EventTab>('lost_found');
   const roomLabel = selectedRoomNo ? `${selectedRoomNo}호` : '전체';
   const filteredItems = selectedRoomNo
     ? lostFoundItems.filter((item) => item.snap_room_no === selectedRoomNo)
@@ -47,54 +57,62 @@ export default function ChatOperationPanel({
             </button>
           ) : null}
         </div>
+        <div className="mt-2 flex gap-1">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-bold ${
+                tab === t.id
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        <section
-          id="event-center-lost-found"
-          className="rounded-xl border border-gray-200 bg-white p-3"
-        >
-          <div className="text-xs font-bold text-gray-800">분실물</div>
-          <div className="mt-2">
-            <ChatLostFoundSection
-              items={filteredItems}
-              lostFoundEnabled={lostFoundEnabled}
-              actorId={actorId}
-              onRefreshList={onRefreshLostFoundList}
-            />
-          </div>
-        </section>
+        {tab === 'lost_found' ? (
+          <section id="event-center-lost-found" className="rounded-xl border border-gray-200 bg-white p-3">
+            <div className="mt-0">
+              <ChatLostFoundSection
+                items={filteredItems}
+                lostFoundEnabled={lostFoundEnabled}
+                actorId={actorId}
+                onRefreshList={onRefreshLostFoundList}
+              />
+            </div>
+          </section>
+        ) : null}
 
-        <section className="rounded-xl border border-gray-200 bg-white p-3">
-          <div className="text-xs font-bold text-gray-800">시설 고장</div>
-          <span className="text-[10px] text-gray-400">(PoC mock)</span>
-          <ul className="mt-2 space-y-1.5">
-            {MOCK_MAINTENANCE_ROWS.map((row) => (
-              <li
-                key={row.id}
-                className="flex items-center justify-between rounded-lg bg-gray-50 px-2 py-1.5 text-xs"
-              >
-                <span className="font-semibold text-gray-800">
-                  {row.room_no}호 {row.title}
-                </span>
-                <span className="text-[10px] text-gray-400">{row.time_label}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {tab === 'maintenance' ? (
+          <section className="rounded-xl border border-gray-200 bg-white p-3">
+            <span className="text-[10px] text-gray-400">(PoC mock)</span>
+            <ul className="mt-2 space-y-1.5">
+              {MOCK_MAINTENANCE_ROWS.map((row) => (
+                <li
+                  key={row.id}
+                  className="flex items-center justify-between rounded-lg bg-gray-50 px-2 py-1.5 text-xs"
+                >
+                  <span className="font-semibold text-gray-800">
+                    {row.room_no}호 {row.title}
+                  </span>
+                  <span className="text-[10px] text-gray-400">{row.time_label}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
-        <section className="rounded-xl border border-gray-200 bg-white p-3">
-          <div className="text-xs font-bold text-gray-800">최근 작업 / 상태 요약</div>
-          <span className="text-[10px] text-gray-400">(PoC mock)</span>
-          <ul className="mt-2 space-y-1">
-            {MOCK_RECENT_WORK_ROWS.map((row) => (
-              <li key={row.id} className="flex justify-between gap-2 text-xs text-gray-700">
-                <span className="truncate">{row.text}</span>
-                <span className="shrink-0 text-[10px] text-gray-400">{row.time_label}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {tab === 'other' ? (
+          <section className="rounded-xl border border-gray-200 bg-white p-3">
+            <div className="py-6 text-center text-xs text-gray-400">등록된 기타 이벤트가 없습니다.</div>
+          </section>
+        ) : null}
       </div>
     </aside>
   );
