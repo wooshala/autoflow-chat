@@ -664,12 +664,8 @@ export default function ChatPage() {
     }
 
     const itemDescription =
-<<<<<<< HEAD
-      msg.message?.trim() || (msg.room_no ? `${msg.room_no}??遺꾩떎臾? : '遺꾩떎臾?);
-=======
       String(msg.message || '').trim() ||
-      (msg.room_no ? `${msg.room_no}??遺꾩떎臾? : '遺꾩떎臾?);
->>>>>>> 1343840 (fix(chat): use lost found list panel)
+      (msg.room_no ? `${msg.room_no}호 분실물` : '분실물');
 
     const result = await fetchEnvelope<{ item: LostFoundItem }>(
       '/api/ops-events/lost-found',
