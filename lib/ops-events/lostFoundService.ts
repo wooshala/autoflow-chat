@@ -268,3 +268,45 @@ export async function getLostFoundHistory(id: string): Promise<OpsEventHistoryRo
   if (error) throw new Error(error.message);
   return (data || []) as OpsEventHistoryRow[];
 }
+
+/** Soft-delete: set is_deleted=true. No physical delete. */
+export async function softDeleteLostFoundItem(input: {
+  id: string;
+  actor_id: string;
+}): Promise<LostFoundItem> {
+  if (!supabaseAdmin) throw new Error('Supabase admin client is not configured');
+
+  const siteId = getSiteId();
+  const actor = await loadActor(input.actor_id);
+  const item = await getLostFoundItem(input.id);
+  const now = new Date().toISOString();
+
+  const { data: updated, error: updErr } = await supabaseAdmin
+    .from('lost_found_items')
+    .update({
+      is_deleted: true,
+      deleted_at: now,
+      updated_at: now
+    })
+    .eq('id', input.id)
+    .eq('site_id', siteId)
+    .select('*')
+    .single();
+
+  if (updErr || !updated) throw new Error(updErr?.message || 'Soft delete failed');
+
+  const { error: histErr } = await supabaseAdmin.from('ops_event_history').insert({
+    site_id: siteId,
+    ref_table: 'lost_found_items',
+    ref_id: input.id,
+    action: 'soft_deleted',
+    from_status: item.status,
+    to_status: item.status,
+    actor_id: actor.id,
+    actor_name: actor.name,
+    actor_role: actor.role
+  });
+  if (histErr) throw new Error(histErr.message);
+
+  return updated as LostFoundItem;
+}

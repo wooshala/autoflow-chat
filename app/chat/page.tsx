@@ -132,7 +132,6 @@ export default function ChatPage() {
   const showOpsConsole = opsConsoleEnabled && !isMobileViewport;
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
   const [lostFoundItems, setLostFoundItems] = useState<LostFoundItem[]>([]);
-  const [openLostFoundDetailId, setOpenLostFoundDetailId] = useState<string | null>(null);
   const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
 
   const loadLostFoundIndex = useCallback(async (): Promise<LostFoundItem[]> => {
@@ -236,17 +235,20 @@ export default function ChatPage() {
     window.setTimeout(() => setOpsUxToast(null), 2600);
   }, []);
 
-  const openLostFoundInEventCenter = useCallback(
-    (id: string) => {
-      if (!lostFoundEnabled) return;
-      if (!showOpsConsole) {
-        showOpsUxToast('분실물 상세는 Event Center(데스크톱)에서 확인하세요.');
-        return;
-      }
-      setOpenLostFoundDetailId(id);
-    },
-    [lostFoundEnabled, showOpsConsole, showOpsUxToast]
-  );
+  /** Focus Event Center list — never navigate to /ops or open detail. */
+  const focusLostFoundList = useCallback(() => {
+    if (!lostFoundEnabled) return;
+    if (!showOpsConsole) {
+      showOpsUxToast('우측 분실물 목록에서 확인하세요.');
+      return;
+    }
+    const el = document.getElementById('event-center-lost-found');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      showOpsUxToast('우측 분실물 목록에서 확인하세요.');
+    }
+  }, [lostFoundEnabled, showOpsConsole, showOpsUxToast]);
 
   const { toasts, onToastClick, removeToast, permission: browserNotifyPermission, requestBrowserPermission } =
     useChatNotifications({
@@ -645,9 +647,13 @@ export default function ChatPage() {
 
     const existingLink = lostFoundByMessageId[msg.id];
     if (existingLink) {
-      openLostFoundInEventCenter(existingLink.id);
+      focusLostFoundList();
       return;
     }
+
+    const itemDescription =
+      String(msg.message || '').trim() ||
+      (msg.room_no ? `${msg.room_no}호 분실물` : '분실물');
 
     const result = await fetchEnvelope<{ item: LostFoundItem }>(
       '/api/ops-events/lost-found',
@@ -656,6 +662,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           origin_message_id: msg.id,
+          item_description: itemDescription,
           actor_id: chatSendUserId
         }),
         timeoutMs: TIMEOUT_MS_CHAT_AUX
@@ -663,13 +670,8 @@ export default function ChatPage() {
     );
     if (!result.ok) {
       if (result.status === 409 || result.error === 'CONFLICT') {
-        const items = await loadLostFoundIndex();
-        const existing = items.find((row) => row.origin_message_id === msg.id);
-        if (existing) {
-          openLostFoundInEventCenter(existing.id);
-        } else {
-          alert('이미 등록된 사진입니다.');
-        }
+        await loadLostFoundIndex();
+        focusLostFoundList();
         return;
       }
       log.error('[LOST_FOUND_REGISTER_CLIENT_ERROR]', result);
@@ -683,10 +685,15 @@ export default function ChatPage() {
     }));
     setLostFoundItems((prev) => [item, ...prev.filter((row) => row.id !== item.id)]);
     void loadLostFoundIndex();
-    openLostFoundInEventCenter(item.id);
+    focusLostFoundList();
   }
 
   function handleLostFoundPhotoClick(msg: ChatMessage) {
+    const existing = lostFoundByMessageId[msg.id];
+    if (existing) {
+      focusLostFoundList();
+      return;
+    }
     void registerLostFound(msg);
   }
 
@@ -877,7 +884,7 @@ export default function ChatPage() {
         photoOpsUxEnabled={photoOpsUxEnabled}
         stayOnChat={lostFoundEnabled || showOpsConsole || photoOpsUxEnabled}
         eventCenterEnabled={lostFoundEnabled && showOpsConsole}
-        onOpenLostFoundDetail={lostFoundEnabled && showOpsConsole ? openLostFoundInEventCenter : undefined}
+        onFocusLostFoundList={lostFoundEnabled ? focusLostFoundList : undefined}
       />
     </section>
   );
@@ -1108,8 +1115,6 @@ export default function ChatPage() {
             onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
             onSelectRoom={setConsoleRoomNo}
             onRefreshLostFoundList={() => void loadLostFoundIndex()}
-            openLostFoundDetailId={openLostFoundDetailId}
-            onOpenLostFoundDetailIdConsumed={() => setOpenLostFoundDetailId(null)}
           />
         </div>
         {keypadOverlay}
