@@ -30,7 +30,8 @@ type Props = {
   /** Never navigate to /ops/lost-found from /chat */
   stayOnChat?: boolean;
   eventCenterEnabled?: boolean;
-  onOpenLostFoundDetail?: (id: string) => void;
+  /** Focus Event Center lost-found list (no detail / no navigation) */
+  onFocusLostFoundList?: () => void;
 };
 
 function translated(msg: ChatMessage, lang: string) {
@@ -87,19 +88,17 @@ export default function ChatMessages({
   photoOpsUxEnabled = false,
   stayOnChat = false,
   eventCenterEnabled = false,
-  onOpenLostFoundDetail
+  onFocusLostFoundList
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(messages.length);
   const router = useRouter();
-  const canOpenInEventCenter = Boolean(eventCenterEnabled && onOpenLostFoundDetail);
+  const canFocusLostFoundList = Boolean(eventCenterEnabled && onFocusLostFoundList);
 
-  function handleLostFoundOpen(id: string, e?: React.MouseEvent) {
+  function handleLostFoundBadgeClick(e?: React.MouseEvent) {
     e?.preventDefault();
     e?.stopPropagation();
-    if (canOpenInEventCenter) {
-      onOpenLostFoundDetail!(id);
-    }
+    onFocusLostFoundList?.();
   }
 
   useEffect(() => {
@@ -294,11 +293,11 @@ export default function ChatMessages({
                         🏠 {msg.room_no}호
                       </span>
                       {showRoomLostFoundBadge ? (
-                        canOpenInEventCenter ? (
+                        canFocusLostFoundList ? (
                           <button
                             type="button"
-                            title="Event Center에서 분실물 상세 보기"
-                            onClick={(e) => handleLostFoundOpen(lostFoundLink.id, e)}
+                            title="우측 분실물 목록에서 확인"
+                            onClick={(e) => handleLostFoundBadgeClick(e)}
                             className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200"
                           >
                             👜 분실물
@@ -313,11 +312,11 @@ export default function ChatMessages({
                   )}
                   {!isDeleted && !msg.room_no && showRoomLostFoundBadge ? (
                     <div className="mb-1">
-                      {canOpenInEventCenter ? (
+                      {canFocusLostFoundList ? (
                         <button
                           type="button"
-                          title="Event Center에서 분실물 상세 보기"
-                          onClick={(e) => handleLostFoundOpen(lostFoundLink!.id, e)}
+                          title="우측 분실물 목록에서 확인"
+                          onClick={(e) => handleLostFoundBadgeClick(e)}
                           className="inline-block rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200"
                         >
                           👜 분실물

@@ -1,6 +1,5 @@
 'use client';
 
-import { LOST_FOUND_STATUS_UI } from '@/lib/ops-events/lostFoundFsm';
 import { MOCK_MAINTENANCE_ROWS, MOCK_RECENT_WORK_ROWS } from '@/lib/chat/opsConsoleMock';
 import ChatLostFoundSection from '@/components/chat/ops-console/ChatLostFoundSection';
 import type { LostFoundItem } from '@/lib/ops-events/types';
@@ -16,8 +15,6 @@ type Props = {
   onRegisterLostFound?: (msg: ChatMessage) => void;
   onSelectRoom: (roomNo: string | null) => void;
   onRefreshLostFoundList: () => void;
-  openLostFoundDetailId?: string | null;
-  onOpenLostFoundDetailIdConsumed?: () => void;
 };
 
 export default function ChatOperationPanel({
@@ -28,9 +25,7 @@ export default function ChatOperationPanel({
   actorId,
   onRegisterLostFound,
   onSelectRoom,
-  onRefreshLostFoundList,
-  openLostFoundDetailId,
-  onOpenLostFoundDetailIdConsumed
+  onRefreshLostFoundList
 }: Props) {
   const roomLabel = selectedRoomNo ? `${selectedRoomNo}호` : '전체';
   const filteredItems = selectedRoomNo
@@ -110,17 +105,17 @@ export default function ChatOperationPanel({
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-3">
+        <section
+          id="event-center-lost-found"
+          className="rounded-xl border border-gray-200 bg-white p-3"
+        >
           <div className="text-xs font-bold text-gray-800">분실물</div>
           <div className="mt-2">
             <ChatLostFoundSection
               items={filteredItems}
-              allItems={lostFoundItems}
               lostFoundEnabled={lostFoundEnabled}
               actorId={actorId}
               onRefreshList={onRefreshLostFoundList}
-              openDetailId={openLostFoundDetailId}
-              onOpenDetailIdConsumed={onOpenLostFoundDetailIdConsumed}
             />
           </div>
         </section>

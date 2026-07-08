@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -71,9 +71,9 @@ export default function ChatPage() {
   const isLoadingRef = useRef(false);
   const lastLoadSourceRef = useRef<string | null>(null);
   const lastRealtimeActivityAtRef = useRef(Date.now());
-  /** full_table 성공 후에만 갱신되는 안전 since (stale since/delta-only 방지) */
+  /** full_table ?깃났 ?꾩뿉留?媛깆떊?섎뒗 ?덉쟾 since (stale since/delta-only 諛⑹?) */
   const safeSinceRef = useRef<string | null>(null);
-  /** INSERT postgres_changes만 기록 — SUBSCRIBED/UPDATE와 구분해 push 실패 확정용 */
+  /** INSERT postgres_changes留?湲곕줉 ??SUBSCRIBED/UPDATE? 援щ텇??push ?ㅽ뙣 ?뺤젙??*/
   const lastRealtimeInsertPushAtRef = useRef<number | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -115,7 +115,7 @@ export default function ChatPage() {
   const [preview, setPreview] = useState<string | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [issueType, setIssueType] = useState<IssueType>('설비');
+  const [issueType, setIssueType] = useState<IssueType>('?ㅻ퉬');
   const [submitting, setSubmitting] = useState(false);
   const [urgentMode, setUrgentMode] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -123,7 +123,7 @@ export default function ChatPage() {
   const [debugMode, setDebugMode] = useState(false);
   const [staffCounts, setStaffCounts] = useState<{ online: number; total: number }>({ online: 0, total: 0 });
   // Developer diagnostics are hidden in normal operation; shown only with ?debug=1
-  // (or via 설정 > 고급 > 개발자 진단, which sets debugMode true).
+  // (or via ?ㅼ젙 > 怨좉툒 > 媛쒕컻??吏꾨떒, which sets debugMode true).
   useEffect(() => {
     try {
       if (new URLSearchParams(window.location.search).get('debug') === '1') setDebugMode(true);
@@ -132,19 +132,18 @@ export default function ChatPage() {
     }
   }, []);
   const [isMobileViewport, setIsMobileViewport] = useState(readMobileChatViewport);
-  /** soft delete 진행 중 message id — 중복 요청 방지 */
+  /** soft delete 吏꾪뻾 以?message id ??以묐났 ?붿껌 諛⑹? */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
-  /** LF-3B UX PoC: photo → ops-event entry (Preview; gated with lost-found flag) */
+  /** LF-3B UX PoC: photo ??ops-event entry (Preview; gated with lost-found flag) */
   const photoOpsUxEnabled = lostFoundEnabled;
   const [opsUxToast, setOpsUxToast] = useState<string | null>(null);
   const opsConsoleEnabled = isChatOpsConsoleEnabled();
   const showOpsConsole = opsConsoleEnabled && !isMobileViewport;
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
   const [lostFoundItems, setLostFoundItems] = useState<LostFoundItem[]>([]);
-  const [openLostFoundDetailId, setOpenLostFoundDetailId] = useState<string | null>(null);
   const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
 
   const loadLostFoundIndex = useCallback(async (): Promise<LostFoundItem[]> => {
@@ -171,7 +170,7 @@ export default function ChatPage() {
   }, [loadLostFoundIndex]);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'degraded' | 'reconnecting'>('reconnecting');
   const [realtimeReconnectToken, setRealtimeReconnectToken] = useState(0);
-  // 숙박일지(관리모드)에서 넘어온 경우의 복귀 URL. http(s) 절대 URL만 허용(스킴 인젝션 차단).
+  // ?숇컯?쇱?(愿由щえ???먯꽌 ?섏뼱??寃쎌슦??蹂듦? URL. http(s) ?덈? URL留??덉슜(?ㅽ궡 ?몄젥??李⑤떒).
   const [returnToUrl, setReturnToUrl] = useState<string | null>(null);
   useEffect(() => {
     try {
@@ -237,8 +236,8 @@ export default function ChatPage() {
 
   const showChatTestNotification = useCallback(() => {
     void showBrowserNotification({
-      title: 'AutoFlow 채팅',
-      body: '알림이 정상적으로 작동합니다.',
+      title: 'AutoFlow 梨꾪똿',
+      body: '?뚮┝???뺤긽?곸쑝濡??묐룞?⑸땲??',
       tag: 'chat-notify-test'
     });
   }, []);
@@ -248,17 +247,20 @@ export default function ChatPage() {
     window.setTimeout(() => setOpsUxToast(null), 2600);
   }, []);
 
-  const openLostFoundInEventCenter = useCallback(
-    (id: string) => {
-      if (!lostFoundEnabled) return;
-      if (!showOpsConsole) {
-        showOpsUxToast('분실물 상세는 Event Center(데스크톱)에서 확인하세요.');
-        return;
-      }
-      setOpenLostFoundDetailId(id);
-    },
-    [lostFoundEnabled, showOpsConsole, showOpsUxToast]
-  );
+  /** Focus Event Center list ??never navigate to /ops or open detail. */
+  const focusLostFoundList = useCallback(() => {
+    if (!lostFoundEnabled) return;
+    if (!showOpsConsole) {
+      showOpsUxToast('?곗륫 遺꾩떎臾?紐⑸줉?먯꽌 ?뺤씤?섏꽭??');
+      return;
+    }
+    const el = document.getElementById('event-center-lost-found');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      showOpsUxToast('?곗륫 遺꾩떎臾?紐⑸줉?먯꽌 ?뺤씤?섏꽭??');
+    }
+  }, [lostFoundEnabled, showOpsConsole, showOpsUxToast]);
 
   const { toasts, onToastClick, removeToast, permission: browserNotifyPermission, requestBrowserPermission } =
     useChatNotifications({
@@ -287,7 +289,7 @@ export default function ChatPage() {
 
     if (Notification.permission === 'denied') {
       window.alert(
-        '브라우저에서 알림이 차단되어 있습니다. 주소창 왼쪽 자물쇠 아이콘에서 알림을 허용해 주세요.'
+        '釉뚮씪?곗??먯꽌 ?뚮┝??李⑤떒?섏뼱 ?덉뒿?덈떎. 二쇱냼李??쇱そ ?먮Ъ???꾩씠肄섏뿉???뚮┝???덉슜??二쇱꽭??'
       );
       return;
     }
@@ -396,7 +398,7 @@ export default function ChatPage() {
   // render helpers
   const canSend = useMemo(() => Boolean(text.trim() || photo), [text, photo]);
   const canSendToServer = Boolean(sessionUser && chatSendUserId);
-  const missingSendEnvMsg = '전송에 실패했습니다. 관리자 설정이 필요합니다.';
+  const missingSendEnvMsg = '?꾩넚???ㅽ뙣?덉뒿?덈떎. 愿由ъ옄 ?ㅼ젙???꾩슂?⑸땲??';
 
   async function sendMessage() {
     log.debug('[SEND_SUBMIT_START]', { hasUser: Boolean(sessionUser), canSend, submitting });
@@ -480,7 +482,7 @@ export default function ChatPage() {
       if (!sendResult.ok) {
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
         log.error('[CHAT_SEND_CLIENT_ERROR]', sendResult);
-        alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        alert('?꾩넚???ㅽ뙣?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??');
         return;
       }
 
@@ -489,9 +491,9 @@ export default function ChatPage() {
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
         log.error('[CHAT_SEND_ABNORMAL_RESPONSE]', {
           data: sendResult.data,
-          hint: 'data.message가 plain object가 아니거나 id 없음, 또는 평면 data에 user_id/id 없음 (본문 .message 문자열로 판별 안 함)'
+          hint: 'data.message媛 plain object媛 ?꾨땲嫄곕굹 id ?놁쓬, ?먮뒗 ?됰㈃ data??user_id/id ?놁쓬 (蹂몃Ц .message 臾몄옄?대줈 ?먮퀎 ????'
         });
-        alert('채팅 응답이 비정상입니다.');
+        alert('梨꾪똿 ?묐떟??鍮꾩젙?곸엯?덈떎.');
         return;
       }
 
@@ -516,7 +518,7 @@ export default function ChatPage() {
         error: error?.message || String(error)
       });
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-      alert('채팅 전송 실패');
+      alert('梨꾪똿 ?꾩넚 ?ㅽ뙣');
     } finally {
       setSubmitting(false);
     }
@@ -534,7 +536,7 @@ export default function ChatPage() {
     }
     setSubmitting(true);
     try {
-      const desc = text.trim() || `${issueType} 문제 발생`;
+      const desc = text.trim() || `${issueType} 臾몄젣 諛쒖깮`;
 
       const fd = new FormData();
       fd.append('room_no', roomNo);
@@ -552,7 +554,7 @@ export default function ChatPage() {
 
       if (!mRes.ok) {
         log.error('[MAINTENANCE_CREATE_CLIENT_ERROR]', mRes);
-        alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        alert('?꾩넚???ㅽ뙣?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??');
         return;
       }
 
@@ -572,17 +574,17 @@ export default function ChatPage() {
       alert(missingSendEnvMsg);
       return;
     }
-    const roomInput = window.prompt('객실번호를 입력하세요 (예: 607)', msg.room_no || '');
+    const roomInput = window.prompt('媛앹떎踰덊샇瑜??낅젰?섏꽭??(?? 607)', msg.room_no || '');
     if (!roomInput) return;
     const roomNo = roomInput.replace(/[^\d]/g, '').slice(0, 4);
     if (!roomNo) return;
-    const issueInput = window.prompt('이슈 유형 입력 (설비/청소/전기/가전/침구/기타)', '설비') || '설비';
-    const issueType = (ISSUE_TYPES.includes(issueInput as IssueType) ? issueInput : '설비') as IssueType;
+    const issueInput = window.prompt('?댁뒋 ?좏삎 ?낅젰 (?ㅻ퉬/泥?냼/?꾧린/媛??移④뎄/湲고?)', '?ㅻ퉬') || '?ㅻ퉬';
+    const issueType = (ISSUE_TYPES.includes(issueInput as IssueType) ? issueInput : '?ㅻ퉬') as IssueType;
 
     const fd = new FormData();
     fd.append('room_no', roomNo);
     fd.append('issue_type', issueType);
-    fd.append('description', msg.message || `${roomNo}호 수동 티켓 생성`);
+    fd.append('description', msg.message || `${roomNo}???섎룞 ?곗폆 ?앹꽦`);
     fd.append('created_by', chatSendUserId);
     const createdRes = await fetchEnvelope<{ ticket?: { id: string }; error?: string }>('/api/maintenance/create', {
       method: 'POST',
@@ -592,13 +594,13 @@ export default function ChatPage() {
     });
     if (!createdRes.ok) {
       log.error('[MANUAL_TICKET_CREATE_CLIENT_ERROR]', createdRes);
-      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      alert('?꾩넚???ㅽ뙣?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??');
       return;
     }
     const createdData = createdRes.data;
     if (!createdData?.ticket?.id) {
       log.error('[MANUAL_TICKET_CREATE_CLIENT_ERROR]', createdData);
-      alert(typeof createdData?.error === 'string' ? createdData.error : '수동 티켓 생성 실패');
+      alert(typeof createdData?.error === 'string' ? createdData.error : '?섎룞 ?곗폆 ?앹꽦 ?ㅽ뙣');
       return;
     }
 
@@ -618,7 +620,7 @@ export default function ChatPage() {
     });
     if (!linkResult.ok) {
       log.error('[MANUAL_TICKET_LINK_CLIENT_ERROR]', linkResult);
-      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      alert('?꾩넚???ㅽ뙣?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??');
       return;
     }
     const linked = linkResult.data.message;
@@ -647,22 +649,27 @@ export default function ChatPage() {
       return;
     }
     if (!msg.image_url && !msg.image_storage_path) {
-      alert('사진 메시지만 분실물 등록할 수 있습니다.');
+      alert('?ъ쭊 硫붿떆吏留?遺꾩떎臾??깅줉?????덉뒿?덈떎.');
       return;
     }
     if (msg.ticket_id) {
-      alert('이미 시설고장으로 등록된 사진입니다.');
+      alert('?대? ?쒖꽕怨좎옣?쇰줈 ?깅줉???ъ쭊?낅땲??');
       return;
     }
 
     const existingLink = lostFoundByMessageId[msg.id];
     if (existingLink) {
-      openLostFoundInEventCenter(existingLink.id);
+      focusLostFoundList();
       return;
     }
 
     const itemDescription =
-      msg.message?.trim() || (msg.room_no ? `${msg.room_no}호 분실물` : '분실물');
+<<<<<<< HEAD
+      msg.message?.trim() || (msg.room_no ? `${msg.room_no}??遺꾩떎臾? : '遺꾩떎臾?);
+=======
+      String(msg.message || '').trim() ||
+      (msg.room_no ? `${msg.room_no}??遺꾩떎臾? : '遺꾩떎臾?);
+>>>>>>> 1343840 (fix(chat): use lost found list panel)
 
     const result = await fetchEnvelope<{ item: LostFoundItem }>(
       '/api/ops-events/lost-found',
@@ -679,17 +686,12 @@ export default function ChatPage() {
     );
     if (!result.ok) {
       if (result.status === 409 || result.error === 'CONFLICT') {
-        const items = await loadLostFoundIndex();
-        const existing = items.find((row) => row.origin_message_id === msg.id);
-        if (existing) {
-          openLostFoundInEventCenter(existing.id);
-        } else {
-          alert('이미 등록된 사진입니다.');
-        }
+        await loadLostFoundIndex();
+        focusLostFoundList();
         return;
       }
       log.error('[LOST_FOUND_REGISTER_CLIENT_ERROR]', result);
-      alert(result.message || '분실물 등록에 실패했습니다.');
+      alert(result.message || '遺꾩떎臾??깅줉???ㅽ뙣?덉뒿?덈떎.');
       return;
     }
     const item = result.data.item;
@@ -699,10 +701,15 @@ export default function ChatPage() {
     }));
     setLostFoundItems((prev) => [item, ...prev.filter((row) => row.id !== item.id)]);
     void loadLostFoundIndex();
-    openLostFoundInEventCenter(item.id);
+    focusLostFoundList();
   }
 
   function handleLostFoundPhotoClick(msg: ChatMessage) {
+    const existing = lostFoundByMessageId[msg.id];
+    if (existing) {
+      focusLostFoundList();
+      return;
+    }
     void registerLostFound(msg);
   }
 
@@ -713,21 +720,21 @@ export default function ChatPage() {
       return;
     }
     if (msg.ticket_id) {
-      alert('이미 시설고장으로 등록된 사진입니다.');
+      alert('?대? ?쒖꽕怨좎옣?쇰줈 ?깅줉???ъ쭊?낅땲??');
       return;
     }
     if (lostFoundByMessageId[msg.id]) {
-      alert('이미 분실물로 등록된 사진입니다.');
+      alert('?대? 遺꾩떎臾쇰줈 ?깅줉???ъ쭊?낅땲??');
       return;
     }
 
-    const roomInput = msg.room_no || window.prompt('객실번호를 입력하세요 (예: 201)', msg.room_no || '');
+    const roomInput = msg.room_no || window.prompt('媛앹떎踰덊샇瑜??낅젰?섏꽭??(?? 201)', msg.room_no || '');
     if (!roomInput) return;
     const roomNo = roomInput.replace(/[^\d]/g, '').slice(0, 4);
     if (!roomNo) return;
-    const issueInput = window.prompt('이슈 유형 입력 (설비/청소/전기/가전/침구/기타)', '설비') || '설비';
-    const issueType = (ISSUE_TYPES.includes(issueInput as IssueType) ? issueInput : '설비') as IssueType;
-    const description = msg.message?.trim() || `${roomNo}호 시설고장`;
+    const issueInput = window.prompt('?댁뒋 ?좏삎 ?낅젰 (?ㅻ퉬/泥?냼/?꾧린/媛??移④뎄/湲고?)', '?ㅻ퉬') || '?ㅻ퉬';
+    const issueType = (ISSUE_TYPES.includes(issueInput as IssueType) ? issueInput : '?ㅻ퉬') as IssueType;
+    const description = msg.message?.trim() || `${roomNo}???쒖꽕怨좎옣`;
 
     const fd = new FormData();
     fd.append('room_no', roomNo);
@@ -751,12 +758,12 @@ export default function ChatPage() {
     });
     if (!createdRes.ok) {
       log.error('[MAINTENANCE_PHOTO_CREATE_CLIENT_ERROR]', createdRes);
-      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      alert('?꾩넚???ㅽ뙣?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??');
       return;
     }
     const createdData = createdRes.data;
     if (!createdData?.ticket?.id) {
-      alert(typeof createdData?.error === 'string' ? createdData.error : '시설고장 등록 실패');
+      alert(typeof createdData?.error === 'string' ? createdData.error : '?쒖꽕怨좎옣 ?깅줉 ?ㅽ뙣');
       return;
     }
 
@@ -775,7 +782,7 @@ export default function ChatPage() {
     });
     if (!linkResult.ok) {
       log.error('[MAINTENANCE_PHOTO_LINK_CLIENT_ERROR]', linkResult);
-      alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      alert('?꾩넚???ㅽ뙣?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??');
       return;
     }
     const linked = linkResult.data.message;
@@ -834,10 +841,10 @@ export default function ChatPage() {
         body: JSON.stringify({ message_id: msg.id, user_id: chatSendUserId }),
         timeoutMs: TIMEOUT_MS_CHAT_AUX
       });
-      // [DEBUG] 추후 제거 가능
+      // [DEBUG] 異뷀썑 ?쒓굅 媛??
       logDeleteClientDebug('[CHAT_DELETE_CLIENT]', 'envelope', delResult);
       if (!delResult.ok) {
-        alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        alert('?꾩넚???ㅽ뙣?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??');
         return;
       }
       const updated = delResult.data.message;
@@ -855,7 +862,7 @@ export default function ChatPage() {
       }
     } catch (e: any) {
       log.error('[CHAT_DELETE_CLIENT_ERROR]', e);
-      alert(e?.message ? `메시지 삭제에 실패했습니다.\n${e.message}` : '메시지 삭제에 실패했습니다.');
+      alert(e?.message ? `硫붿떆吏 ??젣???ㅽ뙣?덉뒿?덈떎.\n${e.message}` : '硫붿떆吏 ??젣???ㅽ뙣?덉뒿?덈떎.');
     } finally {
       setDeletingMessageId(null);
     }
@@ -871,10 +878,10 @@ export default function ChatPage() {
 
   const browserNotifyShortLabel =
     browserNotifyPermission === 'granted'
-      ? '브라우저 알림 허용됨'
+      ? '釉뚮씪?곗? ?뚮┝ ?덉슜??
       : browserNotifyPermission === 'denied'
-        ? '브라우저 알림 차단'
-        : '브라우저 알림 미설정';
+        ? '釉뚮씪?곗? ?뚮┝ 李⑤떒'
+        : '釉뚮씪?곗? ?뚮┝ 誘몄꽕??;
 
   const chatMessageList = (
     <section ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
@@ -889,18 +896,18 @@ export default function ChatPage() {
         lostFoundByMessageId={lostFoundByMessageId}
         onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
         onRegisterMaintenanceFromPhoto={photoOpsUxEnabled ? registerMaintenanceFromPhoto : undefined}
-        onPhotoOpsOther={photoOpsUxEnabled ? () => showOpsUxToast('준비 중입니다.') : undefined}
+        onPhotoOpsOther={photoOpsUxEnabled ? () => showOpsUxToast('以鍮?以묒엯?덈떎.') : undefined}
         photoOpsUxEnabled={photoOpsUxEnabled}
         stayOnChat={lostFoundEnabled || showOpsConsole || photoOpsUxEnabled}
         eventCenterEnabled={lostFoundEnabled && showOpsConsole}
-        onOpenLostFoundDetail={lostFoundEnabled && showOpsConsole ? openLostFoundInEventCenter : undefined}
+        onFocusLostFoundList={lostFoundEnabled ? focusLostFoundList : undefined}
       />
     </section>
   );
 
   const maintenancePanel = showMaintenance ? (
     <div className="border-t border-gray-700 bg-gray-800 px-3 pt-3 pb-2">
-      <div className="mb-2 text-xs font-bold text-gray-300">문제 유형</div>
+      <div className="mb-2 text-xs font-bold text-gray-300">臾몄젣 ?좏삎</div>
       <div className="mb-3 grid grid-cols-5 gap-2">
         {ISSUE_TYPES.map((type) => (
           <button
@@ -919,7 +926,7 @@ export default function ChatPage() {
         onClick={() => void submitMaintenance()}
         className="w-full rounded-xl bg-[#FEE500] px-4 py-3 text-sm font-bold text-gray-900 disabled:opacity-50"
       >
-        유지보수 등록
+        ?좎?蹂댁닔 ?깅줉
       </button>
     </div>
   ) : null;
@@ -943,36 +950,36 @@ export default function ChatPage() {
           onClick={() => setKeypadOpen(true)}
           className={`rounded-full px-3 py-1.5 text-xs font-bold ${roomNo ? 'border border-yellow-400 bg-[#FEE500] text-gray-900' : 'border border-dashed border-gray-600 bg-gray-700 text-gray-400'}`}
         >
-          {roomNo ? `🏠 ${roomNo}호` : '🏠 객실 선택'}
+          {roomNo ? `?룧 ${roomNo}?? : '?룧 媛앹떎 ?좏깮'}
         </button>
         {roomNo && (
           <button onClick={() => setRoomNo('')} className="text-xs text-gray-400">
-            초기화
+            珥덇린??
           </button>
         )}
         {photo && (
-          <span className="rounded-full bg-emerald-900/40 px-2 py-1 text-xs text-emerald-400">사진 선택됨</span>
+          <span className="rounded-full bg-emerald-900/40 px-2 py-1 text-xs text-emerald-400">?ъ쭊 ?좏깮??/span>
         )}
         {!showMaintenance && (roomNo || photo) && (
           <button
             onClick={() => setShowMaintenance(true)}
             className="ml-auto rounded-full bg-[#FEE500] px-3 py-1.5 text-xs font-bold text-gray-900"
           >
-            🔧 유지보수
+            ?뵩 ?좎?蹂댁닔
           </button>
         )}
       </div>
       {preview && <img src={preview} alt="preview" className="mb-2 h-20 w-20 rounded-xl object-cover" />}
       <div className="flex items-end gap-2">
         <button type="button" onClick={() => fileRef.current?.click()} className="h-11 w-11 shrink-0 rounded-full bg-gray-700 text-xl">
-          📷
+          ?벜
         </button>
         <button
           type="button"
           onClick={() => setShowEmojiPicker((v) => !v)}
           className={`h-11 w-11 shrink-0 rounded-full text-xl ${showEmojiPicker ? 'bg-yellow-400' : 'bg-gray-700'}`}
         >
-          😊
+          ?삃
         </button>
         <button
           type="button"
@@ -981,9 +988,9 @@ export default function ChatPage() {
             urgentMode ? 'border-orange-400 bg-orange-500 text-white' : 'border-gray-600 bg-gray-800 text-gray-300'
           }`}
           aria-pressed={urgentMode}
-          title="긴급 메시지"
+          title="湲닿툒 硫붿떆吏"
         >
-          긴급 {urgentMode ? 'ON' : 'OFF'}
+          湲닿툒 {urgentMode ? 'ON' : 'OFF'}
         </button>
         <textarea
           value={text}
@@ -996,7 +1003,7 @@ export default function ChatPage() {
             }
           }}
           enterKeyHint="send"
-          placeholder="메시지를 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈)"
+          placeholder="硫붿떆吏瑜??낅젰?섏꽭??(Enter ?꾩넚 쨌 Shift+Enter 以꾨컮轅?"
           rows={1}
           className="max-h-24 min-h-[44px] flex-1 resize-none rounded-2xl border border-gray-600 bg-gray-700 px-4 py-3 text-sm text-white outline-none placeholder:text-gray-400 focus:border-yellow-400"
         />
@@ -1006,7 +1013,7 @@ export default function ChatPage() {
           onClick={() => clearInput()}
           className="h-11 shrink-0 rounded-lg border border-gray-600 px-2 text-xs text-gray-400 hover:bg-gray-700 disabled:pointer-events-none disabled:opacity-40"
         >
-          취소
+          痍⑥냼
         </button>
         <button
           type="button"
@@ -1017,7 +1024,7 @@ export default function ChatPage() {
           }}
           className="h-11 w-11 shrink-0 rounded-full bg-[#FEE500] text-lg font-bold text-gray-900 disabled:opacity-40"
         >
-          {submitting ? '…' : '▶'}
+          {submitting ? '?? : '??}
         </button>
         <input
           ref={fileRef}
@@ -1040,7 +1047,7 @@ export default function ChatPage() {
     <div className="absolute inset-0 flex items-end bg-black/40">
       <div className="w-full rounded-t-3xl bg-white p-4">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-300" />
-        <div className="mb-3 text-sm font-bold">객실 번호 입력</div>
+        <div className="mb-3 text-sm font-bold">媛앹떎 踰덊샇 ?낅젰</div>
         <div className="mb-3 rounded-2xl bg-gray-100 px-4 py-3 text-3xl font-extrabold text-gray-900">{keypadNum || '-'}</div>
         <div className="grid grid-cols-3 gap-3">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => (
@@ -1053,7 +1060,7 @@ export default function ChatPage() {
             </button>
           ))}
           <button onClick={() => setKeypadOpen(false)} className="h-14 rounded-2xl text-sm font-semibold text-gray-500">
-            닫기
+            ?リ린
           </button>
           <button
             onClick={() => setKeypadNum((p) => (p + '0').slice(0, 4))}
@@ -1062,7 +1069,7 @@ export default function ChatPage() {
             0
           </button>
           <button onClick={() => setKeypadNum((p) => p.slice(0, -1))} className="h-14 rounded-2xl text-xl">
-            ⌫
+            ??
           </button>
         </div>
         <button
@@ -1072,7 +1079,7 @@ export default function ChatPage() {
           }}
           className="mt-3 w-full rounded-2xl bg-[#FEE500] px-4 py-3 font-bold text-gray-900"
         >
-          확인
+          ?뺤씤
         </button>
       </div>
     </div>
@@ -1108,8 +1115,8 @@ export default function ChatPage() {
           />
           <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
             <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
-              <span className="font-bold">대화 타임라인</span>
-              {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
+              <span className="font-bold">?????꾨씪??/span>
+              {consoleRoomNo ? <span className="ml-2 text-gray-500">쨌 {consoleRoomNo}??/span> : null}
             </div>
             {chatMessageList}
             {maintenancePanel}
@@ -1124,8 +1131,6 @@ export default function ChatPage() {
             onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
             onSelectRoom={setConsoleRoomNo}
             onRefreshLostFoundList={() => void loadLostFoundIndex()}
-            openLostFoundDetailId={openLostFoundDetailId}
-            onOpenLostFoundDetailIdConsumed={() => setOpenLostFoundDetailId(null)}
           />
         </div>
         {keypadOverlay}
@@ -1138,7 +1143,7 @@ export default function ChatPage() {
     <ChatPhotoLightboxProvider>
     <main className="flex h-screen flex-col bg-[#B2C7D9]">
 
-      {/* 헤더: 다크 그레이 테마 */}
+      {/* ?ㅻ뜑: ?ㅽ겕 洹몃젅???뚮쭏 */}
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 shrink-0">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1148,13 +1153,13 @@ export default function ChatPage() {
                 onClick={() => window.location.assign(returnToUrl)}
                 className="mb-1.5 inline-flex items-center gap-1 rounded-lg border border-gray-500 bg-gray-700 px-2.5 py-1 text-xs font-bold text-gray-100 hover:bg-gray-600"
               >
-                ← 관리모드
+                ??愿由щえ??
               </button>
             ) : null}
-            <div className="font-bold text-white">AutoFlow 채팅</div>
+            <div className="font-bold text-white">AutoFlow 梨꾪똿</div>
             {!canSendToServer ? (
               <div className="mt-1 text-xs font-semibold text-red-400">
-                전송/티켓 생성이 비활성화되었습니다. 관리자 설정이 필요합니다.
+                ?꾩넚/?곗폆 ?앹꽦??鍮꾪솢?깊솕?섏뿀?듬땲?? 愿由ъ옄 ?ㅼ젙???꾩슂?⑸땲??
               </div>
             ) : null}
           </div>
@@ -1166,7 +1171,7 @@ export default function ChatPage() {
                   onClick={handleEnableAlertSound}
                   className="rounded-lg border border-amber-500/60 bg-amber-950/40 px-2 py-1 font-semibold text-amber-200 hover:bg-amber-900/50"
                 >
-                  🔊 알림음 켜기
+                  ?뵄 ?뚮┝??耳쒓린
                 </button>
               ) : null}
               {browserNotifyPermission !== 'unsupported' && browserNotifyPermission !== 'granted' ? (
@@ -1176,36 +1181,36 @@ export default function ChatPage() {
                   className="rounded-lg border border-sky-500/70 bg-sky-950/50 px-2 py-1 font-semibold text-sky-100 hover:bg-sky-900/60"
                 >
                   {browserNotifyPermission === 'denied'
-                    ? '탭 밖 OS 알림 차단됨'
-                    : '탭 밖 OS 알림 허용 (필수)'}
+                    ? '??諛?OS ?뚮┝ 李⑤떒??
+                    : '??諛?OS ?뚮┝ ?덉슜 (?꾩닔)'}
                 </button>
               ) : null}
               <span className="text-gray-400">
-                브라우저 알림:{' '}
+                釉뚮씪?곗? ?뚮┝:{' '}
                 {browserNotifyPermission === 'granted'
-                  ? '허용됨'
+                  ? '?덉슜??
                   : browserNotifyPermission === 'denied'
-                    ? '차단됨'
+                    ? '李⑤떒??
                     : browserNotifyPermission === 'unsupported'
-                      ? '미지원'
-                      : '미설정'}
+                      ? '誘몄???
+                      : '誘몄꽕??}
               </span>
               <span className="text-gray-400">
-                연결 상태:{' '}
+                ?곌껐 ?곹깭:{' '}
                 {connectionStatus === 'connected'
                   ? 'connected'
                   : connectionStatus === 'degraded'
                     ? 'degraded'
                     : 'reconnecting'}
               </span>
-              <span className="text-gray-400">온라인 {staffCounts.online}명</span>
+              <span className="text-gray-400">?⑤씪??{staffCounts.online}紐?/span>
               <button
                 type="button"
                 onClick={() => setSettingsOpen((open) => !open)}
                 className="rounded-lg border border-gray-600 bg-gray-700 px-2 py-1 font-semibold text-gray-200 hover:bg-gray-600"
                 aria-expanded={settingsOpen}
               >
-                ⚙ 설정
+                ???ㅼ젙
               </button>
             </div>
             <button
@@ -1215,36 +1220,36 @@ export default function ChatPage() {
               }}
               className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:bg-gray-700"
             >
-              로그아웃
+              濡쒓렇?꾩썐
             </button>
           </div>
         </div>
       </header>
 
-      {/* 개발자 진단: ?debug=1 또는 설정 > 고급에서만 노출 (기본 운영 화면에서는 숨김) */}
+      {/* 媛쒕컻??吏꾨떒: ?debug=1 ?먮뒗 ?ㅼ젙 > 怨좉툒?먯꽌留??몄텧 (湲곕낯 ?댁쁺 ?붾㈃?먯꽌???④?) */}
       {debugMode ? (
         <div className="border-b border-amber-500/80 bg-amber-950/90">
           <div
             className="px-3 pt-2 font-mono text-sm font-bold text-lime-300"
             data-testid="chat-deploy-rev"
           >
-            rev={CHAT_CLIENT_REV} · {CHAT_PAGE_SOURCE}
+            rev={CHAT_CLIENT_REV} 쨌 {CHAT_PAGE_SOURCE}
           </div>
           <ChatNotifyDiagBar variant="debug" onRequestPermission={handleNotificationClick} />
         </div>
       ) : null}
 
-      {/* 운영 설정 시트 (⚙ 설정) — 알림음/테스트/업데이트/상태문구/로그아웃/고급 */}
+      {/* ?댁쁺 ?ㅼ젙 ?쒗듃 (???ㅼ젙) ???뚮┝???뚯뒪???낅뜲?댄듃/?곹깭臾멸뎄/濡쒓렇?꾩썐/怨좉툒 */}
       {settingsOpen ? (
-        <section className="border-b border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-200" aria-label="설정">
+        <section className="border-b border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-200" aria-label="?ㅼ젙">
           <div className="mb-2 flex items-center justify-between">
-            <span className="font-bold text-white">설정</span>
+            <span className="font-bold text-white">?ㅼ젙</span>
             <button
               type="button"
               onClick={() => setSettingsOpen(false)}
               className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
             >
-              닫기
+              ?リ린
             </button>
           </div>
           <ChatNotifyDiagBar variant="operator" onRequestPermission={handleNotificationClick} />
@@ -1255,7 +1260,7 @@ export default function ChatPage() {
                 onClick={handleTestNotificationClick}
                 className="rounded-lg border border-gray-600 bg-gray-700 px-2.5 py-1 text-xs font-medium text-gray-200 hover:bg-gray-600"
               >
-                테스트 알림
+                ?뚯뒪???뚮┝
               </button>
             ) : (
               <button
@@ -1263,7 +1268,7 @@ export default function ChatPage() {
                 onClick={handleNotificationClick}
                 className="rounded-lg border border-sky-500/70 bg-sky-950/50 px-2.5 py-1 text-xs font-semibold text-sky-100 hover:bg-sky-900/60"
               >
-                브라우저 알림 권한 요청
+                釉뚮씪?곗? ?뚮┝ 沅뚰븳 ?붿껌
               </button>
             )}
             <button
@@ -1271,7 +1276,7 @@ export default function ChatPage() {
               onClick={() => setShowAdminPanel((open) => !open)}
               className="rounded-lg border border-yellow-500/50 bg-gray-700 px-2.5 py-1 text-xs font-semibold text-yellow-300 hover:bg-gray-600"
             >
-              {showAdminPanel ? '상태 문구 닫기' : '상태 문구 관리'}
+              {showAdminPanel ? '?곹깭 臾멸뎄 ?リ린' : '?곹깭 臾멸뎄 愿由?}
             </button>
           </div>
           <div className="mt-2">
@@ -1286,17 +1291,17 @@ export default function ChatPage() {
               }}
               className="rounded-lg border border-gray-600 px-2.5 py-1 text-xs text-gray-300 hover:bg-gray-700"
             >
-              로그아웃
+              濡쒓렇?꾩썐
             </button>
             <button
               type="button"
               onClick={() => setDebugMode(true)}
               className="rounded-lg border border-gray-600 px-2.5 py-1 text-xs text-gray-400 hover:bg-gray-700"
             >
-              고급: 개발자 진단 열기
+              怨좉툒: 媛쒕컻??吏꾨떒 ?닿린
             </button>
             {sessionUser ? (
-              <span className="ml-auto text-xs text-gray-500">로그인: {sessionUser.name}</span>
+              <span className="ml-auto text-xs text-gray-500">濡쒓렇?? {sessionUser.name}</span>
             ) : null}
           </div>
         </section>
