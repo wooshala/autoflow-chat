@@ -139,10 +139,29 @@ function formatClock(v: string | null | undefined): string | null {
   return s;
 }
 
+function statusHeaderLabel(status: LostFoundItem['status']): string {
+  if (status === 'registered') return '미해결';
+  if (status === 'stored') return '보관중';
+  if (status === 'returned' || status === 'disposed') return '보관완료';
+  return LOST_FOUND_STATUS_UI[status]?.label || status;
+}
+
+function auxBadges(item: LostFoundItemWithMatch): string[] {
+  const badges: string[] = [];
+  const createdMs = new Date(item.created_at).getTime();
+  if (Number.isFinite(createdMs) && Date.now() - createdMs < 24 * 60 * 60 * 1000) {
+    badges.push('새로 등록');
+  }
+  if (item.found_location) badges.push('수동');
+  if (item.guestMatch?.status === 'exact') badges.push('매칭확인');
+  else if (item.guestMatch?.status === 'multiple') badges.push('확인필요');
+  return badges;
+}
+
 function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
   if (!match) {
     return (
-      <div className="mt-1.5 rounded-md bg-white/80 px-2 py-1.5 text-[10px] text-gray-500">
+      <div className="mt-2 w-full rounded-md bg-white/80 px-2.5 py-2 text-[11px] leading-snug text-gray-500">
         숙박일지 조회중...
       </div>
     );
@@ -150,7 +169,7 @@ function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
 
   if (match.status === 'unavailable') {
     return (
-      <div className="mt-1.5 rounded-md border border-amber-100 bg-amber-50/80 px-2 py-1.5 text-[10px] text-amber-800">
+      <div className="mt-2 w-full rounded-md border border-amber-100 bg-amber-50/80 px-2.5 py-2 text-[11px] leading-snug text-amber-800">
         {match.label}
       </div>
     );
@@ -158,7 +177,7 @@ function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
 
   if (match.status === 'none') {
     return (
-      <div className="mt-1.5 rounded-md bg-white/80 px-2 py-1.5 text-[10px] text-gray-500">
+      <div className="mt-2 w-full rounded-md bg-white/80 px-2.5 py-2 text-[11px] leading-snug text-gray-500">
         ★☆☆☆☆ 숙박일지 매칭 없음
       </div>
     );
@@ -166,12 +185,12 @@ function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
 
   if (match.status === 'multiple') {
     return (
-      <div className="mt-1.5 rounded-md border border-amber-100 bg-amber-50/80 px-2 py-1.5 text-[10px] text-amber-950">
-        <div className="font-bold">
+      <div className="mt-2 w-full rounded-md border border-amber-100 bg-amber-50/80 px-2.5 py-2 text-[11px] leading-snug text-amber-950">
+        <div className="font-bold break-words">
           {match.starsDisplay} {match.label}
         </div>
         <div className="mt-0.5 text-amber-800">후보 {match.candidates.length}건 — 확인 필요</div>
-        <ol className="mt-1 list-decimal space-y-0.5 pl-3.5">
+        <ol className="mt-1 list-decimal space-y-0.5 pl-3.5 break-words">
           {match.candidates.map((c, i) => (
             <li key={`${c.guest_name}-${c.stay_date}-${i}`}>
               {c.segmentLabel || '—'}
@@ -191,11 +210,11 @@ function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
   const cin = formatClock(match.check_in);
   const cout = formatClock(match.check_out);
   return (
-    <div className="mt-1.5 rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1.5 text-[10px] text-emerald-950">
-      <div className="font-bold">
+    <div className="mt-2 w-full rounded-md border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 text-[11px] leading-snug text-emerald-950">
+      <div className="font-bold break-words">
         {match.starsDisplay} {match.label}
       </div>
-      <div className="mt-0.5 font-semibold">
+      <div className="mt-0.5 font-semibold break-words">
         {match.segmentLabel || '—'}
         {match.stay_date ? ` · ${match.stay_date}` : ''}
       </div>
@@ -204,9 +223,9 @@ function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
           입실 {cin || '—'} / 퇴실 {cout || '—'}
         </div>
       ) : null}
-      {match.guest_name ? <div>고객: {match.guest_name}</div> : null}
-      {match.phone ? <div>전화: {match.phone}</div> : null}
-      {match.reservation_source ? <div>예약: {match.reservation_source}</div> : null}
+      {match.guest_name ? <div className="break-words">고객: {match.guest_name}</div> : null}
+      {match.phone ? <div className="break-words">전화: {match.phone}</div> : null}
+      {match.reservation_source ? <div className="break-words">예약: {match.reservation_source}</div> : null}
     </div>
   );
 }
@@ -355,55 +374,73 @@ export default function ChatLostFoundSection({
       {visible.length === 0 ? (
         <div className="text-xs text-gray-400">등록 없음</div>
       ) : (
-        <ul className="space-y-1.5">
+        <ul className="space-y-3">
           {visible.map((item) => {
             const statusUi = LOST_FOUND_STATUS_UI[item.status] || LOST_FOUND_STATUS_UI.registered;
             const busy = busyId === item.id;
             const foundAt = item.snap_message_created_at || item.created_at;
+            const aux = auxBadges(item);
             return (
-              <li key={item.id} className="rounded-lg border border-gray-100 bg-gray-50 p-2">
-                <div className="flex gap-2">
+              <li key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                {/* Header: status | aux | LF# */}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${statusUi.badge}`}
+                  >
+                    {statusHeaderLabel(item.status)}
+                  </span>
+                  {aux.map((b) => (
+                    <span
+                      key={b}
+                      className="shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold text-gray-600 ring-1 ring-gray-200"
+                    >
+                      {b}
+                    </span>
+                  ))}
+                  <span className="ml-auto shrink-0 text-[11px] font-extrabold tabular-nums text-gray-900">
+                    {item.event_no}
+                  </span>
+                </div>
+
+                {/* Body: thumb | room/desc + found/reporter */}
+                <div className="mt-2.5 flex min-w-0 gap-2.5">
                   {item.snap_image_url ? (
                     <ChatPhotoThumb
                       src={item.snap_image_url}
                       alt={item.event_no}
-                      className="h-11 w-11 shrink-0 overflow-hidden rounded-md"
-                      imgClassName="h-11 w-11 rounded-md object-cover"
+                      className="h-16 w-16 shrink-0 overflow-hidden rounded-lg"
+                      imgClassName="h-16 w-16 rounded-lg object-cover"
                     />
                   ) : (
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-gray-200 text-[10px] text-gray-500">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-gray-200 text-[10px] text-gray-500">
                       —
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span className="text-xs font-extrabold text-gray-900">{item.event_no}</span>
-                      <span className={`rounded-full px-1.5 py-0 text-[10px] font-bold ${statusUi.badge}`}>
-                        {statusUi.label}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 truncate text-[10px] font-semibold text-gray-800">
+                    <div className="break-words text-[12px] font-semibold leading-snug text-gray-900">
                       {item.snap_room_no ? `${item.snap_room_no}호` : '객실 미상'}
                       {item.item_description ? ` · ${item.item_description}` : ''}
                     </div>
-                    <div className="text-[10px] text-gray-500">
+                    <div className="mt-0.5 break-words text-[11px] leading-snug text-gray-500">
                       발견 {formatKSTShort(foundAt)}
                       {item.snap_sender ? ` · ${item.snap_sender}` : ''}
                     </div>
                     {item.found_location ? (
-                      <div className="mt-0.5 text-[10px] text-gray-600">메모: {item.found_location}</div>
+                      <div className="mt-0.5 break-words text-[11px] leading-snug text-gray-600">
+                        메모: {item.found_location}
+                      </div>
                     ) : null}
                   </div>
                 </div>
 
                 <GuestMatchBlock match={item.guestMatch} />
 
-                <div className="mt-1.5 flex flex-wrap gap-1">
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
                     disabled={busy || !actorId}
                     onClick={() => setEditItem(item)}
-                    className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] font-bold text-gray-700 disabled:opacity-40"
+                    className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-bold text-gray-700 disabled:opacity-40"
                   >
                     수정
                   </button>
@@ -412,16 +449,20 @@ export default function ChatLostFoundSection({
                       type="button"
                       disabled={busy || !actorId}
                       onClick={() => void handleStore(item)}
-                      className="rounded-md bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white disabled:opacity-40"
+                      className="rounded-md bg-indigo-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-40"
                     >
                       {busy ? '…' : '보관 처리'}
                     </button>
+                  ) : item.status === 'stored' ? (
+                    <span className="rounded-md bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700">
+                      보관됨
+                    </span>
                   ) : null}
                   <button
                     type="button"
                     disabled={busy || !actorId}
                     onClick={() => void handleDelete(item)}
-                    className="rounded-md border border-rose-200 bg-white px-2 py-1 text-[10px] font-bold text-rose-700 disabled:opacity-40"
+                    className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-[10px] font-bold text-rose-700 disabled:opacity-40"
                   >
                     삭제
                   </button>

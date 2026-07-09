@@ -306,7 +306,7 @@ export function ChatPhotoThumb({ src, alt = '', className = '', imgClassName = '
   return (
     <button
       type="button"
-      className={`block w-full cursor-zoom-in border-0 bg-transparent p-0 text-left ${className}`}
+      className={`block cursor-zoom-in border-0 bg-transparent p-0 text-left ${className}`}
       aria-label="사진 원본 보기"
       onClick={(e) => {
         if (openPhoto) openPhoto(src, alt, e.currentTarget);

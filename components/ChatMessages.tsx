@@ -352,6 +352,7 @@ export default function ChatMessages({
                         <ChatPhotoThumb
                           src={msg.image_url}
                           alt="업로드"
+                          className="w-full"
                           imgClassName="h-40 w-full rounded-xl object-cover"
                         />
                       </div>
