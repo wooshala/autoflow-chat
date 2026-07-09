@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { ChatPhotoThumb } from '@/components/chat/ChatPhotoLightbox';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { LOST_FOUND_STATUS_UI } from '@/lib/ops-events/lostFoundFsm';
 import type { LostFoundItem, LostFoundItemWithMatch } from '@/lib/ops-events/types';
@@ -9,12 +10,108 @@ import { formatKSTShort } from '@/lib/formatKST';
 
 type FilterMode = 'open' | 'all';
 
+type EditForm = {
+  snap_room_no: string;
+  item_description: string;
+  found_location: string;
+};
+
 type Props = {
   items: LostFoundItemWithMatch[];
   lostFoundEnabled: boolean;
   actorId: string | null;
   onRefreshList: () => void;
 };
+
+function LostFoundEditModal({
+  item,
+  busy,
+  onClose,
+  onSave
+}: {
+  item: LostFoundItemWithMatch;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (form: EditForm) => void;
+}) {
+  const [form, setForm] = useState<EditForm>({
+    snap_room_no: item.snap_room_no || '',
+    item_description: item.item_description || '',
+    found_location: item.found_location || ''
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${item.event_no} 수정`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onClose();
+      }}
+    >
+      <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
+        <div className="text-sm font-extrabold text-gray-900">{item.event_no} 수정</div>
+        <div className="mt-3 space-y-2">
+          <label className="block text-[10px] font-bold text-gray-500">
+            객실번호
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              value={form.snap_room_no}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  snap_room_no: e.target.value.replace(/[^\d]/g, '').slice(0, 4)
+                }))
+              }
+              placeholder="예: 607"
+              className="mt-0.5 w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900"
+            />
+          </label>
+          <label className="block text-[10px] font-bold text-gray-500">
+            물건 설명
+            <input
+              type="text"
+              value={form.item_description}
+              onChange={(e) => setForm((f) => ({ ...f, item_description: e.target.value }))}
+              className="mt-0.5 w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900"
+            />
+          </label>
+          <label className="block text-[10px] font-bold text-gray-500">
+            메모 (임시)
+            <textarea
+              value={form.found_location}
+              onChange={(e) => setForm((f) => ({ ...f, found_location: e.target.value }))}
+              rows={2}
+              placeholder="발견 위치·보관 메모 등"
+              className="mt-0.5 w-full resize-none rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="rounded-md border border-gray-200 px-3 py-1.5 text-[10px] font-bold text-gray-600 disabled:opacity-40"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={busy || !form.item_description.trim()}
+            onClick={() => onSave(form)}
+            className="rounded-md bg-gray-900 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-40"
+          >
+            {busy ? '…' : '저장'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function formatClock(v: string | null | undefined): string | null {
   if (!v) return null;
@@ -124,6 +221,7 @@ export default function ChatLostFoundSection({
   const [filter, setFilter] = useState<FilterMode>('open');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [editItem, setEditItem] = useState<LostFoundItemWithMatch | null>(null);
 
   const visible = useMemo(() => {
     const sorted = [...items].sort(
@@ -181,12 +279,47 @@ export default function ChatLostFoundSection({
     onRefreshList();
   }
 
+  async function handleSaveEdit(item: LostFoundItemWithMatch, form: EditForm) {
+    if (!actorId) return;
+    setBusyId(item.id);
+    const r = await fetchEnvelope<{ item: LostFoundItemWithMatch }>(
+      `/api/ops-events/lost-found/${item.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor_id: actorId,
+          snap_room_no: form.snap_room_no.trim() || null,
+          item_description: form.item_description.trim(),
+          found_location: form.found_location.trim() || null
+        })
+      }
+    );
+    setBusyId(null);
+    if (!r.ok) {
+      alert(r.message || '수정에 실패했습니다.');
+      return;
+    }
+    setEditItem(null);
+    onRefreshList();
+  }
+
   if (!lostFoundEnabled) {
     return <div className="text-xs text-gray-400">분실물 비활성</div>;
   }
 
   return (
     <div className="space-y-2">
+      {editItem ? (
+        <LostFoundEditModal
+          item={editItem}
+          busy={busyId === editItem.id}
+          onClose={() => {
+            if (busyId !== editItem.id) setEditItem(null);
+          }}
+          onSave={(form) => void handleSaveEdit(editItem, form)}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
@@ -228,10 +361,11 @@ export default function ChatLostFoundSection({
               <li key={item.id} className="rounded-lg border border-gray-100 bg-gray-50 p-2">
                 <div className="flex gap-2">
                   {item.snap_image_url ? (
-                    <img
+                    <ChatPhotoThumb
                       src={item.snap_image_url}
-                      alt=""
-                      className="h-11 w-11 shrink-0 rounded-md object-cover"
+                      alt={item.event_no}
+                      className="h-11 w-11 shrink-0 overflow-hidden rounded-md"
+                      imgClassName="h-11 w-11 rounded-md object-cover"
                     />
                   ) : (
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-gray-200 text-[10px] text-gray-500">
@@ -253,12 +387,23 @@ export default function ChatLostFoundSection({
                       발견 {formatKSTShort(foundAt)}
                       {item.snap_sender ? ` · ${item.snap_sender}` : ''}
                     </div>
+                    {item.found_location ? (
+                      <div className="mt-0.5 text-[10px] text-gray-600">메모: {item.found_location}</div>
+                    ) : null}
                   </div>
                 </div>
 
                 <GuestMatchBlock match={item.guestMatch} />
 
                 <div className="mt-1.5 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    disabled={busy || !actorId}
+                    onClick={() => setEditItem(item)}
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] font-bold text-gray-700 disabled:opacity-40"
+                  >
+                    수정
+                  </button>
                   {item.status === 'registered' ? (
                     <button
                       type="button"

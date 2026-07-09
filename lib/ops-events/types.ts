@@ -44,6 +44,7 @@ export type OpsEventHistoryRow = {
   actor_name: string;
   actor_role: string | null;
   transition_note: string | null;
+  meta?: Record<string, unknown> | null;
   created_at: string;
 };
 

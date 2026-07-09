@@ -310,3 +310,105 @@ export async function softDeleteLostFoundItem(input: {
 
   return updated as LostFoundItem;
 }
+
+export type LostFoundFieldPatch = {
+  snap_room_no?: string | null;
+  item_description?: string;
+  found_location?: string | null;
+};
+
+function normRoomNo(v: string | null | undefined): string | null {
+  const s = String(v ?? '')
+    .replace(/[^\d]/g, '')
+    .slice(0, 4);
+  return s || null;
+}
+
+/** Staff manual edit (Phase A): room, description, memo — history meta before/after. */
+export async function updateLostFoundItem(input: {
+  id: string;
+  actor_id: string;
+  patch: LostFoundFieldPatch;
+}): Promise<{ item: LostFoundItem; history: OpsEventHistoryRow }> {
+  if (!supabaseAdmin) throw new Error('Supabase admin client is not configured');
+
+  const siteId = getSiteId();
+  const actor = await loadActor(input.actor_id);
+  const item = await getLostFoundItem(input.id);
+
+  const before = {
+    snap_room_no: item.snap_room_no,
+    item_description: item.item_description,
+    found_location: item.found_location
+  };
+
+  const updates: Record<string, string | null> = {};
+  const patch = input.patch;
+
+  if (patch.snap_room_no !== undefined) {
+    updates.snap_room_no = normRoomNo(patch.snap_room_no);
+  }
+  if (patch.item_description !== undefined) {
+    const desc = String(patch.item_description).trim();
+    if (!desc) throw new LostFoundValidationError('item_description required');
+    updates.item_description = desc;
+  }
+  if (patch.found_location !== undefined) {
+    const loc = String(patch.found_location ?? '').trim();
+    updates.found_location = loc || null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    throw new LostFoundValidationError('No fields to update');
+  }
+
+  const after = {
+    snap_room_no:
+      updates.snap_room_no !== undefined ? updates.snap_room_no : item.snap_room_no,
+    item_description:
+      updates.item_description !== undefined ? updates.item_description : item.item_description,
+    found_location:
+      updates.found_location !== undefined ? updates.found_location : item.found_location
+  };
+
+  const unchanged =
+    after.snap_room_no === before.snap_room_no &&
+    after.item_description === before.item_description &&
+    after.found_location === before.found_location;
+  if (unchanged) {
+    throw new LostFoundValidationError('No changes');
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updErr } = await supabaseAdmin
+    .from('lost_found_items')
+    .update({ ...updates, updated_at: now })
+    .eq('id', input.id)
+    .eq('site_id', siteId)
+    .select('*')
+    .single();
+
+  if (updErr || !updated) throw new Error(updErr?.message || 'Update failed');
+
+  const { data: history, error: histErr } = await supabaseAdmin
+    .from('ops_event_history')
+    .insert({
+      site_id: siteId,
+      ref_table: 'lost_found_items',
+      ref_id: input.id,
+      action: 'note_added',
+      from_status: item.status,
+      to_status: item.status,
+      actor_id: actor.id,
+      actor_name: actor.name,
+      actor_role: actor.role,
+      transition_note: '필드 수정',
+      meta: { edit: 'field_update', before, after }
+    })
+    .select('*')
+    .single();
+
+  if (histErr) throw new Error(histErr.message);
+
+  return { item: updated as LostFoundItem, history: history as OpsEventHistoryRow };
+}
