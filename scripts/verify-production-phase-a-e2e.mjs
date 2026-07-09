@@ -67,15 +67,14 @@ async function main() {
     await editBtn.click();
     await page.waitForTimeout(300);
 
-    const roomInput = page.getByLabel('객실번호', { exact: false }).locator('input');
-    await roomInput.fill('309');
-    const descInput = page.getByLabel('물건 설명', { exact: false }).locator('input');
-    const prevDesc = await descInput.inputValue();
-    await descInput.fill(`${prevDesc} [phase-a]`);
-    const memoInput = page.locator('textarea').first();
-    await memoInput.fill('E2E phase-a memo');
+    const editDialog = page.getByRole('dialog', { name: /수정/ });
+    await editDialog.waitFor({ state: 'visible', timeout: 5000 });
+    await editDialog.locator('#lf-edit-room').fill('309');
+    const prevDesc = await editDialog.locator('#lf-edit-desc').inputValue();
+    await editDialog.locator('#lf-edit-desc').fill(`${prevDesc} [phase-a]`);
+    await editDialog.locator('#lf-edit-memo').fill('E2E phase-a memo');
 
-    await page.getByRole('button', { name: '저장' }).click();
+    await editDialog.getByRole('button', { name: '저장' }).click();
     await page.waitForTimeout(3000);
     result.steps.push({ step: 2, action: 'patch save', url: page.url() });
     await page.screenshot({ path: SHOT_EDIT, fullPage: false });

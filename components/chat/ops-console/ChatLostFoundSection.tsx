@@ -53,9 +53,10 @@ function LostFoundEditModal({
       <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
         <div className="text-sm font-extrabold text-gray-900">{item.event_no} 수정</div>
         <div className="mt-3 space-y-2">
-          <label className="block text-[10px] font-bold text-gray-500">
+          <label className="block text-[10px] font-bold text-gray-500" htmlFor="lf-edit-room">
             객실번호
             <input
+              id="lf-edit-room"
               type="text"
               inputMode="numeric"
               maxLength={4}
@@ -70,18 +71,20 @@ function LostFoundEditModal({
               className="mt-0.5 w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900"
             />
           </label>
-          <label className="block text-[10px] font-bold text-gray-500">
+          <label className="block text-[10px] font-bold text-gray-500" htmlFor="lf-edit-desc">
             물건 설명
             <input
+              id="lf-edit-desc"
               type="text"
               value={form.item_description}
               onChange={(e) => setForm((f) => ({ ...f, item_description: e.target.value }))}
               className="mt-0.5 w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900"
             />
           </label>
-          <label className="block text-[10px] font-bold text-gray-500">
+          <label className="block text-[10px] font-bold text-gray-500" htmlFor="lf-edit-memo">
             메모 (임시)
             <textarea
+              id="lf-edit-memo"
               value={form.found_location}
               onChange={(e) => setForm((f) => ({ ...f, found_location: e.target.value }))}
               rows={2}
