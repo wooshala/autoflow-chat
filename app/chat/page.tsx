@@ -39,7 +39,7 @@ import {
 import { log } from '@/lib/logger';
 import { CHAT_CLIENT_REV, CHAT_PAGE_SOURCE } from '@/lib/chat/chatClientRev';
 import type { LostFoundMessageLink } from '@/lib/ops-events/lostFoundUi';
-import type { LostFoundItem } from '@/lib/ops-events/types';
+import type { LostFoundItemWithMatch } from '@/lib/ops-events/types';
 import { isChatOpsConsoleEnabled } from '@/lib/ops-events/flags';
 import ChatOpsConsoleHeader from '@/components/chat/ops-console/ChatOpsConsoleHeader';
 import ChatOperationPanel from '@/components/chat/ops-console/ChatOperationPanel';
@@ -143,12 +143,12 @@ export default function ChatPage() {
   const opsConsoleEnabled = isChatOpsConsoleEnabled();
   const showOpsConsole = opsConsoleEnabled && !isMobileViewport;
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
-  const [lostFoundItems, setLostFoundItems] = useState<LostFoundItem[]>([]);
+  const [lostFoundItems, setLostFoundItems] = useState<LostFoundItemWithMatch[]>([]);
   const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
 
-  const loadLostFoundIndex = useCallback(async (): Promise<LostFoundItem[]> => {
+  const loadLostFoundIndex = useCallback(async (): Promise<LostFoundItemWithMatch[]> => {
     if (!lostFoundEnabled) return [];
-    const r = await fetchEnvelope<{ items: LostFoundItem[] }>('/api/ops-events/lost-found', {
+    const r = await fetchEnvelope<{ items: LostFoundItemWithMatch[] }>('/api/ops-events/lost-found', {
       cache: 'no-store',
       timeoutMs: TIMEOUT_MS_CHAT_AUX
     });
@@ -667,7 +667,7 @@ export default function ChatPage() {
       String(msg.message || '').trim() ||
       (msg.room_no ? `${msg.room_no}호 분실물` : '분실물');
 
-    const result = await fetchEnvelope<{ item: LostFoundItem }>(
+    const result = await fetchEnvelope<{ item: LostFoundItemWithMatch }>(
       '/api/ops-events/lost-found',
       {
         method: 'POST',

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { MOCK_MAINTENANCE_ROWS } from '@/lib/chat/opsConsoleMock';
 import ChatLostFoundSection from '@/components/chat/ops-console/ChatLostFoundSection';
-import type { LostFoundItem } from '@/lib/ops-events/types';
+import type { LostFoundItemWithMatch } from '@/lib/ops-events/types';
 import type { ChatMessage } from '@/lib/types';
 
 type EventTab = 'lost_found' | 'maintenance' | 'other';
@@ -12,7 +12,7 @@ type Props = {
   selectedRoomNo: string | null;
   /** Kept for caller compatibility; recent-photo / quick-register UI removed. */
   recentPhotoMessage: ChatMessage | null;
-  lostFoundItems: LostFoundItem[];
+  lostFoundItems: LostFoundItemWithMatch[];
   lostFoundEnabled: boolean;
   actorId: string | null;
   /** Kept for caller compatibility; quick-register UI removed. */

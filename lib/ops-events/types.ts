@@ -46,3 +46,12 @@ export type OpsEventHistoryRow = {
   transition_note: string | null;
   created_at: string;
 };
+
+import type { GuestMatchView } from '@/lib/stayJournal/stayGuestLookup';
+
+/** Phase 1: dynamic stay-journal match on GET (not a DB column). */
+export type LostFoundGuestMatch = GuestMatchView;
+
+export type LostFoundItemWithMatch = LostFoundItem & {
+  guestMatch?: GuestMatchView | null;
+};

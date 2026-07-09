@@ -7,7 +7,11 @@ import {
   LostFoundConflictError,
   LostFoundValidationError
 } from '@/lib/ops-events/lostFoundService';
-import type { LostFoundStatus } from '@/lib/ops-events/types';
+import type { LostFoundItem, LostFoundItemWithMatch, LostFoundStatus } from '@/lib/ops-events/types';
+import {
+  lookupGuestMatchForItem,
+  unavailableGuestMatch
+} from '@/lib/stayJournal/stayGuestLookup';
 
 const VALID_STATUSES = new Set([
   'registered',
@@ -18,6 +22,38 @@ const VALID_STATUSES = new Set([
   'cancelled'
 ]);
 
+const MATCH_TIMEOUT_MS = 1500;
+
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function enrichWithGuestMatch(items: LostFoundItem[]): Promise<LostFoundItemWithMatch[]> {
+  return Promise.all(
+    items.map(async (item) => {
+      const foundAt = item.snap_message_created_at || item.created_at;
+      const match = await withTimeout(
+        lookupGuestMatchForItem({ room_no: item.snap_room_no, found_at: foundAt }),
+        MATCH_TIMEOUT_MS
+      );
+      return {
+        ...item,
+        guestMatch: match || unavailableGuestMatch('숙박일지 조회 지연')
+      };
+    })
+  );
+}
+
 export async function GET(req: NextRequest) {
   const disabled = opsEventsDisabledResponse();
   if (disabled) return disabled;
@@ -27,7 +63,8 @@ export async function GET(req: NextRequest) {
     const status =
       statusParam && VALID_STATUSES.has(statusParam) ? (statusParam as LostFoundStatus) : undefined;
     const items = await listLostFoundItems({ status });
-    return jsonOk({ items });
+    const enriched = await enrichWithGuestMatch(items);
+    return jsonOk({ items: enriched });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return jsonErr('INTERNAL', msg, 500);
@@ -63,7 +100,9 @@ export async function POST(req: NextRequest) {
       idempotency_key
     });
 
-    return jsonOk({ item }, { status: 201 });
+    // Register response: enrich single item so Event Center can show match immediately
+    const [enriched] = await enrichWithGuestMatch([item]);
+    return jsonOk({ item: enriched || item }, { status: 201 });
   } catch (e: unknown) {
     if (e instanceof LostFoundConflictError) {
       return jsonErr('CONFLICT', e.message, 409);

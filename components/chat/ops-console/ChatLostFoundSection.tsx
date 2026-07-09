@@ -3,20 +3,117 @@
 import { useMemo, useState } from 'react';
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { LOST_FOUND_STATUS_UI } from '@/lib/ops-events/lostFoundFsm';
-import type { LostFoundItem } from '@/lib/ops-events/types';
+import type { LostFoundItem, LostFoundItemWithMatch } from '@/lib/ops-events/types';
+import type { GuestMatchView } from '@/lib/stayJournal/stayGuestLookup';
 import { formatKSTShort } from '@/lib/formatKST';
 
 type FilterMode = 'open' | 'all';
 
 type Props = {
-  items: LostFoundItem[];
+  items: LostFoundItemWithMatch[];
   lostFoundEnabled: boolean;
   actorId: string | null;
   onRefreshList: () => void;
 };
 
+function formatClock(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  // already HH:mm or ISO
+  const m = s.match(/(\d{1,2}):(\d{2})/);
+  if (m) return `${m[1]!.padStart(2, '0')}:${m[2]}`;
+  try {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleTimeString('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+  return s;
+}
+
+function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
+  if (!match) {
+    return (
+      <div className="mt-1.5 rounded-md bg-white/80 px-2 py-1.5 text-[10px] text-gray-500">
+        숙박일지 조회중...
+      </div>
+    );
+  }
+
+  if (match.status === 'unavailable') {
+    return (
+      <div className="mt-1.5 rounded-md border border-amber-100 bg-amber-50/80 px-2 py-1.5 text-[10px] text-amber-800">
+        {match.label}
+      </div>
+    );
+  }
+
+  if (match.status === 'none') {
+    return (
+      <div className="mt-1.5 rounded-md bg-white/80 px-2 py-1.5 text-[10px] text-gray-500">
+        ★☆☆☆☆ 숙박일지 매칭 없음
+      </div>
+    );
+  }
+
+  if (match.status === 'multiple') {
+    return (
+      <div className="mt-1.5 rounded-md border border-amber-100 bg-amber-50/80 px-2 py-1.5 text-[10px] text-amber-950">
+        <div className="font-bold">
+          {match.starsDisplay} {match.label}
+        </div>
+        <div className="mt-0.5 text-amber-800">후보 {match.candidates.length}건 — 확인 필요</div>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-3.5">
+          {match.candidates.map((c, i) => (
+            <li key={`${c.guest_name}-${c.stay_date}-${i}`}>
+              {c.segmentLabel || '—'}
+              {c.stay_date ? ` ${c.stay_date}` : ''} {c.guest_name}
+              {c.check_in || c.check_out
+                ? ` · ${formatClock(c.check_in) || '?'}~${formatClock(c.check_out) || '?'}`
+                : ''}
+              {c.reservation_source ? ` · ${c.reservation_source}` : ''}
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+
+  // exact
+  const cin = formatClock(match.check_in);
+  const cout = formatClock(match.check_out);
+  return (
+    <div className="mt-1.5 rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1.5 text-[10px] text-emerald-950">
+      <div className="font-bold">
+        {match.starsDisplay} {match.label}
+      </div>
+      <div className="mt-0.5 font-semibold">
+        {match.segmentLabel || '—'}
+        {match.stay_date ? ` · ${match.stay_date}` : ''}
+      </div>
+      {cin || cout ? (
+        <div className="text-emerald-800">
+          입실 {cin || '—'} / 퇴실 {cout || '—'}
+        </div>
+      ) : null}
+      {match.guest_name ? <div>고객: {match.guest_name}</div> : null}
+      {match.phone ? <div>전화: {match.phone}</div> : null}
+      {match.reservation_source ? <div>예약: {match.reservation_source}</div> : null}
+    </div>
+  );
+}
+
 /**
  * Event Center lost-found = list ops panel (no detail page / no /ops navigation).
+ * Guest match is automatic from GET enrichment (no "find guest" button).
  */
 export default function ChatLostFoundSection({
   items,
@@ -126,11 +223,9 @@ export default function ChatLostFoundSection({
           {visible.map((item) => {
             const statusUi = LOST_FOUND_STATUS_UI[item.status] || LOST_FOUND_STATUS_UI.registered;
             const busy = busyId === item.id;
+            const foundAt = item.snap_message_created_at || item.created_at;
             return (
-              <li
-                key={item.id}
-                className="rounded-lg border border-gray-100 bg-gray-50 p-2"
-              >
+              <li key={item.id} className="rounded-lg border border-gray-100 bg-gray-50 p-2">
                 <div className="flex gap-2">
                   {item.snap_image_url ? (
                     <img
@@ -150,13 +245,19 @@ export default function ChatLostFoundSection({
                         {statusUi.label}
                       </span>
                     </div>
-                    <div className="mt-0.5 truncate text-[10px] text-gray-700">
-                      {item.snap_room_no ? `${item.snap_room_no}호 · ` : ''}
-                      {item.item_description || '—'}
+                    <div className="mt-0.5 truncate text-[10px] font-semibold text-gray-800">
+                      {item.snap_room_no ? `${item.snap_room_no}호` : '객실 미상'}
+                      {item.item_description ? ` · ${item.item_description}` : ''}
                     </div>
-                    <div className="text-[10px] text-gray-500">{formatKSTShort(item.created_at)}</div>
+                    <div className="text-[10px] text-gray-500">
+                      발견 {formatKSTShort(foundAt)}
+                      {item.snap_sender ? ` · ${item.snap_sender}` : ''}
+                    </div>
                   </div>
                 </div>
+
+                <GuestMatchBlock match={item.guestMatch} />
+
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {item.status === 'registered' ? (
                     <button
