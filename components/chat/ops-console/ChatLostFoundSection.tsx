@@ -189,16 +189,18 @@ function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
         <div className="font-bold break-words">
           {match.starsDisplay} {match.label}
         </div>
-        <div className="mt-0.5 text-amber-800">후보 {match.candidates.length}건 — 확인 필요</div>
-        <ol className="mt-1 list-decimal space-y-0.5 pl-3.5 break-words">
+        <ol className="mt-1 list-decimal space-y-1 pl-3.5 break-words">
           {match.candidates.map((c, i) => (
             <li key={`${c.guest_name}-${c.stay_date}-${i}`}>
-              {c.segmentLabel || '—'}
-              {c.stay_date ? ` ${c.stay_date}` : ''} {c.guest_name}
+              <span className="font-semibold">
+                {c.segmentLabel || '—'}
+                {c.stay_date ? ` · ${c.stay_date}` : ''} {c.guest_name}
+              </span>
               {c.check_in || c.check_out
                 ? ` · ${formatClock(c.check_in) || '?'}~${formatClock(c.check_out) || '?'}`
                 : ''}
-              {c.reservation_source ? ` · ${c.reservation_source}` : ''}
+              {c.phone ? ` · ${c.phone}` : ''}
+              {c.reason ? <div className="text-amber-800">{c.reason}</div> : null}
             </li>
           ))}
         </ol>

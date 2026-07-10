@@ -1,13 +1,12 @@
 import { getStayJournalAdmin, isStayJournalConfigured } from '@/lib/stayJournal/client';
 import {
   classifyGuestMatch,
-  normName,
   type CustomerRow,
   type LostFoundMatchResult,
   type ShadowGuestRow
 } from '@/lib/stayJournal/guestMatchCore';
 
-/** UI DTO for Event Center (Phase 1 — dynamic match, no DB snapshot). */
+/** UI DTO for Event Center (dynamic match, no DB snapshot). */
 export type GuestMatchViewStatus = 'exact' | 'multiple' | 'none' | 'unavailable';
 
 export type GuestMatchView = {
@@ -30,6 +29,7 @@ export type GuestMatchView = {
     check_in: string | null;
     check_out: string | null;
     reservation_source: string | null;
+    reason?: string | null;
   }>;
 };
 
@@ -58,18 +58,27 @@ function starsDisplay(n: 1 | 2 | 3 | 4 | 5 | null): string {
   return '★'.repeat(n) + '☆'.repeat(5 - n);
 }
 
-/** Map core result → Event Center confidence stars. */
-export function toGuestMatchView(result: LostFoundMatchResult): GuestMatchView {
-  const distinctNames = [
-    ...new Set(result.match_candidates.map((c) => normName(c.guest_name)).filter(Boolean))
-  ];
+function mapCandidates(result: LostFoundMatchResult) {
+  return result.match_candidates.slice(0, 3).map((c) => ({
+    guest_name: c.guest_name,
+    stay_date: c.stay_date,
+    segmentLabel: segmentLabel(c.segment),
+    phone: null as string | null,
+    check_in: c.check_in,
+    check_out: c.check_out,
+    reservation_source: c.reservation_source,
+    reason: c.reason ?? null
+  }));
+}
 
-  if (distinctNames.length > 1) {
+/** Map core result → Event Center confidence stars (occupancy / prior-guest). */
+export function toGuestMatchView(result: LostFoundMatchResult): GuestMatchView {
+  if (result.match_confidence === 'ambiguous') {
     return {
       status: 'multiple',
       stars: 2,
       starsDisplay: starsDisplay(2),
-      label: '확인 필요',
+      label: `후보 ${Math.min(result.match_candidates.length, 3)}건 · 확인 필요`,
       segmentLabel: null,
       guest_name: null,
       phone: null,
@@ -77,19 +86,15 @@ export function toGuestMatchView(result: LostFoundMatchResult): GuestMatchView {
       check_in: null,
       check_out: null,
       reservation_source: null,
-      candidates: result.match_candidates.map((c) => ({
-        guest_name: c.guest_name,
-        stay_date: c.stay_date,
-        segmentLabel: segmentLabel(c.segment),
-        phone: null,
-        check_in: c.check_in,
-        check_out: c.check_out,
-        reservation_source: c.reservation_source
-      }))
+      candidates: mapCandidates(result)
     };
   }
 
-  if (result.match_confidence === 'no_guest_name' || result.status === 'unmatched') {
+  if (
+    result.match_confidence === 'no_guest_name' ||
+    result.match_confidence === 'no_candidate' ||
+    result.status === 'unmatched'
+  ) {
     return {
       status: 'none',
       stars: 1,
@@ -106,12 +111,17 @@ export function toGuestMatchView(result: LostFoundMatchResult): GuestMatchView {
     };
   }
 
-  if (result.match_confidence === 'exact_name_single') {
+  const needsTime = /시간 확인 필요/.test(result.match_reason || '');
+  const label =
+    result.match_reason ||
+    (result.match_confidence === 'prior_guest_strong' ? '직전 이용객 일치' : '직전 이용객');
+
+  if (result.match_confidence === 'prior_guest_strong' && !needsTime) {
     return {
       status: 'exact',
       stars: 5,
       starsDisplay: starsDisplay(5),
-      label: '거의 확실',
+      label,
       segmentLabel: segmentLabel(result.segment),
       guest_name: result.matched_guest_name,
       phone: result.matched_guest_phone,
@@ -123,12 +133,12 @@ export function toGuestMatchView(result: LostFoundMatchResult): GuestMatchView {
     };
   }
 
-  // exact name, no/ambiguous phone
   return {
     status: 'exact',
     stars: 4,
     starsDisplay: starsDisplay(4),
-    label: result.match_confidence === 'exact_name_multiple' ? '이름 일치 · 전화 확인' : '이름 일치',
+    label:
+      needsTime && !label.includes('시간 확인 필요') ? `${label} · 시간 확인 필요` : label,
     segmentLabel: segmentLabel(result.segment),
     guest_name: result.matched_guest_name,
     phone: result.matched_guest_phone,
@@ -158,8 +168,8 @@ export function unavailableGuestMatch(reason = '숙박일지 연결 안 됨'): G
 }
 
 /**
- * room_no + found_at → stay-journal match (ledger_entries_shadow).
- * Window: discovery day (KST) + previous day. Includes dayuse + stay.
+ * room_no + found_at → prior-guest match via occupancy timeline.
+ * Window: discovery day (KST) + previous day (ledger date = check-in day).
  */
 export async function matchLostFoundGuest(input: {
   room_no: string;
@@ -202,20 +212,19 @@ export async function matchLostFoundGuest(input: {
     };
   });
 
-  const named = rows.filter((r) => normName(r.guest_name) !== '');
-  const distinctNames = [...new Set(named.map((r) => normName(r.guest_name)))];
+  // First pass without phones to pick winner / ambiguity
+  const draft = classifyGuestMatch(rows, input.found_at, []);
   let customers: CustomerRow[] = [];
-  if (distinctNames.length === 1 && named[0]?.guest_name) {
-    const exactName = named[0].guest_name.trim();
+  if (draft.status === 'matched' && draft.matched_guest_name) {
     const { data: custData, error: custErr } = await admin
       .from('customers')
       .select('name, phone_normalized')
-      .eq('name', exactName);
+      .eq('name', draft.matched_guest_name.trim());
     if (custErr) throw custErr;
     customers = (custData ?? []) as CustomerRow[];
   }
 
-  return classifyGuestMatch(rows, customers);
+  return classifyGuestMatch(rows, input.found_at, customers);
 }
 
 export async function lookupGuestMatchForItem(input: {
