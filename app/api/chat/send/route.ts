@@ -6,6 +6,8 @@ import { emitLatency } from '@/lib/chat/latencyTrace';
 import { waitUntil } from '@vercel/functions';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
+import { getChatRoomById, parseOptionalChatRoomId } from '@/lib/services/chatRoom';
+import { DefaultChatRoomConfigError } from '@/lib/chat/chatRoomDefaults';
 import { assertStaffInviteCanSend } from '@/lib/services/staffInvites';
 import { uploadImage } from '@/lib/services/upload';
 import { mapIntentIssueTypeToKo, parseMessage } from '@/lib/aiParser';
@@ -469,6 +471,19 @@ export async function POST(req: NextRequest) {
 
     const ticket_id = String(formData.get('ticket_id') || '') || null;
     const room_no = String(formData.get('room_no') || '') || null;
+    const chatRoomIdRaw = parseOptionalChatRoomId(
+      String(formData.get('chat_room_id') || ''),
+      String(formData.get('chatRoomId') || '')
+    );
+    if (chatRoomIdRaw && !isUuid(chatRoomIdRaw)) {
+      return jsonErr('INVALID_CHAT_ROOM_ID', '유효하지 않은 채팅방 ID입니다.', 400);
+    }
+    if (chatRoomIdRaw) {
+      const room = await getChatRoomById(chatRoomIdRaw);
+      if (!room) {
+        return jsonErr('CHAT_ROOM_NOT_FOUND', '채팅방을 찾을 수 없습니다.', 404);
+      }
+    }
     const message = String(formData.get('message') || '');
     const user_id = String(formData.get('user_id') || '');
     const actor_name = String(formData.get('actor_name') || '').trim() || null;
@@ -585,6 +600,7 @@ export async function POST(req: NextRequest) {
     const saved = await createChatMessage({
       ticket_id,
       room_no,
+      chatRoomId: chatRoomIdRaw,
       message: message || '',
       user_id,
       sender_side,
@@ -805,7 +821,13 @@ export async function POST(req: NextRequest) {
     console.error('[CHAT_SEND_ERROR]', {
       error: error?.message || String(error)
     });
-    const message = error?.message || '메시지 저장 실패';
-    return jsonErr('CHAT_SEND_FAILED', message, 500);
+    const errMessage = error?.message || '메시지 저장 실패';
+    if (errMessage === 'CHAT_ROOM_NOT_FOUND') {
+      return jsonErr('CHAT_ROOM_NOT_FOUND', '채팅방을 찾을 수 없습니다.', 404);
+    }
+    if (errMessage === 'CHAT_DEFAULT_ROOM_UNAVAILABLE' || error instanceof DefaultChatRoomConfigError) {
+      return jsonErr('CHAT_DEFAULT_ROOM_UNAVAILABLE', '기본 채팅방을 사용할 수 없습니다.', 500);
+    }
+    return jsonErr('CHAT_SEND_FAILED', errMessage, 500);
   }
 }

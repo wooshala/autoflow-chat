@@ -3,6 +3,9 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { IS_MOCK } from '@/lib/env';
 import { AiAction, ChatMessage, DeletedReason, MessagePriority, MessageType, SenderSide } from '@/lib/types';
 import { detectAndTranslate } from '@/lib/services/translation';
+import { getChatRoomById, getDefaultChatRoom, resolveDefaultChatRoomId } from '@/lib/services/chatRoom';
+import { DefaultChatRoomConfigError } from '@/lib/chat/chatRoomDefaults';
+import { isMissingChatRoomIdColumnError } from '@/lib/chat/dbColumnErrors';
 
 function withUser(msg: ChatMessage) {
   const store = getMockStore();
@@ -10,79 +13,120 @@ function withUser(msg: ChatMessage) {
   return { ...msg, user: user ? { id: user.id, name: user.name, role: user.role, language: user.language } : undefined };
 }
 
-export async function listChatMessages(limit = 50): Promise<ChatMessage[]> {
+export type ListChatMessagesOptions = {
+  /** When set, return only messages in this messenger chat room. */
+  chatRoomId?: string | null;
+};
+
+export async function listChatMessages(limit = 50, options?: ListChatMessagesOptions): Promise<ChatMessage[]> {
   if (IS_MOCK || !supabaseAdmin) {
     const store = getMockStore();
-    return store.messages.slice(-limit).sort((a, b) => a.created_at.localeCompare(b.created_at)).map(withUser);
+    let rows = store.messages;
+    if (options?.chatRoomId) {
+      rows = rows.filter((m) => String((m as ChatMessage).chat_room_id || '') === String(options.chatRoomId));
+    }
+    return rows.slice(-limit).sort((a, b) => a.created_at.localeCompare(b.created_at)).map(withUser);
   }
 
+  const chatRoomId = options?.chatRoomId?.trim() || null;
   console.log('[CHAT_LIST_QUERY_ORDER]', {
-    scope: 'all_messages',
+    scope: chatRoomId ? 'room_messages' : 'all_messages',
+    chat_room_id: chatRoomId,
     order: 'created_at_desc',
     limit,
-    filters: 'none (entire chat_messages)',
+    filters: chatRoomId ? 'chat_room_id' : 'none (entire chat_messages)',
     limit_applies_after_order: true
   });
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('chat_messages')
     .select('*, user:users(id,name,role,language)')
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (chatRoomId) {
+    query = query.eq('chat_room_id', chatRoomId);
+  }
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data || []) as ChatMessage[];
 }
 
 /** Rows with created_at strictly after `sinceIso` (for delta sync). */
-export async function listChatMessagesSince(sinceIso: string, limit = 40): Promise<ChatMessage[]> {
+export async function listChatMessagesSince(
+  sinceIso: string,
+  limit = 40,
+  options?: ListChatMessagesOptions
+): Promise<ChatMessage[]> {
   if (IS_MOCK || !supabaseAdmin) {
     const store = getMockStore();
-    return store.messages
-      .filter((m) => m.created_at > sinceIso)
+    let rows = store.messages.filter((m) => m.created_at > sinceIso);
+    if (options?.chatRoomId) {
+      rows = rows.filter((m) => String((m as ChatMessage).chat_room_id || '') === String(options.chatRoomId));
+    }
+    return rows
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
       .slice(-limit)
       .map(withUser);
   }
 
+  const chatRoomId = options?.chatRoomId?.trim() || null;
   console.log('[CHAT_LIST_QUERY_ORDER]', {
-    scope: 'all_messages_since',
+    scope: chatRoomId ? 'room_messages_since' : 'all_messages_since',
+    chat_room_id: chatRoomId,
     order: 'created_at_desc',
     since: sinceIso,
     limit
   });
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('chat_messages')
     .select('*, user:users(id,name,role,language)')
     .gt('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (chatRoomId) {
+    query = query.eq('chat_room_id', chatRoomId);
+  }
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data || []) as ChatMessage[];
 }
 
-export async function listChatMessagesByTicket(ticketId: string, limit = 50): Promise<ChatMessage[]> {
+export async function listChatMessagesByTicket(
+  ticketId: string,
+  limit = 50,
+  options?: ListChatMessagesOptions
+): Promise<ChatMessage[]> {
   if (IS_MOCK || !supabaseAdmin) {
     const store = getMockStore();
-    return store.messages
-      .filter(m => String(m.ticket_id) === String(ticketId))
+    let rows = store.messages.filter((m) => String(m.ticket_id) === String(ticketId));
+    if (options?.chatRoomId) {
+      rows = rows.filter((m) => String((m as ChatMessage).chat_room_id || '') === String(options.chatRoomId));
+    }
+    return rows
       .slice(-limit)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
       .map(withUser);
   }
 
+  const chatRoomId = options?.chatRoomId?.trim() || null;
   console.log('[CHAT_LIST_QUERY_ORDER]', {
-    scope: 'ticket_messages',
+    scope: chatRoomId ? 'room_ticket_messages' : 'ticket_messages',
+    chat_room_id: chatRoomId,
     ticket_id: ticketId,
     order: 'created_at_desc',
     limit
   });
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('chat_messages')
     .select('*, user:users(id,name,role,language)')
     .eq('ticket_id', ticketId)
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (chatRoomId) {
+    query = query.eq('chat_room_id', chatRoomId);
+  }
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data || []) as ChatMessage[];
@@ -97,6 +141,8 @@ export async function createChatMessage(input: {
   sender_name?: string | null;
   token_id?: string | null;
   sender_side?: SenderSide | null;
+  /** Messenger chat room. When omitted, default room is resolved server-side. */
+  chatRoomId?: string | null;
   room_no?: string | null;
   image_url?: string | null;
   image_storage_path?: string | null;
@@ -107,6 +153,35 @@ export async function createChatMessage(input: {
   translated_text?: ChatMessage['translated_text'];
   back_translated_text?: ChatMessage['back_translated_text'];
 }): Promise<ChatMessage> {
+  const explicitChatRoomId = input.chatRoomId?.trim() || null;
+  let resolvedChatRoomId: string;
+  try {
+    resolvedChatRoomId = explicitChatRoomId || resolveDefaultChatRoomId();
+  } catch (e) {
+    if (e instanceof DefaultChatRoomConfigError) {
+      console.error('[CHAT_DEFAULT_ROOM_ENV_MISMATCH]', { code: e.code });
+      throw new Error('CHAT_DEFAULT_ROOM_UNAVAILABLE');
+    }
+    throw e;
+  }
+  if (!resolvedChatRoomId) {
+    console.error('[CHAT_DEFAULT_ROOM_UNRESOLVED]', { explicitChatRoomId });
+    throw new Error('CHAT_DEFAULT_ROOM_UNAVAILABLE');
+  }
+
+  if (!IS_MOCK && supabaseAdmin) {
+    const room = explicitChatRoomId
+      ? await getChatRoomById(explicitChatRoomId)
+      : await getDefaultChatRoom();
+    if (!room) {
+      console.error('[CHAT_ROOM_UNAVAILABLE]', {
+        chat_room_id: resolvedChatRoomId,
+        explicit: Boolean(explicitChatRoomId)
+      });
+      throw new Error(explicitChatRoomId ? 'CHAT_ROOM_NOT_FOUND' : 'CHAT_DEFAULT_ROOM_UNAVAILABLE');
+    }
+  }
+
   const insertPayload = {
     user_id: input.user_id,
     message: input.message,
@@ -116,6 +191,7 @@ export async function createChatMessage(input: {
     sender_name: input.sender_name || null,
     token_id: input.token_id || null,
     sender_side: input.sender_side || null,
+    chat_room_id: resolvedChatRoomId,
     room_no: input.room_no || null,
     image_url: input.image_url || null,
     image_storage_path: input.image_storage_path || null,
@@ -136,6 +212,7 @@ export async function createChatMessage(input: {
     sender_name: insertPayload.sender_name,
     token_id: insertPayload.token_id,
     sender_side: insertPayload.sender_side,
+    chat_room_id: insertPayload.chat_room_id,
     room_no: insertPayload.room_no,
     image_url: insertPayload.image_url,
     image_storage_path: insertPayload.image_storage_path,
@@ -199,6 +276,15 @@ export async function createChatMessage(input: {
   if (error && (String(error?.message || '').includes('phrase_key') || String(error?.message || '').includes('sender_name') || String(error?.message || '').includes('token_id'))) {
     const { phrase_key: _p, sender_name: _s, token_id: _t, ...fallbackPayload } = insertPayload as any;
     console.log('[CHAT_INSERT_SUPABASE_PAYLOAD_FALLBACK_NO_STAFF_META]', fallbackPayload);
+    ({ data, error } = await supabaseAdmin
+      .from('chat_messages')
+      .insert(fallbackPayload)
+      .select('id, created_at')
+      .single());
+  }
+  if (error && isMissingChatRoomIdColumnError(error)) {
+    const { chat_room_id: _ignored, ...fallbackPayload } = insertPayload as any;
+    console.log('[CHAT_INSERT_SUPABASE_PAYLOAD_FALLBACK_NO_CHAT_ROOM_ID]', fallbackPayload);
     ({ data, error } = await supabaseAdmin
       .from('chat_messages')
       .insert(fallbackPayload)

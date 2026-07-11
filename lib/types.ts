@@ -139,6 +139,9 @@ export interface ChatMessage {
   phrase_key?: string | null;
   sender_name?: string | null;
   token_id?: string | null;
+  /** 메신저 채팅방 (chat_rooms.id). Phase 1A: nullable until migration backfill completes. */
+  chat_room_id: string | null;
+  /** 호텔 객실번호 메타데이터 (채팅방 ID가 아님). */
   room_no: string | null;
   image_url: string | null;
   image_storage_path: string | null;

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { listChatMessages, listChatMessagesByTicket, listChatMessagesSince } from '@/lib/services/chat';
 import { supabaseAdmin } from '@/lib/supabase';
+import { isUuid } from '@/lib/ops-events/guard';
 
 // supabase-js uses fetch internally; without these, Next.js Data Cache caches the
 // list query per URL (limit-keyed) and can serve a stale window (e.g. limit=500
@@ -53,6 +54,10 @@ export async function GET(req: NextRequest) {
     const limit = Number(searchParams.get('limit') || '50');
     const ticketId = searchParams.get('ticket_id');
     const since = searchParams.get('since')?.trim() || null;
+    const chatRoomIdRaw = searchParams.get('chat_room_id')?.trim() || null;
+    if (chatRoomIdRaw && !isUuid(chatRoomIdRaw)) {
+      return jsonErr('VALIDATION', 'Invalid chat_room_id', 400);
+    }
     if (DEBUG_VERBOSE) {
       console.log('[CHAT_LIST_REQUEST]', {
         limit,
@@ -188,11 +193,12 @@ export async function GET(req: NextRequest) {
     }
 
     const runQuery = async () => {
+      const roomOpts = chatRoomIdRaw ? { chatRoomId: chatRoomIdRaw } : undefined;
       return ticketId
-        ? await listChatMessagesByTicket(ticketId, limit)
+        ? await listChatMessagesByTicket(ticketId, limit, roomOpts)
         : since
-          ? await listChatMessagesSince(since, limit)
-          : await listChatMessages(limit);
+          ? await listChatMessagesSince(since, limit, roomOpts)
+          : await listChatMessages(limit, roomOpts);
     };
 
     let messages = await runQuery();

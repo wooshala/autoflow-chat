@@ -46,24 +46,24 @@ function seedStore() {
   const messages: ChatMessage[] = [
     {
       id: 'm-1', user_id: 'u-front', message: '오늘 103호 체크인 오후 3시로 변경됐습니다', message_type: 'text',
-      room_no: null, image_url: null, image_storage_path: null, original_lang: 'ko',
+      chat_room_id: null, room_no: null, image_url: null, image_storage_path: null, original_lang: 'ko',
       translated_text: { ko: '오늘 103호 체크인 오후 3시로 변경됐습니다', vi: 'Check-in phòng 103 hôm nay đổi sang 3 giờ chiều', ru: 'Заселение в 103 номер сегодня перенесено на 15:00', en: 'Room 103 check-in changed to 3pm today' },
       ticket_id: null, created_at: nowMinus(70), user: { id: 'u-front', name: '이프론트', role: 'front', language: 'ko' }
     },
     {
       id: 'm-2', user_id: 'u-vn', message: 'Phòng 203 có vấn đề với đường thoát nước', message_type: 'text',
-      room_no: '203', image_url: null, image_storage_path: null, original_lang: 'vi',
+      chat_room_id: null, room_no: '203', image_url: null, image_storage_path: null, original_lang: 'vi',
       translated_text: { ko: '203호 배수구에 문제가 있습니다', vi: 'Phòng 203 có vấn đề với đường thoát nước', ru: 'В номере 203 проблема со сливом', en: 'Room 203 has a drainage problem' },
       ticket_id: null, created_at: nowMinus(41), user: { id: 'u-vn', name: 'Nguyen Van A', role: 'cleaning', language: 'vi' }
     },
     {
       id: 'm-3', user_id: 'u-vn', message: '🔧 203호 설비 접수됨', message_type: 'maintenance',
-      room_no: '203', image_url: photo1.image_url, image_storage_path: photo1.storage_path, original_lang: 'ko', translated_text: null,
+      chat_room_id: null, room_no: '203', image_url: photo1.image_url, image_storage_path: photo1.storage_path, original_lang: 'ko', translated_text: null,
       ticket_id: 't-203', created_at: nowMinus(40), user: { id: 'u-vn', name: 'Nguyen Van A', role: 'cleaning', language: 'vi' }
     },
     {
       id: 'm-4', user_id: 'u-ru', message: 'В номере 307 сломан кондиционер', message_type: 'text',
-      room_no: '307', image_url: null, image_storage_path: null, original_lang: 'ru',
+      chat_room_id: null, room_no: '307', image_url: null, image_storage_path: null, original_lang: 'ru',
       translated_text: { ko: '307호 에어컨이 고장났습니다', vi: 'Máy lạnh phòng 307 bị hỏng', ru: 'В номере 307 сломан кондиционер', en: 'Air conditioner in room 307 is broken' },
       ticket_id: null, created_at: nowMinus(16), user: { id: 'u-ru', name: 'Anna Ivanova', role: 'cleaning', language: 'ru' }
     }

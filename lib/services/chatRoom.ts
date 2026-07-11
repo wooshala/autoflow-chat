@@ -1,6 +1,38 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { IS_MOCK } from '@/lib/env';
-import type { ChatRoomParticipantListItem } from '@/lib/types';
+import { isUuid } from '@/lib/ops-events/guard';
+import {
+  resolveDefaultChatRoomId,
+  SEEDED_DEFAULT_CHAT_ROOM_ID
+} from '@/lib/chat/chatRoomDefaults';
+import type { ChatRoom, ChatRoomParticipantListItem } from '@/lib/types';
+
+export {
+  resolveDefaultChatRoomId,
+  SEEDED_DEFAULT_CHAT_ROOM_ID,
+  SEEDED_DEFAULT_CHAT_ROOM_NAME,
+  parseOptionalChatRoomId,
+  DefaultChatRoomConfigError,
+  resolveDefaultChatRoomIdFromEnv
+} from '@/lib/chat/chatRoomDefaults';
+
+export async function getChatRoomById(roomId: string): Promise<ChatRoom | null> {
+  if (!roomId || !isUuid(roomId)) return null;
+  if (IS_MOCK || !supabaseAdmin) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from('chat_rooms')
+    .select('id, name, created_at')
+    .eq('id', roomId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as ChatRoom | null) ?? null;
+}
+
+export async function getDefaultChatRoom(): Promise<ChatRoom | null> {
+  return getChatRoomById(resolveDefaultChatRoomId());
+}
 
 /** status=active 참가자 + users 이름 조회 (joined_at 오름차순). */
 export async function listActiveChatRoomParticipants(
