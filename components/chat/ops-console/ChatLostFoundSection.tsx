@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChatPhotoThumb } from '@/components/chat/ChatPhotoLightbox';
 import { fetchEnvelope } from '@/lib/api/envelope';
-import { LOST_FOUND_STATUS_UI } from '@/lib/ops-events/lostFoundFsm';
+import { LOST_FOUND_STATUS_UI, isLostFoundTransitionAllowed } from '@/lib/ops-events/lostFoundFsm';
 import type { LostFoundItem, LostFoundItemWithMatch } from '@/lib/ops-events/types';
 import type { GuestMatchView } from '@/lib/stayJournal/stayGuestLookup';
 import { formatKSTShort } from '@/lib/formatKST';
@@ -142,7 +142,8 @@ function formatClock(v: string | null | undefined): string | null {
 function statusHeaderLabel(status: LostFoundItem['status']): string {
   if (status === 'registered') return '미해결';
   if (status === 'stored') return '보관중';
-  if (status === 'returned' || status === 'disposed') return '보관완료';
+  if (status === 'returned') return '찾아감';
+  if (status === 'disposed') return '보관완료';
   return LOST_FOUND_STATUS_UI[status]?.label || status;
 }
 
@@ -232,6 +233,54 @@ function GuestMatchBlock({ match }: { match?: GuestMatchView | null }) {
   );
 }
 
+/** "찾아감" 확인창: 상태 변경(returned) 전 확인. 취소 시 상태 변경/ API 호출 없음. 카드 레이아웃과 무관한 오버레이. */
+function LostFoundReturnConfirmModal({
+  item,
+  busy,
+  onCancel,
+  onConfirm
+}: {
+  item: LostFoundItemWithMatch;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${item.event_no} 찾아감 처리`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onCancel();
+      }}
+    >
+      <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
+        <div className="text-sm font-extrabold text-gray-900">{item.event_no}</div>
+        <p className="mt-2 text-xs leading-snug text-gray-700">고객에게 분실물을 반환했습니까?</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded-md border border-gray-200 px-3 py-1.5 text-[10px] font-bold text-gray-600 disabled:opacity-40"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+            className="rounded-md bg-green-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-40"
+          >
+            {busy ? '…' : '찾아감 처리'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Event Center lost-found = list ops panel (no detail page / no /ops navigation).
  * Guest match is automatic from GET enrichment (no "find guest" button).
@@ -246,6 +295,7 @@ export default function ChatLostFoundSection({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [editItem, setEditItem] = useState<LostFoundItemWithMatch | null>(null);
+  const [returnItem, setReturnItem] = useState<LostFoundItemWithMatch | null>(null);
 
   const visible = useMemo(() => {
     const sorted = [...items].sort(
@@ -283,6 +333,28 @@ export default function ChatLostFoundSection({
       alert(r.message || '보관 처리에 실패했습니다.');
       return;
     }
+    onRefreshList();
+  }
+
+  async function handleReturn(item: LostFoundItem) {
+    if (!actorId) return;
+    setBusyId(item.id);
+    // 반환 시각·처리자는 기존 transition 파이프라인(status_changed_at / status_changed_by /
+    // ops_event_history)을 그대로 사용한다. 별도 반환시각 컬럼·migration 없음.
+    const r = await fetchEnvelope<{ item: LostFoundItem }>(
+      `/api/ops-events/lost-found/${item.id}/transitions`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_status: 'returned', actor_id: actorId })
+      }
+    );
+    setBusyId(null);
+    if (!r.ok) {
+      alert(r.message || '찾아감 처리에 실패했습니다.');
+      return;
+    }
+    setReturnItem(null);
     onRefreshList();
   }
 
@@ -342,6 +414,16 @@ export default function ChatLostFoundSection({
             if (busyId !== editItem.id) setEditItem(null);
           }}
           onSave={(form) => void handleSaveEdit(editItem, form)}
+        />
+      ) : null}
+      {returnItem ? (
+        <LostFoundReturnConfirmModal
+          item={returnItem}
+          busy={busyId === returnItem.id}
+          onCancel={() => {
+            if (busyId !== returnItem.id) setReturnItem(null);
+          }}
+          onConfirm={() => void handleReturn(returnItem)}
         />
       ) : null}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -453,12 +535,22 @@ export default function ChatLostFoundSection({
                       onClick={() => void handleStore(item)}
                       className="rounded-md bg-indigo-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-40"
                     >
-                      {busy ? '…' : '보관 처리'}
+                      {busy ? '…' : '보관'}
                     </button>
                   ) : item.status === 'stored' ? (
                     <span className="rounded-md bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700">
                       보관됨
                     </span>
+                  ) : null}
+                  {isLostFoundTransitionAllowed(item.status, 'returned') ? (
+                    <button
+                      type="button"
+                      disabled={busy || !actorId}
+                      onClick={() => setReturnItem(item)}
+                      className="rounded-md bg-green-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-40"
+                    >
+                      {busy ? '…' : '찾아감'}
+                    </button>
                   ) : null}
                   <button
                     type="button"

@@ -2,7 +2,8 @@ import type { LostFoundStatus } from '@/lib/ops-events/types';
 import { LOST_FOUND_TERMINAL_STATUSES } from '@/lib/ops-events/types';
 
 const TRANSITIONS: Record<LostFoundStatus, LostFoundStatus[]> = {
-  registered: ['stored', 'cancelled'],
+  // 'returned': 주운 물건을 주인이 보관 절차 전에 바로 찾아가는 실제 운영 상황을 반영(찾아감 직접 처리).
+  registered: ['stored', 'returned', 'cancelled'],
   stored: ['owner_notified', 'returned', 'disposed', 'cancelled'],
   owner_notified: ['returned', 'disposed'],
   returned: ['stored'],
