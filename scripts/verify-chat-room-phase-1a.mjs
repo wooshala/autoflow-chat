@@ -2,6 +2,14 @@
 /**
  * Phase 1A verification: migration SQL checks + optional live API probes.
  *
+ * Rollout rules (mandatory):
+ * 1. Apply chat_room migrations ONLY via `supabase db push` — never statement-by-statement
+ *    in Dashboard SQL Editor.
+ * 2. Run `node scripts/verify-chat-room-phase-1a.mjs sql` immediately after migration.
+ * 3. Do not merge until API 6-case verification passes (`api` mode below).
+ * 4. Do not add NOT NULL migration until sql check reports chat_room_id null count = 0.
+ * 5. Do not merge Phase 1A into origin/main until app/chat/page.tsx encoding is fixed there.
+ *
  * Usage:
  *   node scripts/verify-chat-room-phase-1a.mjs sql
  *   BASE_URL=http://localhost:3000 node scripts/verify-chat-room-phase-1a.mjs api
