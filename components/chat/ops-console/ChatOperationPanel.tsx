@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { MOCK_MAINTENANCE_ROWS } from '@/lib/chat/opsConsoleMock';
 import ChatLostFoundSection from '@/components/chat/ops-console/ChatLostFoundSection';
+import ChatMaintenanceSection from '@/components/chat/ops-console/ChatMaintenanceSection';
 import type { LostFoundItemWithMatch } from '@/lib/ops-events/types';
 import type { ChatMessage } from '@/lib/types';
 
@@ -19,6 +19,8 @@ type Props = {
   onRegisterLostFound?: (msg: ChatMessage) => void;
   onSelectRoom: (roomNo: string | null) => void;
   onRefreshLostFoundList: () => void;
+  /** 값이 바뀌면 시설고장 탭이 목록을 다시 불러온다(등록 성공 후 갱신). */
+  maintenanceRefreshKey?: number;
 };
 
 const TABS: { id: EventTab; label: string }[] = [
@@ -33,7 +35,8 @@ export default function ChatOperationPanel({
   lostFoundEnabled,
   actorId,
   onSelectRoom,
-  onRefreshLostFoundList
+  onRefreshLostFoundList,
+  maintenanceRefreshKey
 }: Props) {
   const [tab, setTab] = useState<EventTab>('lost_found');
   const roomLabel = selectedRoomNo ? `${selectedRoomNo}호` : '전체';
@@ -91,20 +94,7 @@ export default function ChatOperationPanel({
 
         {tab === 'maintenance' ? (
           <section className="rounded-xl border border-gray-200 bg-white p-3">
-            <span className="text-[10px] text-gray-400">(PoC mock)</span>
-            <ul className="mt-2 space-y-1.5">
-              {MOCK_MAINTENANCE_ROWS.map((row) => (
-                <li
-                  key={row.id}
-                  className="flex items-center justify-between rounded-lg bg-gray-50 px-2 py-1.5 text-xs"
-                >
-                  <span className="font-semibold text-gray-800">
-                    {row.room_no}호 {row.title}
-                  </span>
-                  <span className="text-[10px] text-gray-400">{row.time_label}</span>
-                </li>
-              ))}
-            </ul>
+            <ChatMaintenanceSection refreshKey={maintenanceRefreshKey} />
           </section>
         ) : null}
 

@@ -140,6 +140,8 @@ export default function ChatPage() {
   /** LF-3B UX PoC: photo → ops-event entry (Preview; gated with lost-found flag) */
   const photoOpsUxEnabled = lostFoundEnabled;
   const [opsUxToast, setOpsUxToast] = useState<string | null>(null);
+  /** 시설고장 등록 성공 시 증가 → Event Center 시설고장 탭 목록 재조회 트리거. */
+  const [maintenanceRefreshKey, setMaintenanceRefreshKey] = useState(0);
   const opsConsoleEnabled = isChatOpsConsoleEnabled();
   const showOpsConsole = opsConsoleEnabled && !isMobileViewport;
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
@@ -794,6 +796,8 @@ export default function ChatPage() {
           : m
       )
     );
+    // 등록(create + manual-ticket) 전체 성공 확정 후에만 Event Center 시설고장 목록을 갱신한다.
+    setMaintenanceRefreshKey((v) => v + 1);
   }
 
   function clearInput() {
@@ -1127,6 +1131,7 @@ export default function ChatPage() {
             onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
             onSelectRoom={setConsoleRoomNo}
             onRefreshLostFoundList={() => void loadLostFoundIndex()}
+            maintenanceRefreshKey={maintenanceRefreshKey}
           />
         </div>
         {keypadOverlay}
