@@ -37,7 +37,53 @@ function mapRowToTicket(row: any): MaintenanceTicket {
   };
 }
 
-export async function listTickets(status?: string): Promise<MaintenanceTicket[]> {
+/** 목록 응답 전용 타입: 기존 MaintenanceTicket에 image_url만 additive. 공통 타입/매퍼는 불변. */
+export type MaintenanceTicketWithPhoto = MaintenanceTicket & { image_url: string | null };
+
+/**
+ * 시설고장 사진은 tickets가 아니라 티켓에 연결된 maintenance chat_message의 증거다.
+ * ticket_id 목록으로 chat_messages를 한 번에(배치) 조회하고, 티켓당 최신 1장을 매핑한다.
+ * 조건: message_type='maintenance' AND image_url 존재. (카드별 개별 요청 없음 = N+1 방지)
+ */
+async function fetchNewestMaintenancePhotos(ticketIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (ticketIds.length === 0) return map;
+
+  if (IS_MOCK || !supabaseAdmin) {
+    const store = getMockStore();
+    const idSet = new Set(ticketIds.map(String));
+    const msgs = (store.messages as any[])
+      .filter((m) => m?.message_type === 'maintenance' && m?.image_url && idSet.has(String(m?.ticket_id)))
+      .sort((a, b) => String(b?.created_at).localeCompare(String(a?.created_at)));
+    for (const m of msgs) {
+      const tid = String(m.ticket_id);
+      if (!map.has(tid)) map.set(tid, String(m.image_url)); // 정렬 DESC → 첫 건 = 최신
+    }
+    return map;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('chat_messages')
+    .select('ticket_id, image_url, created_at')
+    .in('ticket_id', ticketIds)
+    .eq('message_type', 'maintenance')
+    .not('image_url', 'is', null)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    // 사진 조회 실패는 목록을 막지 않는다(사진만 없음으로 폴백).
+    console.error('[MAINTENANCE_LIST_PHOTO_ERROR]', { message: error.message });
+    return map;
+  }
+  for (const row of (data || []) as any[]) {
+    const tid = String(row?.ticket_id || '');
+    const url = row?.image_url;
+    if (tid && url && !map.has(tid)) map.set(tid, String(url)); // DESC → 첫 건 = 최신
+  }
+  return map;
+}
+
+export async function listTickets(status?: string): Promise<MaintenanceTicketWithPhoto[]> {
   console.log('[MAINTENANCE_LIST_QUERY_START]', {
     is_mock: IS_MOCK,
     has_supabase_admin: !!supabaseAdmin,
@@ -49,7 +95,9 @@ export async function listTickets(status?: string): Promise<MaintenanceTicket[]>
     let tickets = store.tickets;
     if (status && status !== 'all') tickets = tickets.filter(t => t.status === status);
     console.log('[MAINTENANCE_LIST_MOCK]', { count: tickets.length });
-    return tickets.map(hydrateTicket);
+    const hydrated = tickets.map(hydrateTicket);
+    const photos = await fetchNewestMaintenancePhotos(hydrated.map(t => String(t.id)));
+    return hydrated.map(t => ({ ...t, image_url: photos.get(String(t.id)) ?? null }));
   }
 
   const { data, error } = await supabaseAdmin
@@ -78,7 +126,9 @@ export async function listTickets(status?: string): Promise<MaintenanceTicket[]>
     statuses: tickets.slice(0, 20).map(r => r.status),
   }, null, 2));
 
-  return tickets;
+  // 사진(image_url) additive 부착: ticket_id 목록으로 chat_messages 배치 1회 조회 → 티켓당 최신 1장.
+  const photos = await fetchNewestMaintenancePhotos(tickets.map(t => String(t.id)));
+  return tickets.map(t => ({ ...t, image_url: photos.get(String(t.id)) ?? null }));
 }
 
 export async function getTicket(id: string): Promise<MaintenanceTicket | null> {
