@@ -272,9 +272,9 @@ export async function updateTicket(id: string, input: {
   }
 
   // status는 기존과 100% 동일하게 항상 반영. room_no/issue_type/description은 전달됐을 때만 additive.
+  // NOTE: tickets 테이블에는 updated_at 컬럼이 없어 UPDATE payload에서 제외한다(schema cache 오류 방지).
   const patch: Record<string, unknown> = {
-    status: toDbStatus(input.status),
-    updated_at: new Date().toISOString()
+    status: toDbStatus(input.status)
   };
   if (input.room_no !== undefined) patch.room_no = input.room_no;
   if (input.issue_type !== undefined) patch.issue_type = input.issue_type;
