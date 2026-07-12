@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 카메라 촬영 임시 저장(앱 캐시). ACTION_IMAGE_CAPTURE의 EXTRA_OUTPUT 대상. -->
+    <cache-path name="camera" path="camera/" />
+</paths>
