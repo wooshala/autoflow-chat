@@ -251,18 +251,38 @@ export async function updateTicket(id: string, input: {
   status: TicketStatus;
   complete_photo_url?: string | null;
   complete_storage_path?: string | null;
+  // additive(선택): 카드 인라인 수정용 필드. 사진은 대상 아님.
+  room_no?: string;
+  issue_type?: IssueType;
+  description?: string;
 }): Promise<MaintenanceTicket | null> {
   if (IS_MOCK || !supabaseAdmin) {
     const store = getMockStore();
     const idx = store.tickets.findIndex(t => t.id === id);
     if (idx === -1) return null;
-    store.tickets[idx] = { ...store.tickets[idx], status: input.status, updated_at: new Date().toISOString() };
+    store.tickets[idx] = {
+      ...store.tickets[idx],
+      status: input.status,
+      ...(input.room_no !== undefined ? { room_no: input.room_no } : {}),
+      ...(input.issue_type !== undefined ? { issue_type: input.issue_type } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      updated_at: new Date().toISOString()
+    };
     return hydrateTicket(store.tickets[idx]);
   }
 
+  // status는 기존과 100% 동일하게 항상 반영. room_no/issue_type/description은 전달됐을 때만 additive.
+  const patch: Record<string, unknown> = {
+    status: toDbStatus(input.status),
+    updated_at: new Date().toISOString()
+  };
+  if (input.room_no !== undefined) patch.room_no = input.room_no;
+  if (input.issue_type !== undefined) patch.issue_type = input.issue_type;
+  if (input.description !== undefined) patch.description = input.description;
+
   const { error } = await supabaseAdmin
     .from('tickets')
-    .update({ status: toDbStatus(input.status), updated_at: new Date().toISOString() })
+    .update(patch)
     .eq('id', id);
   if (error) throw error;
 
