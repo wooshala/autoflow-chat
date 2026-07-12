@@ -72,14 +72,16 @@ export default function ChatMaintenanceSection({ refreshKey }: Props) {
     });
   }, []);
 
-  async function patchTicket(id: string, body: Record<string, unknown>) {
+  // PATCH 응답의 최신 ticket을 반환한다. 성공 응답에 이미 최신 상태가 있으므로 재조회에 의존하지 않는다.
+  async function patchTicket(id: string, body: Record<string, unknown>): Promise<MaintenanceTicket> {
     const res = await fetch(`/api/maintenance/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error(`maintenance patch ${res.status}`);
-    return res.json();
+    const data = (await res.json().catch(() => ({}))) as { ticket?: MaintenanceTicket; error?: string };
+    if (!res.ok || !data?.ticket) throw new Error(data?.error || `maintenance patch ${res.status}`);
+    return data.ticket;
   }
 
   // 미해결(open) / 수리완료(done) — 기존 상태값만 사용.
@@ -87,8 +89,11 @@ export default function ChatMaintenanceSection({ refreshKey }: Props) {
     if (busyId || t.status === toStatus) return; // 처리 중이거나 동일 상태면 요청 안 보냄
     setBusyId(String(t.id));
     try {
-      await patchTicket(String(t.id), { status: toStatus });
-      await load();
+      const updated = await patchTicket(String(t.id), { status: toStatus });
+      // 성공 응답 ticket으로 해당 카드 1개만 즉시 교체. image_url 등 UI 전용 필드는 { ...item, ...updated }로 보존.
+      setTickets((cur) =>
+        cur.map((item) => (String(item.id) === String(updated.id) ? { ...item, ...updated } : item))
+      );
     } catch {
       alert('상태 변경에 실패했습니다.');
     } finally {
@@ -114,14 +119,17 @@ export default function ChatMaintenanceSection({ refreshKey }: Props) {
     setBusyId(String(t.id));
     try {
       // status는 기존 값 그대로 유지, 필드만 수정. 사진은 대상 아님.
-      await patchTicket(String(t.id), {
+      const updated = await patchTicket(String(t.id), {
         status: t.status,
         room_no: editForm.room_no.trim(),
         issue_type: editForm.issue_type,
         description: editForm.description.trim()
       });
       setEditId(null);
-      await load();
+      // 성공 응답 ticket으로 해당 카드 1개만 즉시 교체(room_no/issue_type/description/status 반영, image_url 보존).
+      setTickets((cur) =>
+        cur.map((item) => (String(item.id) === String(updated.id) ? { ...item, ...updated } : item))
+      );
     } catch {
       alert('수정에 실패했습니다.');
     } finally {
