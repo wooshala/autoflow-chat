@@ -47,7 +47,8 @@ export default function ChatMaintenanceSection({ refreshKey }: Props) {
     setState('loading');
     setBrokenIds(new Set());
     try {
-      const res = await fetch('/api/maintenance/list');
+      // no-store: 상태변경/수정 PATCH 후 재조회가 캐시된 stale 목록을 받지 않도록(분실물 목록과 동일 정책).
+      const res = await fetch('/api/maintenance/list', { cache: 'no-store' });
       if (!res.ok) throw new Error(`maintenance list ${res.status}`);
       const json = (await res.json()) as { tickets?: TicketWithPhoto[] };
       // API가 created_at DESC로 이미 정렬 → 프론트 재정렬하지 않음.
