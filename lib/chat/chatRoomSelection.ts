@@ -80,6 +80,30 @@ export function buildChatSearchWithRoom(currentSearch: string, roomId: string | 
 }
 
 /**
+ * Phase 1.2.5 loader 이중 가드 — 응답을 현재 state에 반영할지(sequence + room identity).
+ * AbortController만으로 충분하다고 판단하지 않는다: seq/room 중 하나라도 어긋나면 반영 금지.
+ */
+export function roomLoadResultApplies(
+  requestSeq: number,
+  currentSeq: number,
+  requestRoomId: string | null | undefined,
+  currentRoomId: string | null | undefined
+): boolean {
+  return requestSeq === currentSeq && requestRoomId === currentRoomId;
+}
+
+/**
+ * Phase 1.2.5 send 응답 가드 — 전송 시작 시점 방(target)이 현재 선택 방과 같을 때만
+ * 현재 타임라인/입력/스크롤/오류 UI에 반영한다(A방 전송 응답이 B방 입력을 지우지 않도록).
+ */
+export function shouldApplySendResultForRoom(
+  targetRoomId: string | null | undefined,
+  currentRoomId: string | null | undefined
+): boolean {
+  return targetRoomId === currentRoomId;
+}
+
+/**
  * §16 임시 방어: Realtime 수신 행을 현재 방 타임라인에 반영할지.
  * null-permissive — chat_room_id가 없는(구 행/미지정) 수신은 절대 드롭하지 않고,
  * 명시적으로 다른 방인 경우에만 필터한다(모바일 메시지 유실 방지).

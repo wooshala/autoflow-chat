@@ -56,7 +56,8 @@ import {
   isValidChatRoomSelection,
   readStoredSelectedRoomId,
   resolveInitialSelectedChatRoomId,
-  shouldAcceptRealtimeRowForRoom
+  shouldAcceptRealtimeRowForRoom,
+  shouldApplySendResultForRoom
 } from '@/lib/chat/chatRoomSelection';
 
 function getDeviceSide(): SenderSide {
@@ -110,6 +111,9 @@ export default function ChatPage() {
   const chatRoomLayoutV1 = process.env.NEXT_PUBLIC_CHAT_ROOM_LAYOUT_V1 === '1';
   /** Phase 1.2: 선택된 채팅방 UUID(chat_room_id). room_no(객실번호)와 절대 혼용 금지. */
   const [selectedChatRoomId, setSelectedChatRoomId] = useState<string | null>(null);
+  // Phase 1.2.5 A-2: 비동기 응답 시점에 "현재 선택 방"을 읽기 위한 ref(전송 중 방 전환 감지용).
+  const selectedChatRoomIdRef = useRef<string | null>(selectedChatRoomId);
+  selectedChatRoomIdRef.current = selectedChatRoomId;
   /** Phase 1.2: ChatRoomSidebar가 로드한 방 목록(초기 선택/검증/헤더용). */
   const [chatRooms, setChatRooms] = useState<ChatRoomSummary[]>([]);
 
@@ -511,6 +515,9 @@ export default function ChatPage() {
     latSendClick({ client_nonce: clientNonce, sender_side: getDeviceSide(), room: roomNo || null, source: 'pc' });
     // Phase 1.2: 전송 시작 시점의 선택 방을 캡처(전송 중 선택이 바뀌어도 이 메시지는 캡처된 방으로 귀속).
     const targetChatRoomId = chatRoomLayoutV1 ? selectedChatRoomId : null;
+    // Phase 1.2.5 A-2: 응답 시점에 현재 방과 target이 같은지 확인. 다르면 현재 방 UI를 건드리지 않는다.
+    const targetRoomStillCurrent = () =>
+      !chatRoomLayoutV1 || shouldApplySendResultForRoom(targetChatRoomId, selectedChatRoomIdRef.current);
     const optimisticMessage: ChatMessage = {
       id: optimisticId,
       chat_room_id: targetChatRoomId,
@@ -579,7 +586,7 @@ export default function ChatPage() {
       if (!sendResult.ok) {
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
         log.error('[CHAT_SEND_CLIENT_ERROR]', sendResult);
-        alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        if (targetRoomStillCurrent()) alert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         return;
       }
 
@@ -590,7 +597,7 @@ export default function ChatPage() {
           data: sendResult.data,
           hint: 'data.message가 plain object가 아니거나 id 없음, 또는 평면 data에 user_id/id 없음 (본문 .message 문자열로 판별 안 함)'
         });
-        alert('채팅 응답이 비정상입니다.');
+        if (targetRoomStillCurrent()) alert('채팅 응답이 비정상입니다.');
         return;
       }
 
@@ -607,6 +614,16 @@ export default function ChatPage() {
       registerMessageIdForNonce(clientNonce, String(saved.id));
       logSendApiResponded(clientNonce, String(saved.id), saved.created_at);
       latApiResponded(clientNonce, String(saved.id), Boolean((saved as any)?.translated_text));
+      // Phase 1.2.5 A-2: 전송 중 방이 바뀌었으면 현재 방 타임라인/입력/urgent를 건드리지 않는다.
+      //   DB 저장은 성공(원래 방 재진입 시 재조회로 표시) — 실패로 처리하지 않는다.
+      if (!targetRoomStillCurrent()) {
+        log.info('[SEND_MERGE_SKIP_ROOM_SWITCHED]', {
+          target_chat_room_id: targetChatRoomId,
+          current_chat_room_id: selectedChatRoomIdRef.current,
+          message_id: String(saved.id)
+        });
+        return;
+      }
       setMessages((prev) => prev.map((m) => (m.id === optimisticId ? ({ ...m, ...saved } as ChatMessage) : m)));
       clearInput();
       setUrgentMode(false);
@@ -615,7 +632,7 @@ export default function ChatPage() {
         error: error?.message || String(error)
       });
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-      alert('채팅 전송 실패');
+      if (targetRoomStillCurrent()) alert('채팅 전송 실패');
     } finally {
       setSubmitting(false);
     }

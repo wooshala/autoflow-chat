@@ -5,6 +5,7 @@ import { CHAT_LIST_URL } from '@/lib/chatApi';
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
 import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
+import { roomLoadResultApplies } from '@/lib/chat/chatRoomSelection';
 
 const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
@@ -95,6 +96,8 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
       }
 
       const mySeq = ++loadSeqRef.current;
+      // Phase 1.2.5 A-1: 요청 시작 시점의 방 ID를 캡처(응답 반영 시 현재 방과 비교).
+      const requestRoomId = chatRoomIdRef.current;
       if (loadAbortRef.current) {
         loadAbortRef.current.abort();
         loadAbortRef.current = null;
@@ -119,8 +122,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         params.set('limit', String(opts?.since ? deltaListLimit : initialListLimit));
         if (opts?.since) params.set('since', opts.since);
         // Phase 1.2: 선택된 방이 있으면 서버에서 chat_room_id로 필터(클라 room_no 필터 금지).
-        const activeChatRoomId = chatRoomIdRef.current;
-        if (activeChatRoomId) params.set('chat_room_id', activeChatRoomId);
+        if (requestRoomId) params.set('chat_room_id', requestRoomId);
         const listUrl = `${CHAT_LIST_URL}?${params.toString()}`;
         const result = await fetchEnvelope<ChatListData>(listUrl, {
           cache: 'no-store',
@@ -165,7 +167,11 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
           log.debug('[CHAT_SET_MESSAGES_COUNT]', nextMessages?.length ?? 0);
         }
 
-        const stillCurrent = mySeq === loadSeqRef.current && !controller.signal.aborted && isMountedRef.current;
+        // Phase 1.2.5 A-1: sequence + room identity 이중 가드. AbortController만으로 판단하지 않는다.
+        const stillCurrent =
+          roomLoadResultApplies(mySeq, loadSeqRef.current, requestRoomId, chatRoomIdRef.current) &&
+          !controller.signal.aborted &&
+          isMountedRef.current;
         if (stillCurrent) {
           if (nextMessages) {
             const isFullLoad = !opts?.since;

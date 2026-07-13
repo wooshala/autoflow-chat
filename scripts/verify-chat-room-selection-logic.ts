@@ -7,7 +7,9 @@ import {
   buildChatSearchWithRoom,
   readStoredSelectedRoomId,
   isValidChatRoomSelection,
-  shouldAcceptRealtimeRowForRoom
+  shouldAcceptRealtimeRowForRoom,
+  roomLoadResultApplies,
+  shouldApplySendResultForRoom
 } from '../lib/chat/chatRoomSelection';
 
 let failed = 0;
@@ -63,6 +65,26 @@ eq('rt:other-room', shouldAcceptRealtimeRowForRoom(B, A), false);
 eq('rt:null-row-permissive', shouldAcceptRealtimeRowForRoom(null, A), true);
 eq('rt:empty-row-permissive', shouldAcceptRealtimeRowForRoom('', A), true);
 eq('rt:no-selection-accepts-all', shouldAcceptRealtimeRowForRoom(B, null), true);
+
+// --- Phase 1.2.5 A-1: loader 이중 가드(sequence + room identity) ---
+// 요청 A(seq 5, room A) 후 상태가 그대로면 반영
+eq('loader:apply-when-unchanged', roomLoadResultApplies(5, 5, A, A), true);
+// A 요청 후 B로 방 변경 → seq는 같아도 room이 달라 무시
+eq('loader:ignore-room-changed', roomLoadResultApplies(5, 5, A, B), false);
+// A 요청 후 새 로드가 seq 증가 → 이전 응답 무시
+eq('loader:ignore-seq-changed', roomLoadResultApplies(5, 6, A, A), false);
+// 둘 다 어긋남
+eq('loader:ignore-both-changed', roomLoadResultApplies(5, 6, A, B), false);
+// flag OFF(양쪽 undefined) → 반영
+eq('loader:apply-off-path', roomLoadResultApplies(3, 3, undefined, undefined), true);
+
+// --- Phase 1.2.5 A-2: send 응답 방 전환 가드 ---
+// A방 전송 후 A 유지 → 반영
+eq('send:apply-same-room', shouldApplySendResultForRoom(A, A), true);
+// A방 전송 후 B로 이동 → 현재 방(B) UI 건드리지 않음
+eq('send:skip-switched', shouldApplySendResultForRoom(A, B), false);
+// flag OFF(null/null) → 반영
+eq('send:apply-off-path', shouldApplySendResultForRoom(null, null), true);
 
 console.log(JSON.stringify({ phase: '1.2', mode: 'logic', ok: failed === 0, failed }, null, 2));
 if (failed > 0) process.exit(1);

@@ -3,6 +3,8 @@ import { listChatRoomSummaries } from '@/lib/services/chatRoom';
 
 // 읽기 전용. GET에서 DB write 없음. 재조회가 stale 캐시를 받지 않도록 동적 처리.
 export const dynamic = 'force-dynamic';
+// Phase 1.2.5 A-4: ISR/route 캐시 무효화(항상 최신 요약). 별도 장기 캐시 헤더는 추가하지 않는다.
+export const revalidate = 0;
 
 export async function GET() {
   try {
