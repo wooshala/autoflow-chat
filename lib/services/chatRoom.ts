@@ -118,6 +118,46 @@ function mapLastMessage(m: any): ChatRoomLastMessage {
 }
 
 /**
+ * 방별 최신 메시지 1건. 방 수와 무관하게 단일 조회.
+ * 1순위: DISTINCT ON RPC get_chat_room_last_messages(방별 최신, 조용한 방 누락 없음).
+ * 폴백: RPC 미적용(마이그레이션 전) 환경 — 기존 전체합산 쿼리(다중방+조용한방에서 누락 가능, 로깅).
+ *   → 마이그레이션 미적용 환경에서도 API 전체 장애를 막는 rollout 안전장치.
+ */
+async function fetchLastMessagesByRoom(ids: string[]): Promise<Map<string, ChatRoomLastMessage>> {
+  const lastByRoom = new Map<string, ChatRoomLastMessage>();
+  if (!supabaseAdmin || ids.length === 0) return lastByRoom;
+
+  const { data, error } = await supabaseAdmin.rpc('get_chat_room_last_messages', { p_room_ids: ids });
+  if (!error && Array.isArray(data)) {
+    for (const m of data as any[]) {
+      const rid = String(m?.chat_room_id || '');
+      if (!rid || lastByRoom.has(rid)) continue;
+      lastByRoom.set(rid, mapLastMessage(m));
+    }
+    return lastByRoom;
+  }
+
+  console.log('[CHAT_ROOM_LAST_MSG_FALLBACK]', {
+    reason: (error as any)?.message || 'rpc_unavailable',
+    room_count: ids.length,
+    note: '다중방+조용한방에서 최근메시지 누락 가능 — get_chat_room_last_messages 마이그레이션 적용 필요'
+  });
+  const { data: msgData, error: msgErr } = await supabaseAdmin
+    .from('chat_messages')
+    .select('id, chat_room_id, message, message_type, image_url, is_deleted, created_at, user:users(name)')
+    .in('chat_room_id', ids)
+    .order('created_at', { ascending: false })
+    .limit(ids.length * 20);
+  if (msgErr) throw msgErr;
+  for (const m of (msgData || []) as any[]) {
+    const rid = String(m?.chat_room_id || '');
+    if (!rid || lastByRoom.has(rid)) continue;
+    lastByRoom.set(rid, mapLastMessage(m));
+  }
+  return lastByRoom;
+}
+
+/**
  * 카카오톡형 왼쪽 목록용 채팅방 요약.
  * TEMP ACCESS POLICY (Phase 1.1): membership 인증 구조가 아직 없어 service-role 무제한 노출을 피하기 위해
  *   canonical default room(청소팀 단체방)만 반환한다. 타입/구조는 여러 방을 지원한다.
@@ -151,20 +191,8 @@ export async function listChatRoomSummaries(): Promise<ChatRoomSummary[]> {
     if (rid) countByRoom.set(rid, (countByRoom.get(rid) || 0) + 1);
   }
 
-  // Q3: 최근 메시지(created_at DESC로 IN 1회 → 방별 첫 건). chat_messages_chat_room_id_created_at_idx 활용.
-  const { data: msgData, error: msgErr } = await supabaseAdmin
-    .from('chat_messages')
-    .select('id, chat_room_id, message, message_type, image_url, is_deleted, created_at, user:users(name)')
-    .in('chat_room_id', ids)
-    .order('created_at', { ascending: false })
-    .limit(ids.length * 20);
-  if (msgErr) throw msgErr;
-  const lastByRoom = new Map<string, ChatRoomLastMessage>();
-  for (const m of (msgData || []) as any[]) {
-    const rid = String(m?.chat_room_id || '');
-    if (!rid || lastByRoom.has(rid)) continue;
-    lastByRoom.set(rid, mapLastMessage(m));
-  }
+  // Q3: 방별 최신 메시지 1건(방 수와 무관하게 단일 조회, 조용한 방 누락 없음).
+  const lastByRoom = await fetchLastMessagesByRoom(ids);
 
   return rooms.map((r: any) => ({
     id: String(r.id),
