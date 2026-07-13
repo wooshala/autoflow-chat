@@ -114,7 +114,16 @@ export default function ChatPage() {
   const [selectedChatRoomId, setSelectedChatRoomId] = useState<string | null>(null);
 
   // Phase 1.2.5 B: 방 목록을 page(controller)에서 소유(lift). flag OFF면 enabled=false → fetch 0.
-  const { rooms: chatRooms, state: chatRoomsState, reload: reloadChatRooms } = useChatRooms(chatRoomLayoutV1);
+  const {
+    rooms: chatRooms,
+    state: chatRoomsState,
+    reload: reloadChatRooms,
+    degraded: summaryDegraded
+  } = useChatRooms(chatRoomLayoutV1);
+
+  // Phase 1.2.6 8: 다중방인데 summary가 legacy(부정확)면 room mode를 활성화하지 않는다.
+  //   잘못된 최근메시지 순서/preview를 정상처럼 보여주는 것보다, 기본방 1개 legacy는 정확하므로 허용.
+  const summaryUntrustedMultiRoom = chatRooms.length > 1 && summaryDegraded;
 
   // Phase 1.2.5 B-1: room mode 활성 조건. 단순 flag가 아니라 "정상 방 목록 + 유효 선택"일 때만.
   //   이 조건이 아니면 legacy(글로벌) 경로로 fail-open — 보조 surface 실패가 전송을 죽이지 않는다.
@@ -122,10 +131,12 @@ export default function ChatPage() {
     chatRoomLayoutV1 &&
     chatRoomsState === 'ready' &&
     chatRooms.length > 0 &&
+    !summaryUntrustedMultiRoom &&
     isValidChatRoomSelection(selectedChatRoomId, chatRooms);
-  // room 사이드바/헤더를 보여줄지(로딩·정상만). error/empty면 legacy UI로 fail-open.
-  const roomSidebarVisible = chatRoomLayoutV1 && (chatRoomsState === 'loading' || chatRoomsState === 'ready');
-  // room API 로딩 실패(error) — 비차단 안내 표시용.
+  // room 사이드바/헤더를 보여줄지(로딩·정상만). error/empty/다중방-degraded면 legacy UI로 fail-open.
+  const roomSidebarVisible =
+    chatRoomLayoutV1 && (chatRoomsState === 'loading' || chatRoomsState === 'ready') && !summaryUntrustedMultiRoom;
+  // room API 로딩 실패(error) 또는 다중방 요약 부정확 — 비차단 안내 표시용.
   const roomLoadError = chatRoomLayoutV1 && chatRoomsState === 'error';
 
   // Phase 1.2.5 A-2/B: 전송이 귀속되는 "실효 방 컨텍스트"(room mode면 선택 방, 아니면 null=글로벌).
@@ -1272,10 +1283,14 @@ export default function ChatPage() {
                 </>
               )}
             </div>
-            {/* Phase 1.2.5 B-2: room 목록 로딩 실패 — 비차단 안내(입력창/Event Center를 가리지 않는 얇은 바). 전송은 계속 가능. */}
-            {roomLoadError ? (
+            {/* Phase 1.2.5 B-2 / 1.2.6 8: 비차단 안내(입력창/Event Center를 가리지 않는 얇은 바). 전송은 계속 가능. */}
+            {roomLoadError || summaryUntrustedMultiRoom ? (
               <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
-                <span>채팅방 목록을 불러오지 못했습니다. 기존 채팅 모드로 계속 이용합니다.</span>
+                <span>
+                  {summaryUntrustedMultiRoom
+                    ? '채팅방 요약이 정확하지 않아(RPC 미적용) 채팅방 모드를 비활성화했습니다. 기존 채팅 모드로 이용합니다.'
+                    : '채팅방 목록을 불러오지 못했습니다. 기존 채팅 모드로 계속 이용합니다.'}
+                </span>
                 <button
                   type="button"
                   onClick={() => void reloadChatRooms()}

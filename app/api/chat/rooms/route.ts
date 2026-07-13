@@ -8,10 +8,15 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
-    const rooms = await listChatRoomSummaries();
-    return NextResponse.json({ rooms });
+    // Phase 1.2.6 D: summary_source(rpc|legacy)/degraded를 응답에 노출 → Preview/Staging Network
+    //   응답만으로 어떤 최근메시지 경로가 실행됐는지 확인 가능(폴백을 RPC 성공으로 오인 방지).
+    const { rooms, summarySource, degraded } = await listChatRoomSummaries();
+    return NextResponse.json({ rooms, summary_source: summarySource, degraded });
   } catch (err: any) {
     console.error('[CHAT_ROOMS_ROUTE_ERROR]', { message: err?.message ?? String(err) });
-    return NextResponse.json({ rooms: [], error: err?.message ?? 'unknown' }, { status: 500 });
+    return NextResponse.json(
+      { rooms: [], error: err?.message ?? 'unknown', summary_source: 'legacy', degraded: true },
+      { status: 500 }
+    );
   }
 }
