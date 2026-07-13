@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
 import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
@@ -18,7 +18,8 @@ export function useChatRealtime({
   lastRealtimeInsertPushAtRef,
   reconnectToken,
   onConnectionStatus,
-  onRowEvent
+  onRowEvent,
+  acceptRow
 }: {
   supabase: any;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -30,7 +31,17 @@ export function useChatRealtime({
   onConnectionStatus?: (s: 'connected' | 'degraded' | 'reconnecting') => void;
   /** Diagnostics: notified per realtime row event so callers can label INSERT vs UPDATE. */
   onRowEvent?: (e: { id: string; type: 'INSERT' | 'UPDATE' }) => void;
+  /**
+   * Phase 1.2 §16 임시 방어: 수신 행을 현재 방 타임라인에 반영할지 결정.
+   * ref로만 읽어 subscription lifecycle/channel은 절대 재생성하지 않는다(선택 변경마다 재구독 금지).
+   * 미지정 시 모든 행 수용(기존 동작).
+   */
+  acceptRow?: (row: ChatMessage) => boolean;
 }) {
+  // 최신 acceptRow를 ref로 유지 → effect deps에 넣지 않아 재구독을 유발하지 않음.
+  const acceptRowRef = useRef<typeof acceptRow>(acceptRow);
+  acceptRowRef.current = acceptRow;
+
   useEffect(() => {
     if (!supabase) return;
 
@@ -44,6 +55,12 @@ export function useChatRealtime({
       const id = row?.id != null ? String(row.id) : '';
       if (!id) {
         log.warn('[REALTIME_SKIP]', { reason: 'missing_row_id', row });
+        return;
+      }
+      // Phase 1.2 §16: 다른 방 행이면 현재 타임라인에 반영하지 않음(null-permissive).
+      const accept = acceptRowRef.current;
+      if (accept && !accept(row as ChatMessage)) {
+        log.debug('[REALTIME_SKIP]', { reason: 'other_room', id });
         return;
       }
       const hadInRef = messagesRef.current.some((m) => String(m?.id) === id);

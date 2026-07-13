@@ -49,6 +49,15 @@ import ChatParticipantSidebar, {
 } from '@/components/chat/ops-console/ChatParticipantSidebar';
 import ChatRoomSidebar from '@/components/chat/ops-console/ChatRoomSidebar';
 import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
+import type { ChatRoomSummary } from '@/lib/types';
+import {
+  CHAT_SELECTED_ROOM_STORAGE_KEY,
+  buildChatSearchWithRoom,
+  isValidChatRoomSelection,
+  readStoredSelectedRoomId,
+  resolveInitialSelectedChatRoomId,
+  shouldAcceptRealtimeRowForRoom
+} from '@/lib/chat/chatRoomSelection';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -96,8 +105,18 @@ export default function ChatPage() {
       hasUserId: Boolean(chatSendUserId)
     });
   }, [chatSendUserId]);
+
+  /** Phase 1.1: 실제 chat_rooms 기반 카카오톡형 왼쪽 목록. OFF면 기존 참여자/room_no 사이드바 유지. */
+  const chatRoomLayoutV1 = process.env.NEXT_PUBLIC_CHAT_ROOM_LAYOUT_V1 === '1';
+  /** Phase 1.2: 선택된 채팅방 UUID(chat_room_id). room_no(객실번호)와 절대 혼용 금지. */
+  const [selectedChatRoomId, setSelectedChatRoomId] = useState<string | null>(null);
+  /** Phase 1.2: ChatRoomSidebar가 로드한 방 목록(초기 선택/검증/헤더용). */
+  const [chatRooms, setChatRooms] = useState<ChatRoomSummary[]>([]);
+
   const { messages, setMessages, loadFull: hookLoadFull, initialHydrationComplete } = useChatLoader({
-    loadingRef: isLoadingRef
+    loadingRef: isLoadingRef,
+    // flag OFF: undefined → 기존 전역 타임라인 동작 유지. ON: 선택 방으로 서버 필터.
+    chatRoomId: chatRoomLayoutV1 ? selectedChatRoomId : undefined
   });
 
   const loadFull = useCallback(
@@ -107,6 +126,63 @@ export default function ChatPage() {
     },
     [hookLoadFull]
   );
+
+  // Phase 1.2: 방 목록 준비 시 초기 selectedChatRoomId 결정(URL query → localStorage → API 첫 방).
+  //   유효하지 않은 후보는 무시하고 첫 방으로 폴백. 목록이 비면 null 유지.
+  const selectionInitializedRef = useRef(false);
+  useEffect(() => {
+    if (!chatRoomLayoutV1) return;
+    if (selectionInitializedRef.current) return;
+    if (!chatRooms.length) return;
+    let urlRoomId: string | null = null;
+    let storedRoomId: string | null = null;
+    try {
+      urlRoomId = new URLSearchParams(window.location.search).get('chat_room_id');
+    } catch {
+      /* ignore */
+    }
+    try {
+      storedRoomId = readStoredSelectedRoomId(window.localStorage.getItem(CHAT_SELECTED_ROOM_STORAGE_KEY));
+    } catch {
+      /* ignore */
+    }
+    const initial = resolveInitialSelectedChatRoomId({ urlRoomId, storedRoomId, rooms: chatRooms });
+    selectionInitializedRef.current = true;
+    if (initial) setSelectedChatRoomId(initial);
+  }, [chatRoomLayoutV1, chatRooms]);
+
+  // Phase 1.2: 선택 변경 시 URL(다른 query 보존)·localStorage 동기화(hard reload 없음).
+  useEffect(() => {
+    if (!chatRoomLayoutV1 || !selectedChatRoomId) return;
+    try {
+      window.localStorage.setItem(CHAT_SELECTED_ROOM_STORAGE_KEY, selectedChatRoomId);
+    } catch {
+      /* ignore */
+    }
+    try {
+      const nextSearch = buildChatSearchWithRoom(window.location.search, selectedChatRoomId);
+      if (nextSearch !== window.location.search) {
+        router.replace(`${window.location.pathname}${nextSearch}`, { scroll: false });
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [chatRoomLayoutV1, selectedChatRoomId, router]);
+
+  // Phase 1.2: 브라우저 back/forward 시 URL의 chat_room_id를 반영(목록에 존재할 때만).
+  useEffect(() => {
+    if (!chatRoomLayoutV1) return;
+    const onPop = () => {
+      try {
+        const urlRoomId = new URLSearchParams(window.location.search).get('chat_room_id');
+        if (isValidChatRoomSelection(urlRoomId, chatRooms)) setSelectedChatRoomId(urlRoomId);
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [chatRoomLayoutV1, chatRooms]);
 
   const [text, setText] = useState('');
   const [roomNo, setRoomNo] = useState('');
@@ -138,8 +214,6 @@ export default function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
-  /** Phase 1.1: 실제 chat_rooms 기반 카카오톡형 왼쪽 목록(read-only). OFF면 기존 참여자/room_no 사이드바 유지. */
-  const chatRoomLayoutV1 = process.env.NEXT_PUBLIC_CHAT_ROOM_LAYOUT_V1 === '1';
   /** LF-3B UX PoC: photo → ops-event entry (Preview; gated with lost-found flag) */
   const photoOpsUxEnabled = lostFoundEnabled;
   const [opsUxToast, setOpsUxToast] = useState<string | null>(null);
@@ -370,7 +444,12 @@ export default function ChatPage() {
     lastRealtimeActivityAtRef,
     lastRealtimeInsertPushAtRef,
     reconnectToken: realtimeReconnectToken,
-    onConnectionStatus: setConnectionStatus
+    onConnectionStatus: setConnectionStatus,
+    // Phase 1.2 §16 임시 방어: 다른 방 수신 행은 현재 타임라인에 반영하지 않음(null-permissive).
+    //   subscription lifecycle은 변경하지 않고 hook 내부 ref로만 읽힘. 엄격 격리는 Phase 1.3.
+    acceptRow: chatRoomLayoutV1
+      ? (row) => shouldAcceptRealtimeRowForRoom(row?.chat_room_id ?? null, selectedChatRoomId)
+      : undefined
   });
 
   useChatWatchdog({
@@ -401,7 +480,15 @@ export default function ChatPage() {
   }, []);
 
   // render helpers
-  const canSend = useMemo(() => Boolean(text.trim() || photo), [text, photo]);
+  // Phase 1.2: flag ON이면 유효한 방 선택이 있어야 전송 가능(버튼 비활성 + 런타임 가드 일원화).
+  const canSend = useMemo(
+    () =>
+      Boolean(
+        (text.trim() || photo) &&
+          (!chatRoomLayoutV1 || isValidChatRoomSelection(selectedChatRoomId, chatRooms))
+      ),
+    [text, photo, chatRoomLayoutV1, selectedChatRoomId, chatRooms]
+  );
   const canSendToServer = Boolean(sessionUser && chatSendUserId);
   const missingSendEnvMsg = '전송에 실패했습니다. 관리자 설정이 필요합니다.';
 
@@ -422,9 +509,11 @@ export default function ChatPage() {
     const clientSendTs = Date.now();
     logSendClick(clientNonce);
     latSendClick({ client_nonce: clientNonce, sender_side: getDeviceSide(), room: roomNo || null, source: 'pc' });
+    // Phase 1.2: 전송 시작 시점의 선택 방을 캡처(전송 중 선택이 바뀌어도 이 메시지는 캡처된 방으로 귀속).
+    const targetChatRoomId = chatRoomLayoutV1 ? selectedChatRoomId : null;
     const optimisticMessage: ChatMessage = {
       id: optimisticId,
-      chat_room_id: null,
+      chat_room_id: targetChatRoomId,
       user_id: chatSendUserId,
       message: text.trim(),
       message_type: photo ? 'image' : 'text',
@@ -456,6 +545,8 @@ export default function ChatPage() {
       fd.append('sender_side', getDeviceSide());
       fd.append('priority', urgentMode ? 'urgent' : 'normal');
       if (roomNo) fd.append('room_no', roomNo);
+      // Phase 1.2: 선택 방으로 저장(room_no와 별개 필드로 함께 전송). 개념 분리 유지.
+      if (targetChatRoomId) fd.append('chat_room_id', targetChatRoomId);
       if (photo) {
         log.debug('[CHAT_FILE_APPEND]', {
           name: photo.name,
@@ -874,6 +965,11 @@ export default function ChatPage() {
 
   const consoleParticipants = useMemo(() => buildParticipantsFromMessages(messages), [messages]);
   const consoleRooms = useMemo(() => buildRoomsFromMessages(messages), [messages]);
+  /** Phase 1.2: 중앙 헤더용 선택 방 요약. */
+  const selectedRoom = useMemo(
+    () => chatRooms.find((r) => r.id === selectedChatRoomId) ?? null,
+    [chatRooms, selectedChatRoomId]
+  );
   const recentPhotoMessage = useMemo(() => {
     const list = messages.filter((m) => m.image_url && !m.is_deleted);
     const filtered = consoleRoomNo ? list.filter((m) => m.room_no === consoleRoomNo) : list;
@@ -1112,7 +1208,12 @@ export default function ChatPage() {
         <StaffChatAdminSection open={showAdminPanel} />
         <div className="flex min-h-0 flex-1">
           {chatRoomLayoutV1 ? (
-            <ChatRoomSidebar participants={consoleParticipants} />
+            <ChatRoomSidebar
+              participants={consoleParticipants}
+              selectedChatRoomId={selectedChatRoomId}
+              onSelectRoom={setSelectedChatRoomId}
+              onRoomsLoaded={setChatRooms}
+            />
           ) : (
             <ChatParticipantSidebar
               participants={consoleParticipants}
@@ -1123,8 +1224,21 @@ export default function ChatPage() {
           )}
           <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
             <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
-              <span className="font-bold">대화 타임라인</span>
-              {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
+              {chatRoomLayoutV1 ? (
+                selectedRoom ? (
+                  <>
+                    <span className="font-bold">{selectedRoom.name}</span>
+                    <span className="ml-2 text-gray-500">· 참여자 {selectedRoom.participant_count}명</span>
+                  </>
+                ) : (
+                  <span className="font-bold text-gray-500">채팅방을 선택하세요.</span>
+                )
+              ) : (
+                <>
+                  <span className="font-bold">대화 타임라인</span>
+                  {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
+                </>
+              )}
             </div>
             {chatMessageList}
             {maintenancePanel}

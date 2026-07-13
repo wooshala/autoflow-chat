@@ -38,6 +38,14 @@ export type UseChatLoaderOptions = {
   deltaListLimit?: number;
   /** Staff-chat: log [STAFF_CHAT_API_MESSAGES] / [STAFF_CHAT_SET_MESSAGES] and replace list on full load. */
   staffTimelineMode?: boolean;
+  /**
+   * Phase 1.2: 선택된 채팅방 UUID(chat_room_id). 지정 시 GET /api/chat/list?chat_room_id=<id>로
+   * 서버 필터. 값이 바뀌면(방 전환) 이전 방 메시지를 비우고 새로 로드한다.
+   * - `undefined`: 기능 미사용(기존 전역 타임라인 동작 유지, flag OFF 경로).
+   * - `null`: flag ON이지만 아직 방 미선택 → 필터 없이 로드(기존 동작).
+   * 개념 분리: room_no(객실번호)와 절대 혼용 금지.
+   */
+  chatRoomId?: string | null;
 };
 
 export function useChatLoader(options?: UseChatLoaderOptions) {
@@ -52,6 +60,12 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
   const lastLoadSourceRef = useRef<string | null>(null);
+
+  // Phase 1.2: chatRoomId를 ref로 읽어 load/loadFull 아이덴티티를 안정적으로 유지한다.
+  // (deps에 넣으면 loadFull이 매 선택마다 바뀌어 initial-load effect가 재발화되므로 금지)
+  const chatRoomIdRef = useRef<string | null | undefined>(options?.chatRoomId);
+  chatRoomIdRef.current = options?.chatRoomId;
+  const chatRoomId = options?.chatRoomId;
 
   const initialRetryCountRef = useRef(0);
   const initialAttemptIdRef = useRef(0);
@@ -104,6 +118,9 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         const params = new URLSearchParams();
         params.set('limit', String(opts?.since ? deltaListLimit : initialListLimit));
         if (opts?.since) params.set('since', opts.since);
+        // Phase 1.2: 선택된 방이 있으면 서버에서 chat_room_id로 필터(클라 room_no 필터 금지).
+        const activeChatRoomId = chatRoomIdRef.current;
+        if (activeChatRoomId) params.set('chat_room_id', activeChatRoomId);
         const listUrl = `${CHAT_LIST_URL}?${params.toString()}`;
         const result = await fetchEnvelope<ChatListData>(listUrl, {
           cache: 'no-store',
@@ -380,6 +397,26 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
       }
     };
   }, [loadFull, loadingRef]);
+
+  // Phase 1.2: 방 전환 재조회.
+  // - chatRoomId === undefined(기능 미사용/flag OFF): 아무 것도 하지 않음(기존 동작 보존).
+  // - 첫 non-undefined 값은 mount의 initial load가 이미 처리 → skip.
+  // - 이후 chatRoomId가 바뀌면 이전 방 메시지를 즉시 비우고 새 방을 full 로드한다.
+  //   레이스(A조회→B선택→A늦게도착)는 load()의 loadSeqRef/AbortController가 처리(최신만 반영).
+  const prevChatRoomRef = useRef<string | null | undefined>(undefined);
+  const switchInitializedRef = useRef(false);
+  useEffect(() => {
+    if (chatRoomId === undefined) return;
+    if (!switchInitializedRef.current) {
+      switchInitializedRef.current = true;
+      prevChatRoomRef.current = chatRoomId;
+      return;
+    }
+    if (prevChatRoomRef.current === chatRoomId) return;
+    prevChatRoomRef.current = chatRoomId;
+    setMessages([]);
+    void loadFull('room_switch');
+  }, [chatRoomId, loadFull]);
 
   return {
     messages,
