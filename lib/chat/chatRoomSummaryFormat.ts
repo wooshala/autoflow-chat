@@ -1,5 +1,7 @@
 // Phase 1.1 채팅방 목록 표시용 순수 포맷터(서버/클라 공용, DB·supabase 의존 없음 → 단위 테스트 가능).
 
+import type { ChatRoomSummary } from '@/lib/types';
+
 /** 최근 메시지 preview 규칙: 삭제 > 사진 > 텍스트 한 줄 > 메시지 없음. */
 export function messagePreview(m: {
   is_deleted?: boolean | null;
@@ -63,4 +65,40 @@ export function formatChatRoomTime(iso: string, nowMs?: number): string {
   if (diffDays === 1) return '어제';
   if (diffDays <= 6) return `${WEEKDAYS[msg.wd]}요일`;
   return `${msg.mo}/${msg.d}`;
+}
+
+/**
+ * Phase 1.2.6 정렬 계약(초기 로드와 Realtime patch 후 재정렬이 동일 comparator를 공유해야 함).
+ *   1. last_message.created_at DESC (최신 먼저)
+ *   2. last_message 없음/무효 시각 → 항상 뒤 (nulls last)
+ *   3. 동일 시각 또는 둘 다 없음 → name ASC (ko)
+ *   4. 최종 tie-breaker → id ASC
+ * 무효 timestamp에도 NaN으로 무너지지 않는다(무효는 null과 동일 후순위 그룹).
+ */
+function lastMessageTime(s: ChatRoomSummary): number | null {
+  const iso = s.last_message?.created_at;
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : t;
+}
+
+export function compareChatRoomSummaries(a: ChatRoomSummary, b: ChatRoomSummary): number {
+  const ta = lastMessageTime(a);
+  const tb = lastMessageTime(b);
+  if (ta !== null && tb !== null) {
+    if (ta !== tb) return tb - ta; // DESC
+  } else if (ta !== null) {
+    return -1; // a는 메시지 있음 → 앞
+  } else if (tb !== null) {
+    return 1; // b는 메시지 있음 → 앞
+  }
+  // 동일 시각 또는 둘 다 null/무효 → 이름 → id
+  const nameCmp = String(a.name ?? '').localeCompare(String(b.name ?? ''), 'ko');
+  if (nameCmp !== 0) return nameCmp;
+  return String(a.id ?? '').localeCompare(String(b.id ?? ''));
+}
+
+/** comparator로 정렬한 새 배열 반환(입력 불변). 서버/클라 공용. */
+export function sortChatRoomSummaries(list: ChatRoomSummary[]): ChatRoomSummary[] {
+  return [...list].sort(compareChatRoomSummaries);
 }

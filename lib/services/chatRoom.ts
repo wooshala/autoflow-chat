@@ -5,7 +5,7 @@ import {
   resolveDefaultChatRoomId,
   SEEDED_DEFAULT_CHAT_ROOM_ID
 } from '@/lib/chat/chatRoomDefaults';
-import { messagePreview } from '@/lib/chat/chatRoomSummaryFormat';
+import { messagePreview, sortChatRoomSummaries } from '@/lib/chat/chatRoomSummaryFormat';
 import { isChatRoomLastMessagesFunctionMissing } from '@/lib/chat/chatRoomsRpcError';
 import type {
   ChatRoom,
@@ -231,5 +231,6 @@ export async function listChatRoomSummaries(): Promise<ListChatRoomSummariesResu
     last_message: last.map.get(String(r.id)) || null
   }));
 
-  return { rooms: summaries, summarySource: last.source, degraded: last.degraded };
+  // Phase 1.2.6: 정렬 계약을 서비스 계층에서 보장(DB/RPC 구현 변화와 무관하게 순서 고정).
+  return { rooms: sortChatRoomSummaries(summaries), summarySource: last.source, degraded: last.degraded };
 }

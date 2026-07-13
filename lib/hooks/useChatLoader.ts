@@ -47,6 +47,13 @@ export type UseChatLoaderOptions = {
    * 개념 분리: room_no(객실번호)와 절대 혼용 금지.
    */
   chatRoomId?: string | null;
+  /**
+   * Phase 1.2.6 item 14: true면 mount 시 초기 로드를 시작하지 않고 대기한다.
+   * room mode 초기화(방 목록 로드 + 선택 확정) 전에 글로벌 fetch가 먼저 발사돼 이중 조회/
+   * 글로벌→방 깜빡임이 생기는 것을 막는다. 값이 false로 바뀌면 그때 초기 로드를 1회 실행한다.
+   * flag OFF 경로는 항상 false(기존 mount 즉시 로드 유지).
+   */
+  deferInitialLoad?: boolean;
 };
 
 export function useChatLoader(options?: UseChatLoaderOptions) {
@@ -67,6 +74,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const chatRoomIdRef = useRef<string | null | undefined>(options?.chatRoomId);
   chatRoomIdRef.current = options?.chatRoomId;
   const chatRoomId = options?.chatRoomId;
+  const deferInitialLoad = options?.deferInitialLoad ?? false;
 
   const initialRetryCountRef = useRef(0);
   const initialAttemptIdRef = useRef(0);
@@ -341,8 +349,33 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
 
   const loadFull = useCallback(async (source: string) => load(source, { mode: 'full' }), [load]);
 
+  // Mount/unmount lifecycle(초기 로드 트리거와 분리 — deferInitialLoad를 지원하기 위함).
   useEffect(() => {
     isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      loadSeqRef.current += 1;
+      if (loadAbortRef.current) {
+        log.warn('[CHAT_LIST_LOAD_ABORT]', { source: lastLoadSourceRef.current || 'unknown' });
+        log.debug('[CHAT_LIST_ABORT_REQUESTED]', {
+          reason: 'unmount_cleanup',
+          last_load_source: lastLoadSourceRef.current,
+          action: 'abort'
+        });
+        loadAbortRef.current.abort();
+        loadAbortRef.current = null;
+        loadingRef.current = false;
+      }
+    };
+  }, [loadingRef]);
+
+  // 초기 로드(1회). deferInitialLoad=true 동안은 시작하지 않고, false로 바뀌면 그때 실행.
+  //   flag OFF/기본 경로는 deferInitialLoad=false → mount 직후 즉시 실행(기존 동작 보존).
+  const initialStartedRef = useRef(false);
+  useEffect(() => {
+    if (deferInitialLoad) return;
+    if (initialStartedRef.current) return;
+    initialStartedRef.current = true;
 
     initialAttemptIdRef.current += 1;
     initialRetryCountRef.current = 0;
@@ -386,23 +419,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         setInitialLoadStatus(second?.ok ? 'ok' : 'error');
       }
     })();
-
-    return () => {
-      isMountedRef.current = false;
-      loadSeqRef.current += 1;
-      if (loadAbortRef.current) {
-        log.warn('[CHAT_LIST_LOAD_ABORT]', { source: lastLoadSourceRef.current || 'unknown' });
-        log.debug('[CHAT_LIST_ABORT_REQUESTED]', {
-          reason: 'unmount_cleanup',
-          last_load_source: lastLoadSourceRef.current,
-          action: 'abort'
-        });
-        loadAbortRef.current.abort();
-        loadAbortRef.current = null;
-        loadingRef.current = false;
-      }
-    };
-  }, [loadFull, loadingRef]);
+  }, [deferInitialLoad, loadFull, loadingRef]);
 
   // Phase 1.2: 방 전환 재조회.
   // - chatRoomId === undefined(기능 미사용/flag OFF): 아무 것도 하지 않음(기존 동작 보존).

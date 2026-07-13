@@ -50,6 +50,7 @@ import ChatParticipantSidebar, {
 import ChatRoomSidebar from '@/components/chat/ops-console/ChatRoomSidebar';
 import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
 import { useChatRooms } from '@/lib/hooks/useChatRooms';
+import { sortChatRoomSummaries } from '@/lib/chat/chatRoomSummaryFormat';
 import type { ChatRoomSummary } from '@/lib/types';
 import {
   CHAT_SELECTED_ROOM_STORAGE_KEY,
@@ -115,11 +116,13 @@ export default function ChatPage() {
 
   // Phase 1.2.5 B: 방 목록을 page(controller)에서 소유(lift). flag OFF면 enabled=false → fetch 0.
   const {
-    rooms: chatRooms,
+    rooms: chatRoomsRaw,
     state: chatRoomsState,
     reload: reloadChatRooms,
     degraded: summaryDegraded
   } = useChatRooms(chatRoomLayoutV1);
+  // Phase 1.2.6: 클라 표시도 서버와 동일 comparator로 정렬(초기 순서·"첫 방" 선택·Realtime patch 후 일관성).
+  const chatRooms = useMemo(() => sortChatRoomSummaries(chatRoomsRaw), [chatRoomsRaw]);
 
   // Phase 1.2.6 8: 다중방인데 summary가 legacy(부정확)면 room mode를 활성화하지 않는다.
   //   잘못된 최근메시지 순서/preview를 정상처럼 보여주는 것보다, 기본방 1개 legacy는 정확하므로 허용.
@@ -139,6 +142,22 @@ export default function ChatPage() {
   // room API 로딩 실패(error) 또는 다중방 요약 부정확 — 비차단 안내 표시용.
   const roomLoadError = chatRoomLayoutV1 && chatRoomsState === 'error';
 
+  // Phase 1.2.6 item 14: room mode 초기화 완료 여부.
+  //   fail-open 확정(error/empty/다중방-degraded) 또는 roomModeActive면 resolved. 둘 다 아니면 초기화 중.
+  const roomFailOpen =
+    chatRoomLayoutV1 && (chatRoomsState === 'error' || chatRoomsState === 'empty' || summaryUntrustedMultiRoom);
+  const roomModeResolved = roomModeActive || roomFailOpen;
+  // 초기화 중(loading 또는 ready-선택대기)에는 글로벌 fetch를 시작하지 않도록 loader를 defer(이중 조회/깜빡임 방지).
+  const deferInitialChatLoad = chatRoomLayoutV1 && !roomModeResolved;
+  // loader chatRoomId: OFF=undefined, roomMode=선택uuid, fail-open=null(글로벌), 초기화중=undefined(대기).
+  const loaderChatRoomId = !chatRoomLayoutV1
+    ? undefined
+    : roomModeActive
+      ? selectedChatRoomId
+      : roomFailOpen
+        ? null
+        : undefined;
+
   // Phase 1.2.5 A-2/B: 전송이 귀속되는 "실효 방 컨텍스트"(room mode면 선택 방, 아니면 null=글로벌).
   //   비동기 응답 시점에 이 값이 바뀌었는지로 방 전환/모드 전환을 감지한다.
   const sendRoomContextRef = useRef<string | null>(null);
@@ -146,9 +165,9 @@ export default function ChatPage() {
 
   const { messages, setMessages, loadFull: hookLoadFull, initialHydrationComplete } = useChatLoader({
     loadingRef: isLoadingRef,
-    // flag OFF: undefined(기존 전역 동작). ON: room mode면 선택 방 필터, 아니면 null(글로벌 fail-open).
-    //   항상 defined(null|uuid)로 넘겨 방 전환 effect의 undefined 예외를 피한다.
-    chatRoomId: chatRoomLayoutV1 ? (roomModeActive ? selectedChatRoomId : null) : undefined
+    chatRoomId: loaderChatRoomId,
+    // Phase 1.2.6 item 14: room mode 초기화 완료 전에는 초기 로드 보류(글로벌→방 이중 fetch 제거).
+    deferInitialLoad: deferInitialChatLoad
   });
 
   const loadFull = useCallback(
@@ -183,18 +202,31 @@ export default function ChatPage() {
     if (initial) setSelectedChatRoomId(initial);
   }, [chatRoomLayoutV1, chatRooms]);
 
+  // Phase 1.2.6 item 15: 사용자 클릭 선택인지 표시(클릭=push로 뒤로가기 지원, 초기화/폴백=replace).
+  const userSelectedRoomRef = useRef(false);
+  const handleSelectChatRoom = useCallback((roomId: string) => {
+    userSelectedRoomRef.current = true;
+    setSelectedChatRoomId(roomId);
+  }, []);
+
   // Phase 1.2: 선택 변경 시 URL(다른 query 보존)·localStorage 동기화(hard reload 없음).
   useEffect(() => {
     if (!chatRoomLayoutV1 || !selectedChatRoomId) return;
+    const isUserInitiated = userSelectedRoomRef.current;
+    userSelectedRoomRef.current = false; // 소비(다음 변경까지 replace 기본)
     try {
       window.localStorage.setItem(CHAT_SELECTED_ROOM_STORAGE_KEY, selectedChatRoomId);
     } catch {
       /* ignore */
     }
     try {
+      // chat_room_id VALUE가 실제로 바뀔 때만 write(불필요한 navigation/loop 방지).
       const nextSearch = buildChatSearchWithRoom(window.location.search, selectedChatRoomId);
       if (nextSearch !== window.location.search) {
-        router.replace(`${window.location.pathname}${nextSearch}`, { scroll: false });
+        const href = `${window.location.pathname}${nextSearch}`;
+        // 사용자 클릭 = push(뒤로가기로 이전 방 복귀). 자동 초기화/폴백 = replace(히스토리 오염 방지).
+        if (isUserInitiated) router.push(href, { scroll: false });
+        else router.replace(href, { scroll: false });
       }
     } catch {
       /* ignore */
@@ -1254,7 +1286,7 @@ export default function ChatPage() {
               rooms={chatRooms}
               status={chatRoomsState}
               selectedChatRoomId={selectedChatRoomId}
-              onSelectRoom={setSelectedChatRoomId}
+              onSelectRoom={handleSelectChatRoom}
               onRetry={reloadChatRooms}
             />
           ) : (
