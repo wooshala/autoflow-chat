@@ -49,6 +49,7 @@ import ChatParticipantSidebar, {
 } from '@/components/chat/ops-console/ChatParticipantSidebar';
 import ChatRoomSidebar from '@/components/chat/ops-console/ChatRoomSidebar';
 import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
+import { useChatRooms } from '@/lib/hooks/useChatRooms';
 import type { ChatRoomSummary } from '@/lib/types';
 import {
   CHAT_SELECTED_ROOM_STORAGE_KEY,
@@ -111,16 +112,32 @@ export default function ChatPage() {
   const chatRoomLayoutV1 = process.env.NEXT_PUBLIC_CHAT_ROOM_LAYOUT_V1 === '1';
   /** Phase 1.2: 선택된 채팅방 UUID(chat_room_id). room_no(객실번호)와 절대 혼용 금지. */
   const [selectedChatRoomId, setSelectedChatRoomId] = useState<string | null>(null);
-  // Phase 1.2.5 A-2: 비동기 응답 시점에 "현재 선택 방"을 읽기 위한 ref(전송 중 방 전환 감지용).
-  const selectedChatRoomIdRef = useRef<string | null>(selectedChatRoomId);
-  selectedChatRoomIdRef.current = selectedChatRoomId;
-  /** Phase 1.2: ChatRoomSidebar가 로드한 방 목록(초기 선택/검증/헤더용). */
-  const [chatRooms, setChatRooms] = useState<ChatRoomSummary[]>([]);
+
+  // Phase 1.2.5 B: 방 목록을 page(controller)에서 소유(lift). flag OFF면 enabled=false → fetch 0.
+  const { rooms: chatRooms, state: chatRoomsState, reload: reloadChatRooms } = useChatRooms(chatRoomLayoutV1);
+
+  // Phase 1.2.5 B-1: room mode 활성 조건. 단순 flag가 아니라 "정상 방 목록 + 유효 선택"일 때만.
+  //   이 조건이 아니면 legacy(글로벌) 경로로 fail-open — 보조 surface 실패가 전송을 죽이지 않는다.
+  const roomModeActive =
+    chatRoomLayoutV1 &&
+    chatRoomsState === 'ready' &&
+    chatRooms.length > 0 &&
+    isValidChatRoomSelection(selectedChatRoomId, chatRooms);
+  // room 사이드바/헤더를 보여줄지(로딩·정상만). error/empty면 legacy UI로 fail-open.
+  const roomSidebarVisible = chatRoomLayoutV1 && (chatRoomsState === 'loading' || chatRoomsState === 'ready');
+  // room API 로딩 실패(error) — 비차단 안내 표시용.
+  const roomLoadError = chatRoomLayoutV1 && chatRoomsState === 'error';
+
+  // Phase 1.2.5 A-2/B: 전송이 귀속되는 "실효 방 컨텍스트"(room mode면 선택 방, 아니면 null=글로벌).
+  //   비동기 응답 시점에 이 값이 바뀌었는지로 방 전환/모드 전환을 감지한다.
+  const sendRoomContextRef = useRef<string | null>(null);
+  sendRoomContextRef.current = roomModeActive ? selectedChatRoomId : null;
 
   const { messages, setMessages, loadFull: hookLoadFull, initialHydrationComplete } = useChatLoader({
     loadingRef: isLoadingRef,
-    // flag OFF: undefined → 기존 전역 타임라인 동작 유지. ON: 선택 방으로 서버 필터.
-    chatRoomId: chatRoomLayoutV1 ? selectedChatRoomId : undefined
+    // flag OFF: undefined(기존 전역 동작). ON: room mode면 선택 방 필터, 아니면 null(글로벌 fail-open).
+    //   항상 defined(null|uuid)로 넘겨 방 전환 effect의 undefined 예외를 피한다.
+    chatRoomId: chatRoomLayoutV1 ? (roomModeActive ? selectedChatRoomId : null) : undefined
   });
 
   const loadFull = useCallback(
@@ -450,8 +467,9 @@ export default function ChatPage() {
     reconnectToken: realtimeReconnectToken,
     onConnectionStatus: setConnectionStatus,
     // Phase 1.2 §16 임시 방어: 다른 방 수신 행은 현재 타임라인에 반영하지 않음(null-permissive).
+    //   room mode 활성 시에만 적용. 비활성(글로벌 fail-open)이면 모든 행 수용.
     //   subscription lifecycle은 변경하지 않고 hook 내부 ref로만 읽힘. 엄격 격리는 Phase 1.3.
-    acceptRow: chatRoomLayoutV1
+    acceptRow: roomModeActive
       ? (row) => shouldAcceptRealtimeRowForRoom(row?.chat_room_id ?? null, selectedChatRoomId)
       : undefined
   });
@@ -484,15 +502,9 @@ export default function ChatPage() {
   }, []);
 
   // render helpers
-  // Phase 1.2: flag ON이면 유효한 방 선택이 있어야 전송 가능(버튼 비활성 + 런타임 가드 일원화).
-  const canSend = useMemo(
-    () =>
-      Boolean(
-        (text.trim() || photo) &&
-          (!chatRoomLayoutV1 || isValidChatRoomSelection(selectedChatRoomId, chatRooms))
-      ),
-    [text, photo, chatRoomLayoutV1, selectedChatRoomId, chatRooms]
-  );
+  // Phase 1.2.5 B-3: room mode가 확정되지 않으면(로딩/실패/빈목록) 전송을 막지 않는다(fail-open).
+  //   room mode 활성 시엔 roomModeActive가 이미 유효 선택을 보장하므로 별도 방 게이트가 불필요.
+  const canSend = useMemo(() => Boolean(text.trim() || photo), [text, photo]);
   const canSendToServer = Boolean(sessionUser && chatSendUserId);
   const missingSendEnvMsg = '전송에 실패했습니다. 관리자 설정이 필요합니다.';
 
@@ -513,11 +525,12 @@ export default function ChatPage() {
     const clientSendTs = Date.now();
     logSendClick(clientNonce);
     latSendClick({ client_nonce: clientNonce, sender_side: getDeviceSide(), room: roomNo || null, source: 'pc' });
-    // Phase 1.2: 전송 시작 시점의 선택 방을 캡처(전송 중 선택이 바뀌어도 이 메시지는 캡처된 방으로 귀속).
-    const targetChatRoomId = chatRoomLayoutV1 ? selectedChatRoomId : null;
-    // Phase 1.2.5 A-2: 응답 시점에 현재 방과 target이 같은지 확인. 다르면 현재 방 UI를 건드리지 않는다.
+    // Phase 1.2: 전송 시작 시점의 실효 방 컨텍스트를 캡처(전송 중 전환돼도 이 메시지는 캡처 방에 귀속).
+    //   room mode면 선택 방 UUID, 아니면 null(글로벌 fail-open).
+    const targetChatRoomId = sendRoomContextRef.current;
+    // Phase 1.2.5 A-2: 응답 시점에 실효 방 컨텍스트가 그대로면 현재 타임라인/입력에 반영. 바뀌었으면 건드리지 않음.
     const targetRoomStillCurrent = () =>
-      !chatRoomLayoutV1 || shouldApplySendResultForRoom(targetChatRoomId, selectedChatRoomIdRef.current);
+      shouldApplySendResultForRoom(targetChatRoomId, sendRoomContextRef.current);
     const optimisticMessage: ChatMessage = {
       id: optimisticId,
       chat_room_id: targetChatRoomId,
@@ -619,7 +632,7 @@ export default function ChatPage() {
       if (!targetRoomStillCurrent()) {
         log.info('[SEND_MERGE_SKIP_ROOM_SWITCHED]', {
           target_chat_room_id: targetChatRoomId,
-          current_chat_room_id: selectedChatRoomIdRef.current,
+          current_chat_room_id: sendRoomContextRef.current,
           message_id: String(saved.id)
         });
         return;
@@ -1224,12 +1237,14 @@ export default function ChatPage() {
         ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
         <div className="flex min-h-0 flex-1">
-          {chatRoomLayoutV1 ? (
+          {roomSidebarVisible ? (
             <ChatRoomSidebar
               participants={consoleParticipants}
+              rooms={chatRooms}
+              status={chatRoomsState}
               selectedChatRoomId={selectedChatRoomId}
               onSelectRoom={setSelectedChatRoomId}
-              onRoomsLoaded={setChatRooms}
+              onRetry={reloadChatRooms}
             />
           ) : (
             <ChatParticipantSidebar
@@ -1241,7 +1256,7 @@ export default function ChatPage() {
           )}
           <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
             <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
-              {chatRoomLayoutV1 ? (
+              {roomSidebarVisible ? (
                 selectedRoom ? (
                   <>
                     <span className="font-bold">{selectedRoom.name}</span>
@@ -1257,6 +1272,19 @@ export default function ChatPage() {
                 </>
               )}
             </div>
+            {/* Phase 1.2.5 B-2: room 목록 로딩 실패 — 비차단 안내(입력창/Event Center를 가리지 않는 얇은 바). 전송은 계속 가능. */}
+            {roomLoadError ? (
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+                <span>채팅방 목록을 불러오지 못했습니다. 기존 채팅 모드로 계속 이용합니다.</span>
+                <button
+                  type="button"
+                  onClick={() => void reloadChatRooms()}
+                  className="shrink-0 rounded border border-amber-400 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100"
+                >
+                  다시 시도
+                </button>
+              </div>
+            ) : null}
             {chatMessageList}
             {maintenancePanel}
             {chatComposer}

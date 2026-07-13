@@ -1,42 +1,39 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useChatRooms } from '@/lib/hooks/useChatRooms';
 import { formatChatRoomTime } from '@/lib/chat/chatRoomSummaryFormat';
 import type { ParticipantRow } from '@/components/chat/ops-console/ChatParticipantSidebar';
 import type { ChatRoomSummary } from '@/lib/types';
+import type { ChatRoomsState } from '@/lib/hooks/useChatRooms';
 
 type Props = {
   /** 기존 참여자 섹션 유지용(메시지 파생). room summary participant_count와 혼용하지 않는다. */
   participants: ParticipantRow[];
-  /** Phase 1.2: 현재 선택된 방 UUID(chat_room_id). null이면 미선택. */
-  selectedChatRoomId?: string | null;
-  /** Phase 1.2: 방 클릭/키보드 선택 시 호출. */
-  onSelectRoom?: (roomId: string) => void;
-  /** Phase 1.2: 방 목록 로드/갱신 시 상위(page)로 전달 → 초기 선택/검증/헤더에 사용. */
-  onRoomsLoaded?: (rooms: ChatRoomSummary[]) => void;
+  /** 방 목록(page/controller가 소유). 이 컴포넌트는 fetch/room-mode 판정을 하지 않는다. */
+  rooms: ChatRoomSummary[];
+  /** 방 목록 상태(page가 판정한 값). */
+  status: ChatRoomsState;
+  /** 현재 선택된 방 UUID(chat_room_id). null이면 미선택. */
+  selectedChatRoomId: string | null;
+  /** 방 클릭/키보드 선택 시 호출. */
+  onSelectRoom: (roomId: string) => void;
+  /** 오류 상태에서 재조회 요청. */
+  onRetry: () => void;
 };
 
 /**
- * 카카오톡형 왼쪽 채팅방 목록 (Phase 1.2).
- * - 실제 chat_rooms 요약(GET /api/chat/rooms)만 표시. room_no 기반 buildRoomsFromMessages 미사용.
- * - Phase 1.2: 방 클릭/Enter·Space로 가운데 타임라인을 선택 방으로 전환(onSelectRoom).
- * - 선택 표시: aria-current + 배경 강조. unread badge 없음(가짜 0 금지).
- * - 기존 참여자 섹션은 별도 영역으로 유지(후속 Phase에서 DB participants로 전환 준비).
+ * 카카오톡형 왼쪽 채팅방 목록 (Phase 1.2.5, presentational).
+ * - 데이터 fetch / fail-open 판정은 하지 않는다(page/controller 책임). props만 렌더.
+ * - 방 클릭/Enter·Space로 선택. aria-current + 배경 강조. unread badge 없음(가짜 0 금지).
+ * - error/empty는 page가 legacy 사이드바로 fail-open하므로 보통 여기 도달하지 않지만, 방어적으로 처리.
  */
 export default function ChatRoomSidebar({
   participants,
+  rooms,
+  status,
   selectedChatRoomId,
   onSelectRoom,
-  onRoomsLoaded
+  onRetry
 }: Props) {
-  const { rooms, state, reload } = useChatRooms();
-
-  // 방 목록이 준비되면 상위로 전달(초기 선택/검증/헤더용). ready 상태에서만.
-  useEffect(() => {
-    if (state === 'ready') onRoomsLoaded?.(rooms);
-  }, [state, rooms, onRoomsLoaded]);
-
   return (
     <aside className="flex h-full w-52 shrink-0 flex-col border-r border-gray-200 bg-white lg:w-56">
       <div className="shrink-0 border-b border-gray-200 px-3 py-2.5">
@@ -45,14 +42,14 @@ export default function ChatRoomSidebar({
 
       {/* 채팅방 목록 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {state === 'loading' ? (
+        {status === 'loading' ? (
           <p className="px-3 py-6 text-center text-xs text-gray-400">채팅방을 불러오는 중…</p>
-        ) : state === 'error' ? (
+        ) : status === 'error' ? (
           <div className="px-3 py-6 text-center text-xs text-gray-500">
             <p>채팅방을 불러오지 못했습니다.</p>
             <button
               type="button"
-              onClick={() => void reload()}
+              onClick={() => onRetry()}
               className="mt-2 rounded-lg border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
             >
               다시 시도
@@ -73,19 +70,13 @@ export default function ChatRoomSidebar({
                   <button
                     type="button"
                     aria-current={selected ? 'true' : undefined}
-                    onClick={() => onSelectRoom?.(r.id)}
+                    onClick={() => onSelectRoom(r.id)}
                     className={`block w-full cursor-pointer px-3 py-2.5 text-left transition-colors ${
                       selected ? 'bg-yellow-50' : 'hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-baseline gap-2">
-                      <span
-                        className={`min-w-0 flex-1 truncate text-xs font-bold ${
-                          selected ? 'text-gray-900' : 'text-gray-900'
-                        }`}
-                      >
-                        {r.name}
-                      </span>
+                      <span className="min-w-0 flex-1 truncate text-xs font-bold text-gray-900">{r.name}</span>
                       {lm ? (
                         <span className="shrink-0 text-[10px] text-gray-400">
                           {formatChatRoomTime(lm.created_at)}
