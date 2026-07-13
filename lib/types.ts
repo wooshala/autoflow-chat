@@ -71,6 +71,25 @@ export interface ChatRoomParticipantListItem {
   joined_at: string;
 }
 
+/** GET /api/chat/rooms — 카카오톡형 목록의 최근 메시지 1건(없으면 null). */
+export type ChatRoomLastMessage = {
+  id: string;
+  preview: string;
+  sender_name: string | null;
+  created_at: string;
+  message_type: string | null;
+  image_url: string | null;
+  is_deleted: boolean;
+};
+
+/** GET /api/chat/rooms — 채팅방 요약. Phase 1.1은 unread를 넣지 않는다(가짜 0 금지). */
+export type ChatRoomSummary = {
+  id: string;
+  name: string;
+  participant_count: number;
+  last_message: ChatRoomLastMessage | null;
+};
+
 export interface User {
   id: string;
   name: string;

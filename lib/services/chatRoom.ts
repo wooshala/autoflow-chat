@@ -5,7 +5,13 @@ import {
   resolveDefaultChatRoomId,
   SEEDED_DEFAULT_CHAT_ROOM_ID
 } from '@/lib/chat/chatRoomDefaults';
-import type { ChatRoom, ChatRoomParticipantListItem } from '@/lib/types';
+import { messagePreview } from '@/lib/chat/chatRoomSummaryFormat';
+import type {
+  ChatRoom,
+  ChatRoomParticipantListItem,
+  ChatRoomLastMessage,
+  ChatRoomSummary
+} from '@/lib/types';
 
 export {
   resolveDefaultChatRoomId,
@@ -91,5 +97,79 @@ export async function listActiveChatRoomParticipants(
     name: nameById.get(String(row.user_id)) || '',
     role: row.role,
     joined_at: row.joined_at
+  }));
+}
+
+function mapLastMessage(m: any): ChatRoomLastMessage {
+  return {
+    id: String(m?.id ?? ''),
+    preview: messagePreview({
+      is_deleted: m?.is_deleted,
+      message_type: m?.message_type,
+      message: m?.message
+    }),
+    // chat_messages → users 임베드(sender 이름). 실패 대비 null 폴백.
+    sender_name: (m?.user?.name ?? m?.sender_name) || null,
+    created_at: String(m?.created_at ?? ''),
+    message_type: m?.message_type ?? null,
+    image_url: m?.image_url ?? null,
+    is_deleted: Boolean(m?.is_deleted)
+  };
+}
+
+/**
+ * 카카오톡형 왼쪽 목록용 채팅방 요약.
+ * TEMP ACCESS POLICY (Phase 1.1): membership 인증 구조가 아직 없어 service-role 무제한 노출을 피하기 위해
+ *   canonical default room(청소팀 단체방)만 반환한다. 타입/구조는 여러 방을 지원한다.
+ * 성능: 방마다 반복 쿼리 없음. 고정 3쿼리(방 / active 참가자 / 최근 메시지) + 클라 집계. unread 없음.
+ */
+export async function listChatRoomSummaries(): Promise<ChatRoomSummary[]> {
+  if (IS_MOCK || !supabaseAdmin) return [];
+
+  const defaultId = resolveDefaultChatRoomId();
+
+  // Q1: 방 목록(현재는 default room으로 제한)
+  const { data: roomsData, error: roomsErr } = await supabaseAdmin
+    .from('chat_rooms')
+    .select('id, name')
+    .eq('id', defaultId);
+  if (roomsErr) throw roomsErr;
+  const rooms = roomsData || [];
+  if (rooms.length === 0) return [];
+  const ids = rooms.map((r: any) => String(r.id));
+
+  // Q2: active 참가자 수(방 반복 없이 IN 1회 후 클라 집계)
+  const { data: partData, error: partErr } = await supabaseAdmin
+    .from('chat_room_participants')
+    .select('room_id')
+    .in('room_id', ids)
+    .eq('status', 'active');
+  if (partErr) throw partErr;
+  const countByRoom = new Map<string, number>();
+  for (const p of partData || []) {
+    const rid = String((p as any).room_id || '');
+    if (rid) countByRoom.set(rid, (countByRoom.get(rid) || 0) + 1);
+  }
+
+  // Q3: 최근 메시지(created_at DESC로 IN 1회 → 방별 첫 건). chat_messages_chat_room_id_created_at_idx 활용.
+  const { data: msgData, error: msgErr } = await supabaseAdmin
+    .from('chat_messages')
+    .select('id, chat_room_id, message, message_type, image_url, is_deleted, created_at, user:users(name)')
+    .in('chat_room_id', ids)
+    .order('created_at', { ascending: false })
+    .limit(ids.length * 20);
+  if (msgErr) throw msgErr;
+  const lastByRoom = new Map<string, ChatRoomLastMessage>();
+  for (const m of (msgData || []) as any[]) {
+    const rid = String(m?.chat_room_id || '');
+    if (!rid || lastByRoom.has(rid)) continue;
+    lastByRoom.set(rid, mapLastMessage(m));
+  }
+
+  return rooms.map((r: any) => ({
+    id: String(r.id),
+    name: String(r.name || '기본 대화방'),
+    participant_count: countByRoom.get(String(r.id)) || 0,
+    last_message: lastByRoom.get(String(r.id)) || null
   }));
 }

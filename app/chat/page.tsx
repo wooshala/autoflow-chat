@@ -47,6 +47,7 @@ import ChatParticipantSidebar, {
   buildParticipantsFromMessages,
   buildRoomsFromMessages
 } from '@/components/chat/ops-console/ChatParticipantSidebar';
+import ChatRoomSidebar from '@/components/chat/ops-console/ChatRoomSidebar';
 import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
 
 function getDeviceSide(): SenderSide {
@@ -137,6 +138,8 @@ export default function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
+  /** Phase 1.1: 실제 chat_rooms 기반 카카오톡형 왼쪽 목록(read-only). OFF면 기존 참여자/room_no 사이드바 유지. */
+  const chatRoomLayoutV1 = process.env.NEXT_PUBLIC_CHAT_ROOM_LAYOUT_V1 === '1';
   /** LF-3B UX PoC: photo → ops-event entry (Preview; gated with lost-found flag) */
   const photoOpsUxEnabled = lostFoundEnabled;
   const [opsUxToast, setOpsUxToast] = useState<string | null>(null);
@@ -1108,12 +1111,16 @@ export default function ChatPage() {
         ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
         <div className="flex min-h-0 flex-1">
-          <ChatParticipantSidebar
-            participants={consoleParticipants}
-            rooms={consoleRooms}
-            selectedRoomNo={consoleRoomNo}
-            onSelectRoom={setConsoleRoomNo}
-          />
+          {chatRoomLayoutV1 ? (
+            <ChatRoomSidebar participants={consoleParticipants} />
+          ) : (
+            <ChatParticipantSidebar
+              participants={consoleParticipants}
+              rooms={consoleRooms}
+              selectedRoomNo={consoleRoomNo}
+              onSelectRoom={setConsoleRoomNo}
+            />
+          )}
           <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
             <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
               <span className="font-bold">대화 타임라인</span>
