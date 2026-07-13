@@ -421,6 +421,7 @@ export default function ChatPage() {
     latSendClick({ client_nonce: clientNonce, sender_side: getDeviceSide(), room: roomNo || null, source: 'pc' });
     const optimisticMessage: ChatMessage = {
       id: optimisticId,
+      chat_room_id: null,
       user_id: chatSendUserId,
       message: text.trim(),
       message_type: photo ? 'image' : 'text',

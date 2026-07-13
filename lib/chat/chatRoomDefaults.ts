@@ -48,7 +48,7 @@ export function resolveDefaultChatRoomIdFromEnv(env: DefaultRoomEnv): string {
 }
 
 export function resolveDefaultChatRoomId(): string {
-  return resolveDefaultChatRoomIdFromEnv(process.env);
+  return resolveDefaultChatRoomIdFromEnv(process.env as DefaultRoomEnv);
 }
 
 /** Normalize optional chat room id from API fields (`chat_room_id` wins over `chatRoomId`). */
