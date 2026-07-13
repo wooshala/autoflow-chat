@@ -21,6 +21,8 @@ type Props = {
   onRefreshLostFoundList: () => void;
   /** 값이 바뀌면 시설고장 탭이 목록을 다시 불러온다(등록 성공 후 갱신). */
   maintenanceRefreshKey?: number;
+  /** Phase 1.4: 루트 폭 클래스. 미지정 시 기존 고정폭. 리사이즈 레이아웃 안에서는 'w-full'. */
+  widthClassName?: string;
 };
 
 const TABS: { id: EventTab; label: string }[] = [
@@ -36,7 +38,8 @@ export default function ChatOperationPanel({
   actorId,
   onSelectRoom,
   onRefreshLostFoundList,
-  maintenanceRefreshKey
+  maintenanceRefreshKey,
+  widthClassName = 'w-72 shrink-0 lg:w-80'
 }: Props) {
   const [tab, setTab] = useState<EventTab>('lost_found');
   const roomLabel = selectedRoomNo ? `${selectedRoomNo}호` : '전체';
@@ -45,7 +48,7 @@ export default function ChatOperationPanel({
     : lostFoundItems;
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-l border-gray-200 bg-gray-50 lg:w-80">
+    <aside className={`flex h-full flex-col border-l border-gray-200 bg-gray-50 ${widthClassName}`}>
       <div className="border-b border-gray-200 bg-white px-3 py-2.5">
         <div className="text-xs font-bold text-gray-500">Event Center</div>
         <div className="mt-1 flex items-center justify-between gap-2">

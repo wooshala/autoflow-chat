@@ -43,6 +43,7 @@ import type { LostFoundItemWithMatch } from '@/lib/ops-events/types';
 import { isChatOpsConsoleEnabled } from '@/lib/ops-events/flags';
 import ChatOpsConsoleHeader from '@/components/chat/ops-console/ChatOpsConsoleHeader';
 import ChatOperationPanel from '@/components/chat/ops-console/ChatOperationPanel';
+import ResizableChatLayout from '@/components/chat/layout/ResizableChatLayout';
 import ChatParticipantSidebar, {
   buildParticipantsFromMessages,
   buildRoomsFromMessages
@@ -137,6 +138,8 @@ export default function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
+  /** Phase 1.4: 좌·우 패널 드래그 크기 조절(독립 flag, 기본 OFF). OFF면 기존 고정폭 레이아웃 그대로. */
+  const resizablePanelsV1 = process.env.NEXT_PUBLIC_CHAT_RESIZABLE_PANELS_V1 === '1';
   /** LF-3B UX PoC: photo → ops-event entry (Preview; gated with lost-found flag) */
   const photoOpsUxEnabled = lostFoundEnabled;
   const [opsUxToast, setOpsUxToast] = useState<string | null>(null);
@@ -1086,6 +1089,44 @@ export default function ChatPage() {
   ) : null;
 
   if (showOpsConsole) {
+    // Phase 1.4: 3열 슬롯을 추출해 리사이즈 레이아웃(ON) / 기존 고정폭(OFF)에 동일하게 재사용.
+    //   width는 ResizableChatLayout wrapper가 소유하고, 패널은 ON일 때 w-full로 채운다.
+    const panelWidthClass = resizablePanelsV1 ? 'w-full' : undefined;
+    const leftSidebar = (
+      <ChatParticipantSidebar
+        participants={consoleParticipants}
+        rooms={consoleRooms}
+        selectedRoomNo={consoleRoomNo}
+        onSelectRoom={setConsoleRoomNo}
+        widthClassName={panelWidthClass}
+      />
+    );
+    const centerColumn = (
+      <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
+        <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
+          <span className="font-bold">대화 타임라인</span>
+          {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
+        </div>
+        {chatMessageList}
+        {maintenancePanel}
+        {chatComposer}
+      </div>
+    );
+    const rightPanel = (
+      <ChatOperationPanel
+        selectedRoomNo={consoleRoomNo}
+        recentPhotoMessage={recentPhotoMessage}
+        lostFoundItems={lostFoundItems}
+        lostFoundEnabled={lostFoundEnabled}
+        actorId={chatSendUserId}
+        onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
+        onSelectRoom={setConsoleRoomNo}
+        onRefreshLostFoundList={() => void loadLostFoundIndex()}
+        maintenanceRefreshKey={maintenanceRefreshKey}
+        widthClassName={panelWidthClass}
+      />
+    );
+
     return (
       <ChatPhotoLightboxProvider>
       <main className="relative flex h-screen flex-col bg-white">
@@ -1106,34 +1147,15 @@ export default function ChatPage() {
           </div>
         ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
-        <div className="flex min-h-0 flex-1">
-          <ChatParticipantSidebar
-            participants={consoleParticipants}
-            rooms={consoleRooms}
-            selectedRoomNo={consoleRoomNo}
-            onSelectRoom={setConsoleRoomNo}
-          />
-          <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
-            <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
-              <span className="font-bold">대화 타임라인</span>
-              {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
-            </div>
-            {chatMessageList}
-            {maintenancePanel}
-            {chatComposer}
+        {resizablePanelsV1 ? (
+          <ResizableChatLayout left={leftSidebar} center={centerColumn} right={rightPanel} />
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            {leftSidebar}
+            {centerColumn}
+            {rightPanel}
           </div>
-          <ChatOperationPanel
-            selectedRoomNo={consoleRoomNo}
-            recentPhotoMessage={recentPhotoMessage}
-            lostFoundItems={lostFoundItems}
-            lostFoundEnabled={lostFoundEnabled}
-            actorId={chatSendUserId}
-            onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
-            onSelectRoom={setConsoleRoomNo}
-            onRefreshLostFoundList={() => void loadLostFoundIndex()}
-            maintenanceRefreshKey={maintenanceRefreshKey}
-          />
-        </div>
+        )}
         {keypadOverlay}
       </main>
       </ChatPhotoLightboxProvider>

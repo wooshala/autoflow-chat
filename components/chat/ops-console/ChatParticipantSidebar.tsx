@@ -23,6 +23,8 @@ type Props = {
   rooms: RoomRow[];
   selectedRoomNo: string | null;
   onSelectRoom: (roomNo: string) => void;
+  /** Phase 1.4: 루트 폭 클래스. 미지정 시 기존 고정폭. 리사이즈 레이아웃 안에서는 'w-full'(wrapper가 폭 소유). */
+  widthClassName?: string;
 };
 
 const ROLE_TAB: Record<string, string> = {
@@ -69,13 +71,14 @@ export default function ChatParticipantSidebar({
   participants,
   rooms,
   selectedRoomNo,
-  onSelectRoom
+  onSelectRoom,
+  widthClassName = 'w-52 shrink-0 lg:w-56'
 }: Props) {
   const frontCount = participants.filter((p) => ROLE_TAB[p.role] === '프론트').length;
   const cleaningCount = participants.filter((p) => ROLE_TAB[p.role] === '청소팀').length;
 
   return (
-    <aside className="flex h-full w-52 shrink-0 flex-col border-r border-gray-200 bg-white lg:w-56">
+    <aside className={`flex h-full flex-col border-r border-gray-200 bg-white ${widthClassName}`}>
       <div className="border-b border-gray-100 px-3 py-2">
         <div className="text-xs font-bold text-gray-800">참여자 / 방</div>
         <input
