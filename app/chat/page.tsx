@@ -48,6 +48,7 @@ import ChatParticipantSidebar, {
   buildRoomsFromMessages
 } from '@/components/chat/ops-console/ChatParticipantSidebar';
 import ChatRoomSidebar from '@/components/chat/ops-console/ChatRoomSidebar';
+import ResizableChatLayout from '@/components/chat/layout/ResizableChatLayout';
 import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
 import { useChatRooms } from '@/lib/hooks/useChatRooms';
 import { sortChatRoomSummaries } from '@/lib/chat/chatRoomSummaryFormat';
@@ -111,6 +112,8 @@ export default function ChatPage() {
 
   /** Phase 1.1: 실제 chat_rooms 기반 카카오톡형 왼쪽 목록. OFF면 기존 참여자/room_no 사이드바 유지. */
   const chatRoomLayoutV1 = process.env.NEXT_PUBLIC_CHAT_ROOM_LAYOUT_V1 === '1';
+  /** Phase 1.4: 좌·우 패널 드래그 크기 조절(독립 flag, 기본 OFF). OFF면 기존 고정폭 레이아웃 그대로. */
+  const resizablePanelsV1 = process.env.NEXT_PUBLIC_CHAT_RESIZABLE_PANELS_V1 === '1';
   /** Phase 1.2: 선택된 채팅방 UUID(chat_room_id). room_no(객실번호)와 절대 혼용 금지. */
   const [selectedChatRoomId, setSelectedChatRoomId] = useState<string | null>(null);
 
@@ -1259,6 +1262,84 @@ export default function ChatPage() {
   ) : null;
 
   if (showOpsConsole) {
+    // Phase 1.4: 3열 슬롯을 추출해 리사이즈 레이아웃(ON) / 기존 고정폭(OFF)에 동일하게 재사용.
+    //   width는 ResizableChatLayout wrapper가 소유하고, 패널은 ON일 때 w-full로 채운다.
+    const panelWidthClass = resizablePanelsV1 ? 'w-full' : undefined;
+    const leftSidebar = roomSidebarVisible ? (
+      <ChatRoomSidebar
+        participants={consoleParticipants}
+        rooms={chatRooms}
+        status={chatRoomsState}
+        selectedChatRoomId={selectedChatRoomId}
+        onSelectRoom={handleSelectChatRoom}
+        onRetry={reloadChatRooms}
+        widthClassName={panelWidthClass}
+      />
+    ) : (
+      <ChatParticipantSidebar
+        participants={consoleParticipants}
+        rooms={consoleRooms}
+        selectedRoomNo={consoleRoomNo}
+        onSelectRoom={setConsoleRoomNo}
+        widthClassName={panelWidthClass}
+      />
+    );
+    const centerColumn = (
+      <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
+        <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
+          {roomSidebarVisible ? (
+            selectedRoom ? (
+              <>
+                <span className="font-bold">{selectedRoom.name}</span>
+                <span className="ml-2 text-gray-500">· 참여자 {selectedRoom.participant_count}명</span>
+              </>
+            ) : (
+              <span className="font-bold text-gray-500">채팅방을 선택하세요.</span>
+            )
+          ) : (
+            <>
+              <span className="font-bold">대화 타임라인</span>
+              {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
+            </>
+          )}
+        </div>
+        {/* Phase 1.2.5 B-2 / 1.2.6 8: 비차단 안내(입력창/Event Center를 가리지 않는 얇은 바). 전송은 계속 가능. */}
+        {roomLoadError || summaryUntrustedMultiRoom ? (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+            <span>
+              {summaryUntrustedMultiRoom
+                ? '채팅방 요약이 정확하지 않아(RPC 미적용) 채팅방 모드를 비활성화했습니다. 기존 채팅 모드로 이용합니다.'
+                : '채팅방 목록을 불러오지 못했습니다. 기존 채팅 모드로 계속 이용합니다.'}
+            </span>
+            <button
+              type="button"
+              onClick={() => void reloadChatRooms()}
+              className="shrink-0 rounded border border-amber-400 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : null}
+        {chatMessageList}
+        {maintenancePanel}
+        {chatComposer}
+      </div>
+    );
+    const rightPanel = (
+      <ChatOperationPanel
+        selectedRoomNo={consoleRoomNo}
+        recentPhotoMessage={recentPhotoMessage}
+        lostFoundItems={lostFoundItems}
+        lostFoundEnabled={lostFoundEnabled}
+        actorId={chatSendUserId}
+        onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
+        onSelectRoom={setConsoleRoomNo}
+        onRefreshLostFoundList={() => void loadLostFoundIndex()}
+        maintenanceRefreshKey={maintenanceRefreshKey}
+        widthClassName={panelWidthClass}
+      />
+    );
+
     return (
       <ChatPhotoLightboxProvider>
       <main className="relative flex h-screen flex-col bg-white">
@@ -1279,75 +1360,15 @@ export default function ChatPage() {
           </div>
         ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
-        <div className="flex min-h-0 flex-1">
-          {roomSidebarVisible ? (
-            <ChatRoomSidebar
-              participants={consoleParticipants}
-              rooms={chatRooms}
-              status={chatRoomsState}
-              selectedChatRoomId={selectedChatRoomId}
-              onSelectRoom={handleSelectChatRoom}
-              onRetry={reloadChatRooms}
-            />
-          ) : (
-            <ChatParticipantSidebar
-              participants={consoleParticipants}
-              rooms={consoleRooms}
-              selectedRoomNo={consoleRoomNo}
-              onSelectRoom={setConsoleRoomNo}
-            />
-          )}
-          <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
-            <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
-              {roomSidebarVisible ? (
-                selectedRoom ? (
-                  <>
-                    <span className="font-bold">{selectedRoom.name}</span>
-                    <span className="ml-2 text-gray-500">· 참여자 {selectedRoom.participant_count}명</span>
-                  </>
-                ) : (
-                  <span className="font-bold text-gray-500">채팅방을 선택하세요.</span>
-                )
-              ) : (
-                <>
-                  <span className="font-bold">대화 타임라인</span>
-                  {consoleRoomNo ? <span className="ml-2 text-gray-500">· {consoleRoomNo}호</span> : null}
-                </>
-              )}
-            </div>
-            {/* Phase 1.2.5 B-2 / 1.2.6 8: 비차단 안내(입력창/Event Center를 가리지 않는 얇은 바). 전송은 계속 가능. */}
-            {roomLoadError || summaryUntrustedMultiRoom ? (
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
-                <span>
-                  {summaryUntrustedMultiRoom
-                    ? '채팅방 요약이 정확하지 않아(RPC 미적용) 채팅방 모드를 비활성화했습니다. 기존 채팅 모드로 이용합니다.'
-                    : '채팅방 목록을 불러오지 못했습니다. 기존 채팅 모드로 계속 이용합니다.'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void reloadChatRooms()}
-                  className="shrink-0 rounded border border-amber-400 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100"
-                >
-                  다시 시도
-                </button>
-              </div>
-            ) : null}
-            {chatMessageList}
-            {maintenancePanel}
-            {chatComposer}
+        {resizablePanelsV1 ? (
+          <ResizableChatLayout left={leftSidebar} center={centerColumn} right={rightPanel} />
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            {leftSidebar}
+            {centerColumn}
+            {rightPanel}
           </div>
-          <ChatOperationPanel
-            selectedRoomNo={consoleRoomNo}
-            recentPhotoMessage={recentPhotoMessage}
-            lostFoundItems={lostFoundItems}
-            lostFoundEnabled={lostFoundEnabled}
-            actorId={chatSendUserId}
-            onRegisterLostFound={lostFoundEnabled ? handleLostFoundPhotoClick : undefined}
-            onSelectRoom={setConsoleRoomNo}
-            onRefreshLostFoundList={() => void loadLostFoundIndex()}
-            maintenanceRefreshKey={maintenanceRefreshKey}
-          />
-        </div>
+        )}
         {keypadOverlay}
       </main>
       </ChatPhotoLightboxProvider>

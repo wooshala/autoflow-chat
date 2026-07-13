@@ -18,6 +18,8 @@ type Props = {
   onSelectRoom: (roomId: string) => void;
   /** 오류 상태에서 재조회 요청. */
   onRetry: () => void;
+  /** Phase 1.4: 루트 폭 클래스. 미지정 시 기존 고정폭. 리사이즈 레이아웃 안에서는 'w-full'(wrapper가 폭 소유). */
+  widthClassName?: string;
 };
 
 /**
@@ -32,10 +34,11 @@ export default function ChatRoomSidebar({
   status,
   selectedChatRoomId,
   onSelectRoom,
-  onRetry
+  onRetry,
+  widthClassName = 'w-52 shrink-0 lg:w-56'
 }: Props) {
   return (
-    <aside className="flex h-full w-52 shrink-0 flex-col border-r border-gray-200 bg-white lg:w-56">
+    <aside className={`flex h-full flex-col border-r border-gray-200 bg-white ${widthClassName}`}>
       <div className="shrink-0 border-b border-gray-200 px-3 py-2.5">
         <div className="text-sm font-extrabold text-gray-900">채팅</div>
       </div>
