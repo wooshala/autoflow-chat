@@ -24,6 +24,38 @@ export function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
 
+// Phase 1.4 Commit G: localStorage 키(버전 고정).
+export const STORAGE_KEY_LEFT_WIDTH = 'autoflow_chat_left_panel_width_v1';
+export const STORAGE_KEY_RIGHT_WIDTH = 'autoflow_chat_right_panel_width_v1';
+export const STORAGE_KEY_LEFT_COLLAPSED = 'autoflow_chat_left_panel_collapsed_v1';
+export const STORAGE_KEY_RIGHT_COLLAPSED = 'autoflow_chat_right_panel_collapsed_v1';
+
+/**
+ * localStorage 폭 문자열을 파싱한다.
+ * null/''/비수치/Infinity/NaN → fallback. 범위 밖 유한값 → clamp(일관 정책).
+ */
+export function parseStoredPanelWidth(
+  raw: string | null | undefined,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  if (raw == null || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return clamp(n, min, max);
+}
+
+/** localStorage collapsed 문자열 → boolean. 'true'만 true, 그 외/null → false. */
+export function parseStoredCollapsed(raw: string | null | undefined): boolean {
+  return raw === 'true';
+}
+
+/** 최종 표시 여부: 사용자 수동 접기 또는 자동 접기면 숨김. */
+export function isPanelVisible(userCollapsed: boolean, autoCollapsed: boolean): boolean {
+  return !userCollapsed && !autoCollapsed;
+}
+
 /** localStorage 등에서 온 폭 후보를 [min,max]로 정규화. 잘못된 값이면 fallback. */
 export function normalizeWidth(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === 'number' ? value : Number(value);
