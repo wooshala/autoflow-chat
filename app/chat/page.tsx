@@ -49,6 +49,11 @@ import ChatParticipantSidebar, {
   buildRoomsFromMessages
 } from '@/components/chat/ops-console/ChatParticipantSidebar';
 import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
+// Phase 1C — Room Navigation (flag-gated; falls back to ChatParticipantSidebar when off).
+import { isRoomNavigationEnabled } from '@/lib/rooms/roomNavigationFlags';
+import { RoomNavigationProvider } from '@/components/rooms/RoomNavigationContext';
+import RoomNavigation from '@/components/rooms/RoomNavigation';
+import { RoomCenter } from '@/components/rooms/RoomCenter';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -1092,7 +1097,10 @@ export default function ChatPage() {
     // Phase 1.4: 3열 슬롯을 추출해 리사이즈 레이아웃(ON) / 기존 고정폭(OFF)에 동일하게 재사용.
     //   width는 ResizableChatLayout wrapper가 소유하고, 패널은 ON일 때 w-full로 채운다.
     const panelWidthClass = resizablePanelsV1 ? 'w-full' : undefined;
-    const leftSidebar = (
+    // Phase 1C: Room Navigation only activates inside the 3-panel ops console (this
+    // branch). Off → existing sidebar/center unchanged (fail-safe).
+    const roomNavigationEnabled = isRoomNavigationEnabled();
+    const existingLeftSidebar = (
       <ChatParticipantSidebar
         participants={consoleParticipants}
         rooms={consoleRooms}
@@ -1101,7 +1109,10 @@ export default function ChatPage() {
         widthClassName={panelWidthClass}
       />
     );
-    const centerColumn = (
+    // Existing staff center column — wrapper + className preserved verbatim. When Room
+    // Navigation is on, RoomCenter keeps this MOUNTED (display:contents) for staff-global
+    // and never wraps it, so scroll/draft/subscription survive room switches (Phase 1C.1/1C.2).
+    const existingStaffCenterColumn = (
       <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
         <div className="shrink-0 border-b border-gray-300/50 bg-[#B2C7D9] px-3 py-2 text-xs text-gray-700">
           <span className="font-bold">대화 타임라인</span>
@@ -1111,6 +1122,16 @@ export default function ChatPage() {
         {maintenancePanel}
         {chatComposer}
       </div>
+    );
+    const leftSidebar = roomNavigationEnabled ? (
+      <RoomNavigation widthClassName={panelWidthClass} />
+    ) : (
+      existingLeftSidebar
+    );
+    const centerColumn = roomNavigationEnabled ? (
+      <RoomCenter staffGlobalSlot={existingStaffCenterColumn} />
+    ) : (
+      existingStaffCenterColumn
     );
     const rightPanel = (
       <ChatOperationPanel
@@ -1125,6 +1146,18 @@ export default function ChatPage() {
         maintenanceRefreshKey={maintenanceRefreshKey}
         widthClassName={panelWidthClass}
       />
+    );
+    // Phase 1C: wrap the 3-panel body in the Room Navigation provider ONLY when the flag
+    // is on. Off → identical to before. Provider unmounts when the flag flips off, so the
+    // room selection resets to 직원 전체 with no reset effect (Phase 1C.5).
+    const layoutBody = resizablePanelsV1 ? (
+      <ResizableChatLayout left={leftSidebar} center={centerColumn} right={rightPanel} />
+    ) : (
+      <div className="flex min-h-0 flex-1">
+        {leftSidebar}
+        {centerColumn}
+        {rightPanel}
+      </div>
     );
 
     return (
@@ -1147,14 +1180,10 @@ export default function ChatPage() {
           </div>
         ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
-        {resizablePanelsV1 ? (
-          <ResizableChatLayout left={leftSidebar} center={centerColumn} right={rightPanel} />
+        {roomNavigationEnabled ? (
+          <RoomNavigationProvider>{layoutBody}</RoomNavigationProvider>
         ) : (
-          <div className="flex min-h-0 flex-1">
-            {leftSidebar}
-            {centerColumn}
-            {rightPanel}
-          </div>
+          layoutBody
         )}
         {keypadOverlay}
       </main>
