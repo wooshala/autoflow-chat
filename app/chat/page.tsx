@@ -60,6 +60,7 @@ import {
 import { RoomNavigationProvider } from '@/components/rooms/RoomNavigationContext';
 import RoomNavigation from '@/components/rooms/RoomNavigation';
 import { RoomCenter } from '@/components/rooms/RoomCenter';
+import { useRoomNavigationPilotShortcut } from '@/lib/hooks/useRoomNavigationPilotShortcut';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -165,6 +166,9 @@ export default function ChatPage() {
   useEffect(() => {
     setRoomNavOverride(getRoomNavigationRuntimeOverride());
   }, []);
+  // Phase 1E.2: Ctrl+Alt+Shift+N pilot toggle (works even without WebView devtools).
+  // Stores the override + reloads; the gate above still applies its fail-safe rules.
+  useRoomNavigationPilotShortcut();
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return;
     const buildEnabled = isRoomNavigationEnabled();
