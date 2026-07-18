@@ -36,13 +36,14 @@ export function getRoomNavigationRuntimeOverride(): RoomNavigationOverride {
   }
 }
 
-/** Pure gate resolution (unit-tested). Fail-safe: false unless the ops console is active. */
+// Pure FEATURE-INTENT gate (unit-tested): does this device want Room Navigation? It no
+// longer depends on the ops console — Room Navigation is decoupled from the 3-panel
+// layout (Phase 1F.1). WHERE/whether it actually renders (incl. mobile + standard-layout
+// rules) is decided separately by resolveLeftNavigationMode in ./chatLayout.
 export function resolveRoomNavigationEnabled(args: {
-  showOpsConsole: boolean;
   buildEnabled: boolean;
-  override: RoomNavigationOverride;
+  runtimeOverride: RoomNavigationOverride;
 }): boolean {
-  const { showOpsConsole, buildEnabled, override } = args;
-  if (!showOpsConsole) return false;
-  return override === 'on' || (override !== 'off' && buildEnabled);
+  const { buildEnabled, runtimeOverride } = args;
+  return runtimeOverride === 'on' || (runtimeOverride !== 'off' && buildEnabled);
 }

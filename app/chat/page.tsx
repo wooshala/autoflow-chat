@@ -61,6 +61,7 @@ import { RoomNavigationProvider } from '@/components/rooms/RoomNavigationContext
 import RoomNavigation from '@/components/rooms/RoomNavigation';
 import { RoomCenter } from '@/components/rooms/RoomCenter';
 import { useRoomNavigationPilotShortcut } from '@/lib/hooks/useRoomNavigationPilotShortcut';
+import { resolveLeftNavigationMode, type ChatLayoutMode } from '@/lib/rooms/chatLayout';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -167,18 +168,27 @@ export default function ChatPage() {
     setRoomNavOverride(getRoomNavigationRuntimeOverride());
   }, []);
   // Phase 1E.2: Ctrl+Alt+Shift+N pilot toggle (works even without WebView devtools).
-  // Stores the override + reloads; the gate above still applies its fail-safe rules.
   useRoomNavigationPilotShortcut();
+  // Phase 1F.1: Room Navigation feature intent (decoupled from the ops console) + the
+  // resolved left-nav mode for the current layout/viewport.
+  const roomNavigationEnabled = resolveRoomNavigationEnabled({
+    buildEnabled: isRoomNavigationEnabled(),
+    runtimeOverride: roomNavOverride
+  });
+  const layoutMode: ChatLayoutMode = showOpsConsole ? 'ops' : 'standard';
+  const leftNavigationMode = resolveLeftNavigationMode({ layoutMode, roomNavigationEnabled, isMobileViewport });
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return;
-    const buildEnabled = isRoomNavigationEnabled();
     console.log('[ROOM_NAV_GATE]', {
-      buildEnabled,
-      showOpsConsole,
+      buildEnabled: isRoomNavigationEnabled(),
       runtimeOverride: roomNavOverride,
-      effectiveEnabled: resolveRoomNavigationEnabled({ showOpsConsole, buildEnabled, override: roomNavOverride })
+      effectiveEnabled: roomNavigationEnabled,
+      showOpsConsole,
+      isMobileViewport,
+      layoutMode,
+      leftNavigation: leftNavigationMode
     });
-  }, [showOpsConsole, roomNavOverride]);
+  }, [roomNavigationEnabled, showOpsConsole, isMobileViewport, layoutMode, leftNavigationMode, roomNavOverride]);
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
   const [lostFoundItems, setLostFoundItems] = useState<LostFoundItemWithMatch[]>([]);
   const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
@@ -1124,14 +1134,8 @@ export default function ChatPage() {
     // Phase 1.4: 3열 슬롯을 추출해 리사이즈 레이아웃(ON) / 기존 고정폭(OFF)에 동일하게 재사용.
     //   width는 ResizableChatLayout wrapper가 소유하고, 패널은 ON일 때 w-full로 채운다.
     const panelWidthClass = resizablePanelsV1 ? 'w-full' : undefined;
-    // Phase 1C/1E.1: Room Navigation only activates inside the 3-panel ops console (this
-    // branch). Final gate = build flag resolved with the per-device runtime override.
-    // Off → existing sidebar/center unchanged (fail-safe).
-    const roomNavigationEnabled = resolveRoomNavigationEnabled({
-      showOpsConsole,
-      buildEnabled: isRoomNavigationEnabled(),
-      override: roomNavOverride
-    });
+    // Phase 1F.1: roomNavigationEnabled + leftNavigationMode are computed at the top level
+    // (decoupled from the ops console). Off → existing sidebar/center unchanged.
     const existingLeftSidebar = (
       <ChatParticipantSidebar
         participants={consoleParticipants}
@@ -1155,7 +1159,7 @@ export default function ChatPage() {
         {chatComposer}
       </div>
     );
-    const leftSidebar = roomNavigationEnabled ? (
+    const leftSidebar = leftNavigationMode === 'room-navigation' ? (
       <RoomNavigation widthClassName={panelWidthClass} />
     ) : (
       existingLeftSidebar
@@ -1222,6 +1226,33 @@ export default function ChatPage() {
       </ChatPhotoLightboxProvider>
     );
   }
+
+  // Phase 1F.1: desktop-only standard-layout Room Navigation. Default (inactive) renders
+  // the existing single-column chat body unchanged; only a pilot desktop device with Room
+  // Navigation enabled gets a left panel — no Event Center, no ResizableChatLayout, no resize.
+  // Only the chat BODY is wrapped; global shell/overlays stay outside (they must not
+  // unmount on room switch). Live-ops room reuses standardChatBody via RoomCenter's
+  // display:contents mount, preserving draft/scroll/realtime.
+  const standardChatBody = (
+    <>
+      {chatMessageList}
+      {maintenancePanel}
+      {chatComposer}
+    </>
+  );
+  const standardRoomNavActive = leftNavigationMode === 'room-navigation';
+  const standardChatRegion = standardRoomNavActive ? (
+    <RoomNavigationProvider>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <RoomNavigation widthClassName="w-64" />
+        <section className="flex min-w-0 flex-1 flex-col">
+          <RoomCenter staffGlobalSlot={standardChatBody} />
+        </section>
+      </div>
+    </RoomNavigationProvider>
+  ) : (
+    standardChatBody
+  );
 
   return (
     <ChatPhotoLightboxProvider>
@@ -1408,11 +1439,7 @@ export default function ChatPage() {
 
       <StaffChatAdminSection open={showAdminPanel} />
 
-      {chatMessageList}
-
-      {maintenancePanel}
-
-      {chatComposer}
+      {standardChatRegion}
 
       {keypadOverlay}
 
