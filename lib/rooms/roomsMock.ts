@@ -1,45 +1,59 @@
-// Phase 1C — DEV/PoC room list + seeded customer conversations.
+// Phase 1C.1 — DEV/PoC room list + seeded customer conversations.
 //
 // DEV ONLY. Reachable only behind NEXT_PUBLIC_ROOM_NAVIGATION. Exactly ONE room is
-// real ('직원 전체' → existing staff chat); every other room here is mock with NO DB
-// write and is NOT mixed into the real staff stream. Customer message bodies reuse the
-// Phase 1B mock content and add 701(ru)/502(zh) so §9 lists five customer rooms.
+// 'live' (category 'operations' → existing staff chat); every other room here is 'mock'
+// with NO DB write and is NOT mixed into the real staff stream. Customer message bodies
+// reuse the Phase 1B mock content and add 701(ru)/502(zh) so §9 lists five customer rooms.
 
 import type { CustomerLang } from '@/lib/customer-service/translationLangs';
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
-import { STAFF_GLOBAL_ROOM_ID, type Room } from './roomTypes';
+import { OPERATIONS_ROOM_ID, type Room } from './roomTypes';
 
 const T = (h: number, m: number) =>
   `2026-07-18T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00+09:00`;
 
 /** The one real, data-backed room. Selecting it renders the existing staff chat. */
-export const STAFF_GLOBAL_ROOM: Room = {
-  id: STAFF_GLOBAL_ROOM_ID,
-  kind: 'staff-global',
-  title: '직원 전체',
+export const OPERATIONS_ROOM: Room = {
+  id: OPERATIONS_ROOM_ID,
+  category: 'operations',
+  dataBinding: 'live',
+  title: '운영 채팅',
+  icon: '📢',
+  colorToken: 'operations',
+  defaultOrder: 0,
   team: 'general',
-  isMine: true,
-  isDev: false,
+  status: 'active',
   lastActiveAt: T(10, 20),
 };
 
 /** DEV mock team rooms — no real team backing exists yet (§2). */
-const STAFF_MOCK_ROOMS: Room[] = [
-  { id: 'staff-cleaning', kind: 'staff-mock', title: '청소팀 전체', team: 'cleaning', isMine: true, isDev: true, unread: 2, lastActiveAt: T(10, 5) },
-  { id: 'staff-front', kind: 'staff-mock', title: '프런트 전체', team: 'front', isMine: true, isDev: true, lastActiveAt: T(9, 50) },
-  { id: 'staff-maintenance', kind: 'staff-mock', title: '정비팀 전체', team: 'maintenance', isDev: true, lastActiveAt: T(9, 10) },
+const TEAM_ROOMS: Room[] = [
+  { id: 'staff-cleaning', category: 'team', dataBinding: 'mock', title: '청소팀', icon: '🧹', colorToken: 'housekeeping', defaultOrder: 10, team: 'cleaning', status: 'active', unread: 2, lastActiveAt: T(10, 5) },
+  { id: 'staff-front', category: 'team', dataBinding: 'mock', title: '프런트', icon: '👨‍💼', colorToken: 'front', defaultOrder: 20, team: 'front', status: 'active', lastActiveAt: T(9, 50) },
+  { id: 'staff-maintenance', category: 'team', dataBinding: 'mock', title: '정비팀', icon: '🛠', colorToken: 'maintenance', defaultOrder: 30, team: 'maintenance', status: 'active', lastActiveAt: T(9, 10) },
 ];
 
 const CUSTOMER_ROOMS: Room[] = [
-  { id: 'cust-503', kind: 'customer', title: '503호 · 中文(简体)', room_no: '503', language: 'zh-CN', isMine: true, isDev: true, unread: 2, lastActiveAt: T(9, 15) },
-  { id: 'cust-308', kind: 'customer', title: '308호 · 日本語', room_no: '308', language: 'ja', isMine: true, isDev: true, unread: 1, lastActiveAt: T(21, 40) },
-  { id: 'cust-606', kind: 'customer', title: '606호 · English', room_no: '606', language: 'en', isDev: true, lastActiveAt: T(10, 6) },
-  { id: 'cust-701', kind: 'customer', title: '701호 · Русский', room_no: '701', language: 'ru', isDev: true, unread: 1, lastActiveAt: T(19, 25) },
-  { id: 'cust-502', kind: 'customer', title: '502호 · 中文(简体)', room_no: '502', language: 'zh-CN', isDev: true, lastActiveAt: T(8, 30) },
+  { id: 'cust-503', category: 'customer', dataBinding: 'mock', title: '503호 · 中文(简体)', colorToken: 'customer', defaultOrder: 40, room_no: '503', language: 'zh-CN', status: 'active', unread: 2, lastActiveAt: T(9, 15) },
+  { id: 'cust-308', category: 'customer', dataBinding: 'mock', title: '308호 · 日本語', colorToken: 'customer', defaultOrder: 41, room_no: '308', language: 'ja', status: 'active', unread: 1, lastActiveAt: T(21, 40) },
+  { id: 'cust-606', category: 'customer', dataBinding: 'mock', title: '606호 · English', colorToken: 'customer', defaultOrder: 42, room_no: '606', language: 'en', status: 'active', lastActiveAt: T(10, 6) },
+  { id: 'cust-701', category: 'customer', dataBinding: 'mock', title: '701호 · Русский', colorToken: 'customer', defaultOrder: 43, room_no: '701', language: 'ru', status: 'active', unread: 1, lastActiveAt: T(19, 25) },
+  { id: 'cust-502', category: 'customer', dataBinding: 'mock', title: '502호 · 中文(简体)', colorToken: 'customer', defaultOrder: 44, room_no: '502', language: 'zh-CN', status: 'active', lastActiveAt: T(8, 30) },
 ];
 
-/** All seed rooms in nav order: real staff first, then DEV team rooms, then customers. */
-export const MOCK_ROOMS: Room[] = [STAFF_GLOBAL_ROOM, ...STAFF_MOCK_ROOMS, ...CUSTOMER_ROOMS];
+/** All seed rooms in nav order: operations first, then DEV team rooms, then customers. */
+export const MOCK_ROOMS: Room[] = [OPERATIONS_ROOM, ...TEAM_ROOMS, ...CUSTOMER_ROOMS];
+
+/** Seed per-user "내 대화방" membership (future room_members join). Excludes 정비팀 so the
+ *  tab is visibly a filter, not everything. */
+export const MOCK_MEMBERSHIP: string[] = [
+  OPERATIONS_ROOM_ID,
+  'staff-cleaning',
+  'staff-front',
+  'cust-503',
+  'cust-308',
+  'cust-701',
+];
 
 const g = (
   id: string,

@@ -1,10 +1,11 @@
 'use client';
 
-// Phase 1C — a single room row in the left navigation. Language name is always shown
-// for customer rooms (via the title, e.g. "503호 · 中文(简体)"); the flag emoji is only
-// a secondary hint (§6). The real staff room ('staff-global') cannot be trashed.
+// Phase 1C.1 — a single room row. Icon comes from room.icon (staff) or the language flag
+// (customer, secondary hint); the language NAME is always in the title (§6). 'live' rooms
+// show a 실시간 badge, 'mock' rooms a DEV badge. The operations room can't be hidden.
 
-import { STAFF_GLOBAL_ROOM_ID, type Room } from '@/lib/rooms/roomTypes';
+import { OPERATIONS_ROOM_ID, type Room } from '@/lib/rooms/roomTypes';
+import { roomColorText } from '@/lib/rooms/roomTheme';
 
 const FLAG: Record<string, string> = {
   'zh-CN': '🇨🇳',
@@ -18,21 +19,21 @@ export function RoomListItem({
   room,
   active,
   favorite,
-  archived,
+  hidden,
   onSelect,
   onToggleFavorite,
-  onToggleArchived,
+  onToggleHidden,
 }: {
   room: Room;
   active: boolean;
   favorite: boolean;
-  archived: boolean;
+  hidden: boolean;
   onSelect: () => void;
   onToggleFavorite: () => void;
-  onToggleArchived: () => void;
+  onToggleHidden: () => void;
 }) {
-  const canArchive = room.id !== STAFF_GLOBAL_ROOM_ID;
-  const flag = room.language ? FLAG[room.language] : null;
+  const canHide = room.id !== OPERATIONS_ROOM_ID;
+  const icon = room.icon ?? (room.language ? FLAG[room.language] : null);
 
   return (
     <li>
@@ -43,12 +44,11 @@ export function RoomListItem({
       >
         <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 flex-col text-left">
           <div className="flex items-center gap-1.5">
-            {flag && <span aria-hidden>{flag}</span>}
+            {icon && <span aria-hidden className={roomColorText(room.colorToken)}>{icon}</span>}
             <span className="truncate font-medium text-gray-800">{room.title}</span>
-            {room.kind === 'staff-global' && (
+            {room.dataBinding === 'live' ? (
               <span className="rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-700">실시간</span>
-            )}
-            {room.isDev && (
+            ) : (
               <span className="rounded bg-gray-200 px-1 text-[10px] font-semibold text-gray-500">DEV</span>
             )}
             {room.unread ? (
@@ -69,14 +69,14 @@ export function RoomListItem({
           {favorite ? '★' : '☆'}
         </button>
 
-        {canArchive && (
+        {canHide && (
           <button
             type="button"
-            onClick={onToggleArchived}
-            title={archived ? '복원' : '휴지통으로 이동'}
+            onClick={onToggleHidden}
+            title={hidden ? '목록에 다시 표시' : '내 목록에서 숨기기'}
             className="shrink-0 text-xs text-gray-300 hover:text-gray-600"
           >
-            {archived ? '↩' : '🗑'}
+            {hidden ? '↩' : '🗑'}
           </button>
         )}
       </div>

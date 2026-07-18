@@ -1,15 +1,15 @@
 'use client';
 
-// Phase 1C — center renderer switch by room kind (Q3=b: renderers are separate; the
-// shell is shared, the staff renderer is NOT replaced).
+// Phase 1C.1 — center renderer switch (Q3=b: renderers are separate; the shell is
+// shared, the staff renderer is NOT replaced). Selection derives from the two Room axes:
+//   dataBinding 'live' + category 'operations' → the real staff center (staffGlobalSlot)
+//   category 'customer'                        → CustomerRoom
+//   otherwise (mock team/other)                → MockStaffRoom
 //
-// staff-global: the EXISTING staff center tree (staffGlobalSlot) is returned as-is —
-// RoomCenter adds NO wrapper box, scroll container, or padding around it (Phase 1C.1).
-// It is kept ALWAYS MOUNTED (never unmounted on room switch) so the real chat's scroll
-// position, in-progress draft, realtime subscription and message loader are preserved
-// (Phase 1C.2). When active the toggle uses `display:contents` (zero layout box → the
-// tree lays out exactly as the original); when inactive it is `hidden` (display:none),
-// which keeps DOM scrollTop intact until the operator returns.
+// The live operations center is returned AS-IS (no added wrapper/scroll/padding — 1C.1)
+// and kept ALWAYS MOUNTED so its scroll position, in-progress draft, realtime
+// subscription and message loader survive room switches (1C.2): display:contents when
+// active (zero layout box → identical to the original tree), hidden otherwise.
 
 import type { ReactNode } from 'react';
 
@@ -19,13 +19,15 @@ import { CustomerRoom } from './CustomerRoom';
 
 export function RoomCenter({ staffGlobalSlot }: { staffGlobalSlot: ReactNode }) {
   const { selectedRoom } = useRoomNavigation();
-  const kind = selectedRoom.kind;
+  const isLiveOps = selectedRoom.dataBinding === 'live' && selectedRoom.category === 'operations';
 
   return (
     <>
-      <div className={kind === 'staff-global' ? 'contents' : 'hidden'}>{staffGlobalSlot}</div>
-      {kind === 'staff-mock' && <MockStaffRoom room={selectedRoom} />}
-      {kind === 'customer' && <CustomerRoom key={selectedRoom.id} room={selectedRoom} />}
+      <div className={isLiveOps ? 'contents' : 'hidden'}>{staffGlobalSlot}</div>
+      {!isLiveOps && selectedRoom.category === 'customer' && (
+        <CustomerRoom key={selectedRoom.id} room={selectedRoom} />
+      )}
+      {!isLiveOps && selectedRoom.category !== 'customer' && <MockStaffRoom room={selectedRoom} />}
     </>
   );
 }

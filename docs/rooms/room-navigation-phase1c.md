@@ -30,9 +30,9 @@ all ticket/lost-found/maintenance handlers, `chatMessageList`, `chatComposer`, t
 
 ## 3. Center renderer — shell shared, renderers separate (Q3=b)
 
-`RoomCenter` switches by `room.kind`:
+`RoomCenter` switches by the two Room axes (`dataBinding` + `category`, §9):
 
-- **staff-global (real)** → the existing staff center tree (`staffGlobalSlot`) returned
+- **live operations (real)** → the existing staff center tree (`staffGlobalSlot`) returned
   **as-is, no added wrapper/scroll/padding** (1C.1). It is kept **always mounted**:
   `display:contents` when active (zero layout box → identical to the original tree),
   `hidden` when not. Because the page never unmounts and the draft/subscription/loader
@@ -55,26 +55,29 @@ all ticket/lost-found/maintenance handlers, `chatMessageList`, `chatComposer`, t
 ## 4. Room entity (independent, mock)
 
 `lib/rooms/roomTypes.ts` `Room` is an independent entity, **not** derived from messages
-(§7), shaped close to a future `chat_rooms` / `customer_conversations` row. Exactly one
-room is real: `kind: 'staff-global'` ('직원 전체'). Everything else is `isDev: true` mock.
+(§7), shaped close to a future `chat_rooms` / `customer_conversations` row. See §9 for the
+generalized Phase 1C.1 schema (`category` + `dataBinding`). Exactly one room is real:
+`category: 'operations'`, `dataBinding: 'live'` ('운영 채팅'). Everything else is mock.
 
-Seed (`roomsMock.ts`): 직원 전체(real) · 청소팀/프런트/정비팀(DEV mock) · 5 customer rooms
-503 中文 / 308 日本語 / 606 English / 701 Русский / 502 中文 (§9). Customer message bodies
-reuse the Phase 1B mock. Team rooms are **not** wired to real `chat_messages` (no team
-backing exists yet — §2); real per-team rooms are a follow-up needing `chat_rooms` +
+Seed (`roomsMock.ts`): 운영 채팅(live) · 청소팀/프런트/정비팀(DEV mock) · 5 customer rooms
+503 中文 / 308 日本語 / 606 English / 701 Русский / 502 中文 (§9 brief). Customer message
+bodies reuse the Phase 1B mock. Team rooms are **not** wired to real `chat_messages` (no
+team backing exists yet — §2); real per-team rooms are a follow-up needing `chat_rooms` +
 `room_id` on messages.
 
 ## 5. Left navigation behavior (mock/local state — §4/§8)
 
 `RoomNavigation` = 대화방 header + `+ 새 채팅방` + search + tabs (전체/내 대화방/즐겨찾기)
-+ sectioned `RoomList` (직원 채팅 / 고객 채팅방 / 최근 대화방 / 휴지통). All backed by pure
-functions in `roomsQuery.ts` (unit-tested, 7/7):
++ sectioned, collapsible `RoomList` (직원 채팅 / 고객 채팅방 / 최근 대화방 / 휴지통). All backed
+by pure functions in `roomsQuery.ts` (unit-tested, 8/8):
 
 - **search**: title / room number / language code (title embeds the language name).
-- **tabs**: 전체 = all active, 내 대화방 = `isMine`, 즐겨찾기 = favorites set.
-- **즐겨찾기**: local toggle. **새 채팅방**: modal → local room (일반/청소/정비/프런트), auto-selected.
-- **휴지통**: archived rooms (the real staff room can never be trashed; archiving the open
-  room falls back to 직원 전체). **최근 대화방**: small section (§10), most-recently-selected.
+- **tabs**: 전체 = all listable, 내 대화방 = membership set, 즐겨찾기 = favorites set.
+- **즐겨찾기**: per-user toggle. **새 채팅방**: modal → local room (일반/청소/정비/프런트), auto-selected.
+- **휴지통**: rooms I hid from my list (per-user `isHidden`, restorable); the 운영 채팅 room
+  can never be hidden, and hiding the open room falls back to 운영 채팅. Shared
+  `room.status='archived'` (closed room) is excluded everywhere.
+- **최근 대화방**: small section (§10), most-recently-selected. Sections collapse per-user.
 
 No refresh persistence, no localStorage, no DB writes.
 
@@ -102,7 +105,7 @@ and matches the 1C anti-leak requirement. It is the only behavior delta from the
 ## 8. Verification
 
 - tsc `--noEmit`: **0 errors** (whole project).
-- Unit tests: `roomsQuery` **7/7**, `clipboardImage` **7/7** (regression) — `node --test`.
+- Unit tests: `roomsQuery` **8/8**, `clipboardImage` **7/7** (regression) — `node --test`.
 - Existing tracked files changed: **only 2** — `app/chat/page.tsx` (minimal wiring,
   +47/−12) and `components/customer-service/CustomerConsole.tsx` (extraction, −276/+12).
   ChatMessages, ChatInput(composer), sendMessage, chat hooks, ChatParticipantSidebar,
@@ -125,3 +128,50 @@ open `/chat`. The §16 sequence:
 8. 방 전환 지연 체감 0 (§16).
 
 `display:contents`/room switching는 EXE WebView(Chromium)에서도 재확인. 미실행 항목은 BLOCKED.
+
+## 9. Phase 1C.1 — schema generalization (product-ready shape)
+
+Feedback after 1C: prepare the schema now so Room Navigation can grow into a work
+**Workspace** without an expensive migration later. `kind` is replaced by two orthogonal
+axes, and per-user state is separated from the shared room definition.
+
+```ts
+type RoomCategory = 'operations' | 'team' | 'customer' | 'system' | 'bot' | 'notice';
+type RoomDataBinding = 'live' | 'mock';           // 'live' = real data (operations only)
+type RoomColorToken = 'operations' | 'housekeeping' | 'maintenance' | 'front' | 'customer';
+
+interface Room {                 // SHARED — same for every user
+  id; category; dataBinding; title;
+  icon?; colorToken?; defaultOrder?;              // presentation / ordering (drag-ready)
+  team?; room_no?; language?; unread?; lastActiveAt?;
+  status?: 'active' | 'archived';                 // room lifecycle (shared)
+}
+
+interface RoomUserPreference {   // PER-USER — provider state only in 1C.1 (no DB)
+  roomId; isFavorite; isHidden; orderOverride?;
+}
+```
+
+Decisions:
+- **`category` = lowercase semantic** (maps cleanly to JSON/DB values); UPPERCASE is only
+  for constant names / docs.
+- **Renderer derives** from the axes: `dataBinding==='live' && category==='operations'`
+  → real staff center; `category==='customer'` → CustomerRoom; else MockStaffRoom. The
+  operations room is untouched (real staff chat), as before.
+- **Two kinds of "archived"** are kept distinct: shared `room.status='archived'` (the room
+  itself is closed → never listable) vs per-user `isHidden` (hidden from **my** list only →
+  the 휴지통 section, restorable). The operations room can never be hidden.
+- **collapse is a section property, not a room property** — removed from `Room`; modeled as
+  `SectionCollapseState = Partial<Record<'staff'|'customer'|'recent'|'trash', boolean>>`
+  in provider state.
+- **`colorToken` is a semantic token**, not a Tailwind class / hex; the UI maps it to
+  classes in `roomTheme.ts`, so the design system can change without touching stored data.
+- **Per-user state (favorite / hidden / membership / section-collapse / order) is NOT on the
+  shared room** — in a real product it becomes a `room_members` join + a per-user
+  preference row; here it lives in `RoomNavigationProvider` local state (no DB, no
+  localStorage, no persistence).
+- **Naming/icons**: 📢 운영 채팅 · 🧹 청소팀 · 🛠 정비팀 · 👨‍💼 프런트 · customer rooms keep the flag hint.
+
+Scope guard: only the schema is opened toward a Workspace tree (operations/객실/고객/OTA/AI
+groups). The grouped Workspace **UI is intentionally NOT built** in this phase.
+Unit tests updated accordingly: `roomsQuery` **8/8**.

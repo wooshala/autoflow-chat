@@ -1,8 +1,7 @@
-// Phase 1C — pure Room query helpers (DOM-free, unit-tested).
+// Phase 1C.1 — pure Room query helpers (DOM-free, unit-tested).
 //
-// The point of Room Navigation is: when there are many rooms, an operator instantly
-// finds and switches to the one they want (§16). These pure functions back the
-// search / tab / favorites / trash behavior with no React or DB involved.
+// Filtering respects both the shared room lifecycle (room.status) and per-user display
+// state (favorites / hidden / membership), passed in as plain sets so these stay pure.
 
 import type { Room, RoomTab } from './roomTypes';
 
@@ -18,32 +17,39 @@ export function matchesSearch(room: Room, rawQuery: string): boolean {
   return hay.includes(q);
 }
 
-function matchesTab(room: Room, tab: RoomTab, favorites: ReadonlySet<string>): boolean {
-  if (tab === 'mine') return Boolean(room.isMine);
-  if (tab === 'favorites') return favorites.has(room.id);
-  return true;
-}
-
 export interface RoomFilter {
   search: string;
   tab: RoomTab;
+  /** per-user: rooms I favorited */
   favorites: ReadonlySet<string>;
-  archived: ReadonlySet<string>;
+  /** per-user: rooms I hid from my list (distinct from shared room.status='archived') */
+  hidden: ReadonlySet<string>;
+  /** per-user: rooms I'm a member of ("내 대화방") */
+  membership: ReadonlySet<string>;
 }
 
-/**
- * Active rooms (not archived) passing the current search + tab. Archived rooms are
- * excluded here and surface only via {@link archivedRooms} (the 휴지통 section).
- */
+/** Listable = the room isn't closed and I haven't hidden it. */
+function isListable(room: Room, hidden: ReadonlySet<string>): boolean {
+  return room.status !== 'archived' && !hidden.has(room.id);
+}
+
+function matchesTab(room: Room, f: RoomFilter): boolean {
+  if (f.tab === 'mine') return f.membership.has(room.id);
+  if (f.tab === 'favorites') return f.favorites.has(room.id);
+  return true;
+}
+
+/** Active rooms passing search + tab. Excludes closed rooms and my hidden rooms. */
 export function visibleRooms(rooms: readonly Room[], f: RoomFilter): Room[] {
-  return rooms.filter(
-    (r) => !f.archived.has(r.id) && matchesSearch(r, f.search) && matchesTab(r, f.tab, f.favorites),
-  );
+  return rooms.filter((r) => isListable(r, f.hidden) && matchesSearch(r, f.search) && matchesTab(r, f));
 }
 
-/** Archived rooms (휴지통), still honoring the search box so trash is searchable too. */
-export function archivedRooms(rooms: readonly Room[], f: Pick<RoomFilter, 'search' | 'archived'>): Room[] {
-  return rooms.filter((r) => f.archived.has(r.id) && matchesSearch(r, f.search));
+/** 휴지통 — rooms I hid from my list (per-user), still honoring the search box. */
+export function hiddenRooms(
+  rooms: readonly Room[],
+  f: Pick<RoomFilter, 'search' | 'hidden'>,
+): Room[] {
+  return rooms.filter((r) => f.hidden.has(r.id) && matchesSearch(r, f.search));
 }
 
 /** Most-recently-active rooms for the small "최근 대화방" section (§10). */
@@ -52,4 +58,12 @@ export function recentRooms(rooms: readonly Room[], f: RoomFilter, limit = 3): R
     .filter((r) => r.lastActiveAt)
     .sort((a, b) => (b.lastActiveAt ?? '').localeCompare(a.lastActiveAt ?? ''))
     .slice(0, limit);
+}
+
+/** Stable section ordering: defaultOrder first, then most-recent activity. */
+export function byDefaultOrder(a: Room, b: Room): number {
+  const ao = a.defaultOrder ?? Number.MAX_SAFE_INTEGER;
+  const bo = b.defaultOrder ?? Number.MAX_SAFE_INTEGER;
+  if (ao !== bo) return ao - bo;
+  return (b.lastActiveAt ?? '').localeCompare(a.lastActiveAt ?? '');
 }

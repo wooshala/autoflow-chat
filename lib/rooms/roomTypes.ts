@@ -1,42 +1,67 @@
-// Phase 1C — Room Navigation entity model (DEV/PoC).
+// Phase 1C.1 — generalized Room entity model (DEV/PoC).
 //
-// A Room is an INDEPENDENT entity, not derived from messages. Exactly ONE room is
-// backed by real data (kind 'staff-global' → the existing staff chat stream). Every
-// other room is DEV/PoC mock (isDev=true) and never writes to any DB. This shape is
-// intentionally close to a future `chat_rooms` / `customer_conversations` row so it
-// can be wired to real backing later without a UI rewrite.
+// A Room is an INDEPENDENT entity, not derived from messages. Two orthogonal axes
+// replace the old `kind`:
+//   - category    : what the room IS (operations/team/customer/system/bot/notice)
+//   - dataBinding : whether it is backed by real data ('live') or PoC mock ('mock')
+// Exactly one room is 'live' today (category 'operations' → the existing staff chat).
+//
+// Per-user display state (favorite / hidden / manual order / section collapse) is NOT a
+// property of the shared room — it is modeled separately (RoomUserPreference /
+// SectionCollapseState) so that in a real multi-tenant product one operator's favorites
+// never leak to everyone. Only a room's OWN lifecycle (`status`) is shared.
 
 import type { CustomerLang } from '@/lib/customer-service/translationLangs';
 
-export type RoomKind = 'staff-global' | 'staff-mock' | 'customer';
+export type RoomCategory = 'operations' | 'team' | 'customer' | 'system' | 'bot' | 'notice';
+
+export type RoomDataBinding = 'live' | 'mock';
+
+/** Semantic color token — NOT a Tailwind class or hex, so the design system can change
+ *  without touching stored data. Mapped to concrete classes in the UI layer (roomTheme). */
+export type RoomColorToken = 'operations' | 'housekeeping' | 'maintenance' | 'front' | 'customer';
 
 export type RoomTeam = 'general' | 'cleaning' | 'maintenance' | 'front';
 
-/** Left-nav grouping. 'recent' is a small secondary section (§10). */
-export type RoomSectionKey = 'staff' | 'customer' | 'recent';
-
 export type RoomTab = 'all' | 'mine' | 'favorites';
 
+/** Left-nav section ids (collapse target is the SECTION, not an individual room). */
+export type RoomSectionId = 'staff' | 'customer' | 'recent' | 'trash';
+
+export type SectionCollapseState = Partial<Record<RoomSectionId, boolean>>;
+
+/** Shared room definition. Same for every user. */
 export interface Room {
   id: string;
-  kind: RoomKind;
+  category: RoomCategory;
+  dataBinding: RoomDataBinding;
   title: string;
-  /** Team tag for staff rooms; also set on rooms created via the "새 채팅방" modal. */
+
+  icon?: string;
+  colorToken?: RoomColorToken;
+  defaultOrder?: number;
+
   team?: RoomTeam;
-  /** Customer rooms carry a room number + guest language (language name is shown). */
   room_no?: string;
   language?: CustomerLang;
-  /** Mock "내 대화방" filter flag. */
-  isMine?: boolean;
+
   unread?: number;
-  /** true = DEV/PoC mock room with NO real backing. Only 'staff-global' is real. */
-  isDev?: boolean;
-  /** ISO timestamp used only to order the small "최근 대화방" section. */
   lastActiveAt?: string;
+  /** Room lifecycle, shared across all users. 'archived' = the room itself is closed. */
+  status?: 'active' | 'archived';
 }
 
-/** The single real, data-backed room. Its id is stable so page/provider agree. */
-export const STAFF_GLOBAL_ROOM_ID = 'staff-global';
+/** Per-user display preferences. In Phase 1C.1 this lives in provider state only (no DB).
+ *  `isHidden` = hide from MY list (distinct from the shared room.status='archived'). */
+export interface RoomUserPreference {
+  roomId: string;
+  isFavorite: boolean;
+  isHidden: boolean;
+  orderOverride?: number;
+}
+
+/** The single real, data-backed room. Selecting it renders the existing staff chat. */
+export const OPERATIONS_ROOM_ID = 'operations';
 
 export const TEAM_LABEL: Record<RoomTeam, string> = {
   general: '일반',
