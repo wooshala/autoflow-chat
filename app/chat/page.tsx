@@ -50,7 +50,13 @@ import ChatParticipantSidebar, {
 } from '@/components/chat/ops-console/ChatParticipantSidebar';
 import { ChatPhotoLightboxProvider } from '@/components/chat/ChatPhotoLightbox';
 // Phase 1C — Room Navigation (flag-gated; falls back to ChatParticipantSidebar when off).
-import { isRoomNavigationEnabled } from '@/lib/rooms/roomNavigationFlags';
+// Phase 1E.1 — 3-state runtime override (per-device pilot) resolves the final gate.
+import {
+  isRoomNavigationEnabled,
+  getRoomNavigationRuntimeOverride,
+  resolveRoomNavigationEnabled,
+  type RoomNavigationOverride
+} from '@/lib/rooms/roomNavigationFlags';
 import { RoomNavigationProvider } from '@/components/rooms/RoomNavigationContext';
 import RoomNavigation from '@/components/rooms/RoomNavigation';
 import { RoomCenter } from '@/components/rooms/RoomCenter';
@@ -152,6 +158,23 @@ export default function ChatPage() {
   const [maintenanceRefreshKey, setMaintenanceRefreshKey] = useState(0);
   const opsConsoleEnabled = isChatOpsConsoleEnabled();
   const showOpsConsole = opsConsoleEnabled && !isMobileViewport;
+  // Phase 1E.1: read the per-device Room Navigation override AFTER mount so SSR and the
+  // first client render agree (no hydration mismatch). null → follows the build flag; a
+  // pilot device sets localStorage['AUTOFLOW_ROOM_NAV_OVERRIDE'] = 'on' | 'off'.
+  const [roomNavOverride, setRoomNavOverride] = useState<RoomNavigationOverride>(null);
+  useEffect(() => {
+    setRoomNavOverride(getRoomNavigationRuntimeOverride());
+  }, []);
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const buildEnabled = isRoomNavigationEnabled();
+    console.log('[ROOM_NAV_GATE]', {
+      buildEnabled,
+      showOpsConsole,
+      runtimeOverride: roomNavOverride,
+      effectiveEnabled: resolveRoomNavigationEnabled({ showOpsConsole, buildEnabled, override: roomNavOverride })
+    });
+  }, [showOpsConsole, roomNavOverride]);
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
   const [lostFoundItems, setLostFoundItems] = useState<LostFoundItemWithMatch[]>([]);
   const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
@@ -1097,9 +1120,14 @@ export default function ChatPage() {
     // Phase 1.4: 3열 슬롯을 추출해 리사이즈 레이아웃(ON) / 기존 고정폭(OFF)에 동일하게 재사용.
     //   width는 ResizableChatLayout wrapper가 소유하고, 패널은 ON일 때 w-full로 채운다.
     const panelWidthClass = resizablePanelsV1 ? 'w-full' : undefined;
-    // Phase 1C: Room Navigation only activates inside the 3-panel ops console (this
-    // branch). Off → existing sidebar/center unchanged (fail-safe).
-    const roomNavigationEnabled = isRoomNavigationEnabled();
+    // Phase 1C/1E.1: Room Navigation only activates inside the 3-panel ops console (this
+    // branch). Final gate = build flag resolved with the per-device runtime override.
+    // Off → existing sidebar/center unchanged (fail-safe).
+    const roomNavigationEnabled = resolveRoomNavigationEnabled({
+      showOpsConsole,
+      buildEnabled: isRoomNavigationEnabled(),
+      override: roomNavOverride
+    });
     const existingLeftSidebar = (
       <ChatParticipantSidebar
         participants={consoleParticipants}
