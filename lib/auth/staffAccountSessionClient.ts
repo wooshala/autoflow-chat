@@ -1,21 +1,3 @@
-import type { StaffAccountPublic } from '../services/staffAccounts';
-import type { StaffInviteSession } from './staffInviteSession';
-
-function parseInviteSpokenLang(raw: string | null | undefined): StaffInviteSession['spokenLang'] {
-  const v = String(raw || '').trim();
-  return ['ko', 'ru', 'vi', 'en', 'zh', 'th'].includes(v) ? (v as StaffInviteSession['spokenLang']) : null;
-}
-
-/**
- * Phase 1 — client-side session-token helpers for account login.
- * Created so later phases (StaffChatClient wiring) compile; NOT used by the
- * current invite-only StaffChatClient. Type-only imports keep server code
- * (staffAccounts.ts) out of the client bundle.
- *
- * Regression gate: this module NEVER removes/alters the invite token storage.
- * Invite auth stays the operational fallback until account login is device-verified.
- */
-
 export const STAFF_SESSION_TOKEN_STORAGE_KEY = 'autoflow_staff_session_token_v1';
 export const STAFF_SESSION_META_STORAGE_KEY = 'autoflow_staff_session_meta_v1';
 
@@ -72,37 +54,11 @@ export function clearStaffSession(): void {
   }
 }
 
-/** Authorization header for account-session-authenticated requests (empty when logged out). */
 export function staffSessionAuthHeaders(): Record<string, string> {
   const token = loadStoredSessionToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/**
- * Phase 1: intentional no-op.
- * Removing legacy invite storage is deferred to Phase 5 (invite decommission),
- * per the regression gate that keeps invite auth 100% working as fallback.
- */
 export function clearLegacyInviteStorageOnce(): void {
   /* no-op until Phase 5 */
-}
-
-/**
- * Map an account-login identity onto the chat's StaffInviteSession shape so the
- * existing chat identity/render path can consume account sessions (Phase 2).
- * `token` is empty (no invite token). `inviteId` is set only when the account is
- * actually linked to an invite; otherwise it stays empty so the chat send path
- * never sends an accountId as token_id (which fails the server invite guard →
- * false INVITE_REVOKED). Account sessions are identified by user_id, not invite.
- */
-export function accountPublicToInviteSession(account: StaffAccountPublic): StaffInviteSession {
-  return {
-    inviteId: account.inviteId ?? '',
-    token: '',
-    displayName: account.displayName,
-    role: account.role,
-    userId: account.userId,
-    spokenLang: parseInviteSpokenLang(account.spokenLang),
-    siteId: account.siteId
-  };
 }

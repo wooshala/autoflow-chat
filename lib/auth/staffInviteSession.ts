@@ -1,5 +1,5 @@
-import type { StaffInvite } from '@/lib/types';
-import { isStaffTtsLang, type StaffTtsLang } from '@/lib/chat/staffTtsLang';
+import type { StaffInvite } from '../types';
+import { isStaffTtsLang, type StaffTtsLang } from '../chat/staffTtsLang';
 
 export const STAFF_INVITE_TOKEN_STORAGE_KEY = 'autoflow_staff_invite_token_v1';
 
