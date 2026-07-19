@@ -4,8 +4,6 @@
 // behavior change: same scroll container, same MessageBubble, same render order.
 // Reused by both /customer-console and the Room Navigation customer room.
 
-import { useState } from 'react';
-
 import { type CustomerLang } from '@/lib/customer-service/translationLangs';
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
 
@@ -24,24 +22,10 @@ export function CustomerRoomTimeline({
   guestLang: CustomerLang;
   messages: MockMessage[];
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggleOriginal = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-
   return (
     <div className="flex-1 space-y-3 overflow-y-auto bg-[#B2C7D9] p-4">
       {messages.map((m) => (
-        <MessageBubble
-          key={m.id}
-          m={m}
-          guestLang={guestLang}
-          expanded={expanded.has(m.id)}
-          onToggle={() => toggleOriginal(m.id)}
-        />
+        <MessageBubble key={m.id} m={m} guestLang={guestLang} />
       ))}
     </div>
   );
@@ -50,13 +34,9 @@ export function CustomerRoomTimeline({
 function MessageBubble({
   m,
   guestLang,
-  expanded,
-  onToggle,
 }: {
   m: MockMessage;
   guestLang: CustomerLang;
-  expanded: boolean;
-  onToggle: () => void;
 }) {
   const isGuest = m.sender_type === 'guest';
   const isInternal = m.visibility === 'internal';
@@ -104,12 +84,10 @@ function MessageBubble({
           </div>
         )}
 
-        {secondary && (
+        {secondary && secondary !== koText && (
           <div className="mt-1 border-t border-black/10 pt-1">
-            <button type="button" onClick={onToggle} className="text-[11px] underline opacity-70">
-              {expanded ? '접기' : `${secondaryLabel} 보기`}
-            </button>
-            {expanded && <div className="mt-0.5 whitespace-pre-wrap text-[12px] opacity-90">{secondary}</div>}
+            <div className="text-[10px] opacity-60">{secondaryLabel}</div>
+            <div className="whitespace-pre-wrap text-[12px] opacity-90">{secondary}</div>
           </div>
         )}
       </div>

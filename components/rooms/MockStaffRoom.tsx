@@ -30,37 +30,46 @@ export function MockStaffRoom({ room }: { room: Room }) {
   };
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-white">
+    <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
       <RoomHeader room={room} />
 
-      <div className="flex-1 space-y-2 overflow-y-auto bg-gray-50 p-4">
+      <div className="flex-1 space-y-2 overflow-y-auto bg-[#B2C7D9] p-4">
         <div className="rounded bg-amber-50 p-2 text-[11px] text-amber-700">
           DEV mock 팀 대화입니다. 실제 직원 채팅(직원 전체)과 별개이며 DB에 저장되지 않습니다.
         </div>
         {lines.map((l, i) => (
           <div key={i} className="text-sm">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-gray-700">{l.who}</span>
-              <span className="text-[11px] text-gray-400">{fmtTime(l.at)}</span>
+              <span className="font-semibold text-gray-800">{l.who}</span>
+              <span className="text-[11px] text-gray-600">{fmtTime(l.at)}</span>
             </div>
-            <div className="text-gray-800">{l.text}</div>
+            <div className="text-gray-900">{l.text}</div>
           </div>
         ))}
       </div>
 
-      <div className="flex items-end gap-2 border-t border-gray-200 p-3">
+      <div className="flex items-end gap-2 border-t border-gray-700 bg-gray-800 px-3 py-3">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            // Match staff/customer: Enter sends, Shift+Enter = newline; ignore IME composition.
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          enterKeyHint="send"
           rows={2}
-          placeholder="mock 팀 메시지 (DB에 저장되지 않음)"
-          className="min-w-0 flex-1 resize-none rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+          placeholder="mock 팀 메시지 (Enter 전송 · Shift+Enter 줄바꿈, DB 저장 안 됨)"
+          className="max-h-24 min-w-0 flex-1 resize-none rounded-2xl border border-gray-600 bg-gray-700 px-4 py-3 text-sm text-white outline-none placeholder:text-gray-400 focus:border-yellow-400"
         />
         <button
           type="button"
           onClick={send}
           disabled={!text.trim()}
-          className="shrink-0 rounded bg-gray-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+          className="h-11 shrink-0 rounded-full bg-[#FEE500] px-4 text-sm font-bold text-gray-900 disabled:opacity-40"
         >
           전송 (mock)
         </button>
