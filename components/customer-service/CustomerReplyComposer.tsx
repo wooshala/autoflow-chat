@@ -12,7 +12,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { mockCustomerTranslator, type CustomerLang } from '@/lib/customer-service/translationLangs';
+import { type CustomerLang } from '@/lib/customer-service/translationLangs';
+import { translateCustomerReply } from '@/lib/customer-service/apiCustomerTranslator';
+import { staffSessionAuthHeaders } from '@/lib/auth/staffAccountSession';
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
 import {
   extractClipboardImage,
@@ -78,11 +80,16 @@ export function CustomerReplyComposer({
       let translationFailed = false;
 
       if (mode === 'public' && body) {
-        // Staff Korean → guest language. On failure we DO NOT auto-send the Korean
-        // as-is to the guest (§2B) — we surface a failure and keep the message local.
-        const out = await mockCustomerTranslator.translate(body, 'ko', guestLang);
-        if (out) translated = { [guestLang]: out };
-        else translationFailed = true;
+        // Staff Korean → guest language via the authenticated server API. On failure we
+        // DO NOT send the Korean as-is to the guest (§2B) — surface a failure, keep draft.
+        try {
+          const out = await translateCustomerReply(body, 'ko', guestLang, {
+            authHeaders: staffSessionAuthHeaders(),
+          });
+          translated = { [guestLang]: out };
+        } catch {
+          translationFailed = true;
+        }
       }
 
       if (mode === 'public' && body && translationFailed) {
