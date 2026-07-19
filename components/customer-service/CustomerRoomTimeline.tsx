@@ -33,7 +33,7 @@ export function CustomerRoomTimeline({
     });
 
   return (
-    <div className="flex-1 space-y-3 overflow-y-auto bg-gray-50 p-4">
+    <div className="flex-1 space-y-3 overflow-y-auto bg-[#B2C7D9] p-4">
       {messages.map((m) => (
         <MessageBubble
           key={m.id}
@@ -70,12 +70,12 @@ function MessageBubble({
   return (
     <div className={`flex ${isGuest ? 'justify-start' : 'justify-end'}`}>
       <div
-        className={`max-w-[75%] rounded-lg px-3 py-2 ${
+        className={`max-w-[75%] rounded-2xl px-3 py-2 shadow-sm ${
           isInternal
-            ? 'border border-amber-300 bg-amber-50'
+            ? 'border border-amber-300 bg-amber-50 text-gray-900'
             : isGuest
-              ? 'bg-white ring-1 ring-gray-200'
-              : 'bg-blue-600 text-white'
+              ? 'bg-white text-gray-900'
+              : 'bg-[#FEE500] text-gray-900'
         }`}
       >
         <div className="mb-0.5 flex items-center gap-2 text-[11px] opacity-70">
@@ -89,7 +89,7 @@ function MessageBubble({
         {m.message_type === 'image' && (
           <div
             className={`mb-1 flex h-24 w-40 items-center justify-center rounded border text-[11px] ${
-              isGuest ? 'border-gray-200 text-gray-400' : 'border-blue-400 text-blue-100'
+              isGuest ? 'border-gray-200 text-gray-400' : 'border-gray-400 text-gray-600'
             }`}
           >
             🖼 {m.image_label ?? '이미지'}

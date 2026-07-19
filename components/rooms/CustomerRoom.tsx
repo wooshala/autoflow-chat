@@ -17,7 +17,7 @@ export function CustomerRoom({ room }: { room: Room }) {
   const lang = room.language ?? 'en';
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-white">
+    <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
       <RoomHeader room={room} />
       <CustomerRoomTimeline guestLang={lang} messages={messages} />
       <CustomerReplyComposer key={room.id} guestLang={lang} onSend={(m) => appendCustomerMessage(room.id, m)} />

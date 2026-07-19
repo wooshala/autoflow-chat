@@ -10,7 +10,11 @@ import type { Room } from '@/lib/rooms/roomTypes';
 
 export function RoomHeader({ room }: { room: Room }) {
   return (
-    <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-4 py-2">
+    <header
+      className={`flex shrink-0 items-center gap-2 border-b px-4 py-2 ${
+        room.category === 'customer' ? 'border-gray-300/50 bg-[#B2C7D9]' : 'border-gray-200 bg-white'
+      }`}
+    >
       {room.icon && <span aria-hidden className={roomColorText(room.colorToken)}>{room.icon}</span>}
       <span className="font-semibold text-gray-800">{room.title}</span>
       {room.category === 'customer' && room.language && (

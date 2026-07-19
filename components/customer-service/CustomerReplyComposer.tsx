@@ -111,13 +111,13 @@ export function CustomerReplyComposer({
   }, [text, preview, mode, guestLang, clearPreview, onSend]);
 
   return (
-    <div className="border-t border-gray-200 p-3">
+    <div className="shrink-0 border-t border-gray-700 bg-gray-800 px-3 py-3">
       <div className="mb-2 flex gap-2">
         <button
           type="button"
           onClick={() => setMode('public')}
           className={`rounded px-3 py-1 text-xs font-medium ${
-            mode === 'public' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+            mode === 'public' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
           }`}
         >
           고객 답변
@@ -126,7 +126,7 @@ export function CustomerReplyComposer({
           type="button"
           onClick={() => setMode('internal')}
           className={`rounded px-3 py-1 text-xs font-medium ${
-            mode === 'internal' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600'
+            mode === 'internal' ? 'bg-amber-500 text-white' : 'bg-gray-700 text-gray-300'
           }`}
         >
           내부 메모
@@ -139,42 +139,51 @@ export function CustomerReplyComposer({
       </div>
 
       {preview && (
-        <div className="mb-2 flex items-center gap-3 rounded border border-gray-200 bg-gray-50 p-2">
+        <div className="mb-2 flex items-center gap-3 rounded border border-gray-700 bg-gray-900 p-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview.p.url} alt="붙여넣은 이미지" className="h-16 w-16 rounded object-cover" />
-          <div className="text-xs text-gray-600">
+          <div className="text-xs text-gray-300">
             <div>{preview.type}</div>
             <div>{formatImageSize(preview.size)}</div>
           </div>
           <button
             type="button"
             onClick={clearPreview}
-            className="ml-auto rounded bg-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-300"
+            className="ml-auto rounded bg-gray-700 px-2 py-1 text-xs text-gray-200 hover:bg-gray-600"
           >
             제거
           </button>
         </div>
       )}
-      {pasteError && <div className="mb-2 text-xs text-red-600">{pasteError}</div>}
+      {pasteError && <div className="mb-2 text-xs text-red-400">{pasteError}</div>}
 
       <div className="flex items-end gap-2">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           onPaste={onPaste}
+          onKeyDown={(e) => {
+            // Match staff chat: Enter sends, Shift+Enter = newline; ignore IME composition.
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (!sending) void send();
+            }
+          }}
+          enterKeyHint="send"
           rows={2}
           placeholder={
             mode === 'public'
-              ? '한국어로 답변을 입력하세요. Win+Shift+S 캡처 후 Ctrl+V로 이미지 첨부'
-              : '내부 메모(한국어)'
+              ? '한국어로 답변을 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈). Win+Shift+S 캡처 후 Ctrl+V로 이미지 첨부'
+              : '내부 메모(한국어) · Enter 저장 · Shift+Enter 줄바꿈'
           }
-          className="min-w-0 flex-1 resize-none rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+          className="max-h-24 min-w-0 flex-1 resize-none rounded-2xl border border-gray-600 bg-gray-700 px-4 py-3 text-sm text-white outline-none placeholder:text-gray-400 focus:border-yellow-400"
         />
         <button
           type="button"
           disabled={sending || (!text.trim() && !preview)}
           onClick={send}
-          className="shrink-0 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+          className="h-11 shrink-0 rounded-full bg-[#FEE500] px-4 text-sm font-bold text-gray-900 disabled:opacity-40"
         >
           {sending ? '전송 중…' : mode === 'public' ? '전송' : '메모 저장'}
         </button>
