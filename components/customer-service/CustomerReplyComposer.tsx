@@ -10,27 +10,17 @@
 // leak into another room. (Phase 1B kept a pending preview across conversation switches;
 // this is the one intentional, strictly-safer lifecycle change — see the 1C report.)
 //
-// Phase 1F.12 — staff session gate for public replies. Two auth systems coexist and
-// stay separate:
-//   • autoflow_user_v1                = LEGACY /chat UI identity (name only). Unchanged.
-//   • autoflow_staff_session_token_v1 = CANONICAL server auth (staff account session).
-// Customer translation REQUIRES the canonical session (the translate route validates it
-// server-side). With no session we make ZERO translate calls, keep the draft, and reveal
-// a 직원 인증 button that opens the existing loginWithCode flow (StaffAuthModal). Login
-// never auto-sends — the operator re-sends manually. A 401 at translate time means the
-// session expired: we clear it, keep the draft, append nothing, and re-prompt auth.
+// Phase 1F.13 — customer translation no longer requires a staff-account login. A user
+// already inside /chat translates directly: Enter → same-origin POST to the translate
+// route (no Authorization header) → append on success, keep the draft on failure. The
+// route is protected server-side by same-origin + per-IP rate limit, so there is no
+// 직원 인증 modal, no autoflow_staff_session_token_v1 dependency, and no 401 session UX.
+// The legacy /chat name login (autoflow_user_v1) is untouched.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { type CustomerLang } from '@/lib/customer-service/translationLangs';
 import { translateCustomerReply } from '@/lib/customer-service/apiCustomerTranslator';
-import {
-  clearStaffSession,
-  loadStoredSessionToken,
-  staffSessionAuthHeaders,
-} from '@/lib/auth/staffAccountSession';
-import { classifyTranslateFailure, decidePublicSend } from '@/lib/customer-service/customerReplyAuth';
-import { StaffAuthModal } from '@/components/customer-service/StaffAuthModal';
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
 import {
   extractClipboardImage,
@@ -55,9 +45,6 @@ export function CustomerReplyComposer({
   const [preview, setPreview] = useState<{ p: ClipboardImagePreview; type: string; size: number } | null>(null);
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  // Phase 1F.12 — staff-session auth surface (draft/room state untouched by these).
-  const [authNotice, setAuthNotice] = useState<string | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
   const previewRef = useRef<ClipboardImagePreview | null>(null);
 
   const clearPreview = useCallback(() => {
@@ -99,32 +86,13 @@ export function CustomerReplyComposer({
       let translationFailed = false;
 
       if (mode === 'public' && body) {
-        // Decide BEFORE any network call. No staff session → reveal 직원 인증, make
-        // ZERO translate requests, keep the draft (§6 세션 없음). Session presence is the
-        // canonical autoflow_staff_session_token_v1, never the legacy autoflow_user_v1.
-        const decision = decidePublicSend({ hasBody: true, hasStaffToken: Boolean(loadStoredSessionToken()) });
-        if (decision === 'need-auth') {
-          setAuthNotice('직원 인증이 필요합니다. "직원 인증"을 눌러 로그인해 주세요.');
-          setSending(false);
-          return;
-        }
-
-        // Staff Korean → guest language via the authenticated server API. On failure we
-        // DO NOT send the Korean as-is to the guest (§2B) — surface a failure, keep draft.
-        // A 401 means the session expired → clear it, keep the draft, append nothing,
-        // and re-prompt auth (the server validateSessionToken stays the final authority).
+        // Staff Korean → guest language via the same-origin server API (no auth header).
+        // On failure we DO NOT send the Korean as-is to the guest (§2B) — surface a
+        // failure and keep the draft so the operator can retry.
         try {
-          const out = await translateCustomerReply(body, 'ko', guestLang, {
-            authHeaders: staffSessionAuthHeaders(),
-          });
+          const out = await translateCustomerReply(body, 'ko', guestLang);
           translated = { [guestLang]: out };
-        } catch (e) {
-          if (classifyTranslateFailure(e) === 'session-expired') {
-            clearStaffSession();
-            setAuthNotice('세션이 만료되었습니다. "직원 인증"을 눌러 다시 로그인해 주세요.');
-            setSending(false);
-            return;
-          }
+        } catch {
           translationFailed = true;
         }
       }
@@ -200,30 +168,6 @@ export function CustomerReplyComposer({
         </div>
       )}
       {pasteError && <div className="mb-2 text-xs text-red-400">{pasteError}</div>}
-      {authNotice && (
-        <div className="mb-2 flex items-center gap-2 text-xs text-amber-300">
-          <span>{authNotice}</span>
-          <button
-            type="button"
-            onClick={() => setAuthOpen(true)}
-            className="rounded border border-amber-400/60 bg-amber-500/10 px-2 py-1 font-semibold text-amber-200 hover:bg-amber-500/20"
-          >
-            직원 인증
-          </button>
-        </div>
-      )}
-
-      {authOpen && (
-        <StaffAuthModal
-          onClose={() => setAuthOpen(false)}
-          onSuccess={() => {
-            // Session saved by the modal. Close + clear the notice ONLY. Draft/room state
-            // is untouched, and we NEVER auto-send — the operator re-sends manually (§2/§6).
-            setAuthOpen(false);
-            setAuthNotice(null);
-          }}
-        />
-      )}
 
       <div className="flex items-end gap-2">
         <textarea
