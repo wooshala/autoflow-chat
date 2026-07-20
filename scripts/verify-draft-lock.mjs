@@ -1,0 +1,21 @@
+import puppeteer from 'puppeteer';
+const BASE = process.env.BASE || 'http://localhost:3011';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const b = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+const p = await b.newPage();
+await p.setRequestInterception(true);
+p.on('request', (r) => {
+  if (r.method() === 'POST' && r.url().includes('/api/guest/')) r.respond({ status: 500, contentType: 'application/json', body: '{"ok":false,"error":"DB_ERROR"}' });
+  else r.continue();
+});
+await p.goto(`${BASE}/g-staff/room-308-live`, { waitUntil: 'networkidle2', timeout: 30000 });
+await sleep(1500);
+const draft = '보존되어야 하는 초안';
+await p.evaluate((t) => { const ta = document.querySelector('textarea'); const set = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; set.call(ta, t); ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); }, draft);
+await p.keyboard.press('Enter');
+await sleep(1500);
+const val = await p.$eval('textarea', (e) => e.value);
+const btnDisabled = await p.evaluate(() => Array.from(document.querySelectorAll('button')).at(-1).disabled);
+console.log(`[${val === draft ? 'PASS' : 'FAIL'}] 전송 실패(500) 후 draft 보존 — value="${val}"`);
+console.log(`[${btnDisabled === false ? 'PASS' : 'FAIL'}] 실패 후 버튼 재활성(잠금 해제)`);
+await b.close();
