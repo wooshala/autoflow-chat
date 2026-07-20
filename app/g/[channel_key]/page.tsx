@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
 import { GuestChatPanel } from '@/components/guest-spike/GuestChatPanel';
-import { fetchChannelMeta, setGuestLanguage } from '@/lib/guest-spike/api';
+import { fetchChannelMeta, fetchGuestSession, setGuestLanguage } from '@/lib/guest-spike/api';
 import { isGuestLang, langDisplayName, SUPPORTED_LANGS, uiTextFor, type GuestLang } from '@/lib/guest-spike/languages';
 
 const STAFF_LANG = 'ko';
@@ -20,7 +20,7 @@ export default function GuestChatPage() {
   const params = useParams();
   const channelKey = decodeURIComponent(String(params.channel_key ?? ''));
 
-  const [phase, setPhase] = useState<'resolving' | 'selecting' | 'chatting'>('resolving');
+  const [phase, setPhase] = useState<'resolving' | 'selecting' | 'chatting' | 'closed' | 'occupied'>('resolving');
   const [preferred, setPreferred] = useState<GuestLang | null>(null);
   const [suggested, setSuggested] = useState<GuestLang | null>(null); // from localStorage, highlight only
   const [saving, setSaving] = useState(false);
@@ -36,6 +36,18 @@ export default function GuestChatPage() {
     } catch {}
     setSuggested(ls);
     (async () => {
+      // Phase 1H.7 — establish the guest session first (sets HttpOnly cookie). A closed
+      // session (previous guest, staff ended the chat) shows the ended screen.
+      const sessionStatus = await fetchGuestSession(channelKey);
+      if (!alive) return;
+      if (sessionStatus === 'closed') {
+        setPhase('closed');
+        return;
+      }
+      if (sessionStatus === 'occupied') {
+        setPhase('occupied');
+        return;
+      }
       const meta = await fetchChannelMeta(channelKey);
       if (!alive) return;
       if (isGuestLang(meta.preferred_language)) {
@@ -80,6 +92,31 @@ export default function GuestChatPage() {
     return (
       <main style={{ display: 'flex', height: '100dvh', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontFamily: 'system-ui, sans-serif' }}>
         …
+      </main>
+    );
+  }
+
+  if (phase === 'closed') {
+    return (
+      <main style={{ display: 'flex', flexDirection: 'column', height: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#f2f4f7', fontFamily: 'system-ui, sans-serif', padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 32 }}>💬</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#111' }}>대화가 종료되었습니다.</div>
+        <div style={{ fontSize: 13, color: '#6b7280' }}>This conversation has ended. / この会話は終了しました。</div>
+      </main>
+    );
+  }
+
+  if (phase === 'occupied') {
+    return (
+      <main style={{ display: 'flex', flexDirection: 'column', height: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#f2f4f7', fontFamily: 'system-ui, sans-serif', padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 32 }}>🔒</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#111', lineHeight: 1.5 }}>
+          이 객실 채팅은 이미 다른 기기에서 사용 중입니다.
+        </div>
+        <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
+          처음 접속한 휴대폰에서 다시 열거나, 프런트 데스크에 문의해 주세요.<br />
+          This room chat is already in use on another device. Please reopen it on the first phone, or contact the front desk.
+        </div>
       </main>
     );
   }
@@ -134,8 +171,8 @@ export default function GuestChatPage() {
         viewerLang={preferred ?? 'en'}
         counterpartLang={STAFF_LANG}
         ownSender="guest"
-        ownLabel={t.title === 'Room Guest Chat' ? 'You' : 'あなた'}
-        otherLabel="Staff"
+        ownLabel={t.guestSelfLabel}
+        otherLabel={t.staffLabel}
         emptyText={t.placeholder}
         inputPlaceholder={t.placeholder}
         sendLabel={t.send}

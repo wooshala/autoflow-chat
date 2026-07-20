@@ -68,6 +68,12 @@ export interface GuestUiText {
   changeLanguage: string;
   errorSend: string; // translation/send failed — draft kept
   errorLanguageSave: string; // PUT language failed
+  // Sender role labels shown UNDER each bubble on the GUEST (mobile) surface. They follow the
+  // guest's SELECTED display language — never the per-message detected language, the staff
+  // input language, the browser locale, or a fixed default. (Staff surfaces use their own
+  // fixed Korean labels, so these are guest-side only.)
+  guestSelfLabel: string; // the guest's own messages ("Me")
+  staffLabel: string; // the hotel staff's messages ("Staff")
 }
 
 export const guestUiText: Record<GuestLang, GuestUiText> = {
@@ -81,6 +87,8 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
     changeLanguage: '언어 변경',
     errorSend: '전송에 실패했습니다. 다시 시도해 주세요.',
     errorLanguageSave: '언어 저장에 실패했습니다. 다시 시도해 주세요.',
+    guestSelfLabel: '나',
+    staffLabel: '직원',
   },
   en: {
     title: 'Room Guest Chat',
@@ -92,6 +100,8 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
     changeLanguage: 'Change language',
     errorSend: 'Failed to send. Please try again.',
     errorLanguageSave: 'Failed to save language. Please try again.',
+    guestSelfLabel: 'Me',
+    staffLabel: 'Staff',
   },
   ja: {
     title: 'ルームチャット',
@@ -103,6 +113,8 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
     changeLanguage: '言語を変更',
     errorSend: '送信に失敗しました。もう一度お試しください。',
     errorLanguageSave: '言語の保存に失敗しました。もう一度お試しください。',
+    guestSelfLabel: '私',
+    staffLabel: 'スタッフ',
   },
   'zh-CN': {
     title: '客房聊天',
@@ -114,6 +126,8 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
     changeLanguage: '更改语言',
     errorSend: '发送失败，请重试。',
     errorLanguageSave: '语言保存失败，请重试。',
+    guestSelfLabel: '我',
+    staffLabel: '前台',
   },
   ru: {
     title: 'Чат номера',
@@ -125,6 +139,8 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
     changeLanguage: 'Сменить язык',
     errorSend: 'Не удалось отправить. Попробуйте снова.',
     errorLanguageSave: 'Не удалось сохранить язык. Попробуйте снова.',
+    guestSelfLabel: 'Я',
+    staffLabel: 'Персонал',
   },
 };
 

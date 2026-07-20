@@ -1,18 +1,28 @@
-// Phase 1G.4/1H.3/1H.5 — guest message + channel-language API (one route, additive).
-//   GET  ?meta=1 → { ok, preferred_language, language_source }        (lightweight, no messages)
-//   GET          → { ok, messages, preferred_language, language_source } (backward-compatible)
-//   POST         → send a message (guest: LLM detect+translate→ko; staff: ko→preferred)
+// Phase 1G.4/1H.3/1H.5/1H.7 — guest message + channel-language API (one route, additive).
+//   GET ?meta=1 → { ok, preferred_language, language_source }
+//   GET         → { ok, messages, preferred_language, language_source }  (session-scoped internally)
+//   POST        → send a message into the ACTIVE session (guest: LLM detect+translate→ko; staff: ko→preferred)
 //   PUT { preferred_language } → set the channel's language
 //
-// Policy: original preservation > translation. Guest detection: LLM → heuristic → preferred
-// (logged). Staff with NO channel language → 409 LANGUAGE_NOT_SELECTED (no room-number
-// fallback). OPENAI_API_KEY + service role are server-only. Unauthenticated (spike).
+// Phase 1H.7 — messages are session-scoped. Guest uses its afg_sid cookie's session; staff
+// uses the channel's active session (?as=staff). A closed guest session → empty (GET) / 409
+// (POST). Response shape is UNCHANGED. No PIN/auth yet.
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { appendMessage, getChannelLanguage, listMessages, setChannelLanguage } from '@/lib/guest-spike/store';
+import {
+  appendMessage,
+  getActiveSession,
+  getChannelLanguage,
+  getSessionById,
+  listMessagesBySession,
+  setChannelLanguage,
+  type GuestSession,
+} from '@/lib/guest-spike/store';
 import { detectAndTranslateToKorean, openAiCustomerTranslator } from '@/lib/customer-service/translation';
 import { isGuestLang, resolveOriginalLang, type GuestLang } from '@/lib/guest-spike/languages';
+import { channelCookieName } from '@/lib/guest-spike/sessionCookie';
+import { requireStaff } from '@/lib/guest-spike/staffAuth';
 import type { CustomerLang } from '@/lib/customer-service/translationLangs';
 
 export const runtime = 'nodejs';
@@ -25,11 +35,47 @@ function dbError(e: unknown) {
   return NextResponse.json({ ok: false, error: 'DB_ERROR' }, { status: 500 });
 }
 
+type Resolved =
+  | { ok: true; session: GuestSession | null } // session may be null (staff with no active)
+  | { ok: false; kind: 'unauthorized' | 'closed' | 'occupied' };
+
+/**
+ * Resolve which session this request operates on.
+ *  - staff (?as=staff): REQUIRES a valid staff Bearer session → the channel's active session.
+ *  - guest: ONLY its own per-channel cookie session (open). NO active-session fallback — a
+ *    cookieless guest can never read the current session; an active session → 'occupied'.
+ */
+async function resolveSession(req: NextRequest, channelKey: string): Promise<Resolved> {
+  if (req.nextUrl.searchParams.get('as') === 'staff') {
+    const staff = await requireStaff(req);
+    if (!staff) return { ok: false, kind: 'unauthorized' };
+    return { ok: true, session: await getActiveSession(channelKey) };
+  }
+  const sid = req.cookies.get(channelCookieName(channelKey))?.value;
+  if (sid) {
+    const s = await getSessionById(sid);
+    if (s && s.channel_key === channelKey) {
+      if (s.status === 'open') return { ok: true, session: s };
+      return { ok: false, kind: 'closed' };
+    }
+  }
+  // No valid channel cookie: block reading/joining any active session.
+  const active = await getActiveSession(channelKey);
+  return active ? { ok: false, kind: 'occupied' } : { ok: true, session: null };
+}
+
+async function readChannelLanguageSafe(channelKey: string): Promise<{ preferred: GuestLang | null; source: string | null }> {
+  try {
+    const ch = await getChannelLanguage(channelKey);
+    return { preferred: isGuestLang(ch.preferred_language) ? ch.preferred_language : null, source: ch.language_source };
+  } catch {
+    return { preferred: null, source: null };
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: { channel_key: string } }) {
   const channelKey = params.channel_key;
   const meta = req.nextUrl.searchParams.get('meta') === '1';
-  // meta=1 is the language endpoint → strict. The message LIST degrades gracefully if the
-  // channels table/read fails (e.g. pre-migration) so existing messages never regress.
   if (meta) {
     try {
       const { preferred_language, language_source } = await getChannelLanguage(channelKey);
@@ -39,17 +85,15 @@ export async function GET(req: NextRequest, { params }: { params: { channel_key:
     }
   }
   try {
-    let preferred_language: string | null = null;
-    let language_source: string | null = null;
-    try {
-      const ch = await getChannelLanguage(channelKey);
-      preferred_language = ch.preferred_language;
-      language_source = ch.language_source;
-    } catch {
-      /* language unavailable (e.g. table not migrated yet) → still list messages */
+    const { preferred, source } = await readChannelLanguageSafe(channelKey);
+    const r = await resolveSession(req, channelKey);
+    if (!r.ok) {
+      if (r.kind === 'unauthorized') return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 });
+      // closed / occupied → no messages (response shape preserved; the guest UI shows the state screen).
+      return NextResponse.json({ ok: true, messages: [], preferred_language: preferred, language_source: source });
     }
-    const messages = await listMessages(channelKey);
-    return NextResponse.json({ ok: true, messages, preferred_language, language_source });
+    const messages = r.session ? await listMessagesBySession(r.session.id) : [];
+    return NextResponse.json({ ok: true, messages, preferred_language: preferred, language_source: source });
   } catch (e) {
     return dbError(e);
   }
@@ -67,39 +111,38 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
   if (!text) return NextResponse.json({ ok: false, error: 'EMPTY' }, { status: 400 });
   const sender: 'guest' | 'staff' = body.sender === 'staff' ? 'staff' : 'guest';
 
-  // Channel language read DEGRADES to null on failure (e.g. table not migrated) — guest
-  // POST never 500s on this. Only staff (which needs a target language) is blocked, via 409.
-  let preferred: GuestLang | null = null;
+  let session: GuestSession;
   try {
-    const ch = await getChannelLanguage(channelKey);
-    preferred = isGuestLang(ch.preferred_language) ? ch.preferred_language : null;
-  } catch {
-    preferred = null;
+    const r = await resolveSession(req, channelKey);
+    if (!r.ok) {
+      if (r.kind === 'unauthorized') return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 });
+      if (r.kind === 'closed') return NextResponse.json({ ok: false, error: 'SESSION_CLOSED' }, { status: 409 });
+      return NextResponse.json({ ok: false, error: 'SESSION_OCCUPIED' }, { status: 409 });
+    }
+    if (!r.session) return NextResponse.json({ ok: false, error: 'NO_ACTIVE_SESSION' }, { status: 409 });
+    session = r.session;
+  } catch (e) {
+    return dbError(e);
   }
+
+  const { preferred } = await readChannelLanguageSafe(channelKey);
 
   let originalLang: string;
   const translated: Record<string, string> = {};
 
   if (sender === 'guest') {
-    // ONE LLM call: detect source + translate to Korean. Failures never block the save.
     const { detected, ko } = await detectAndTranslateToKorean(text);
     const resolved = resolveOriginalLang({ llmDetected: detected, text, preferred });
     originalLang = resolved.lang;
-    if (resolved.usedFallback) {
-      console.warn('[GUEST_LANGUAGE_DETECTION_FALLBACK]', { channelKey, preferredLanguage: preferred, reason: 'llm_and_heuristic_null' });
-    }
+    if (resolved.usedFallback) console.warn('[GUEST_LANGUAGE_DETECTION_FALLBACK]', { channelKey, preferredLanguage: preferred, reason: 'llm_and_heuristic_null' });
     if (ko) translated.ko = ko;
     else console.warn('[GUEST_TRANSLATION_FAILED]', { channelKey, sender, originalLang, targetLang: 'ko', reason: 'no_ko_result' });
   } else {
-    // Staff: original is Korean; translate to the channel's chosen language. No language → block.
-    if (!preferred) {
-      return NextResponse.json({ ok: false, error: 'LANGUAGE_NOT_SELECTED' }, { status: 409 });
-    }
+    if (!preferred) return NextResponse.json({ ok: false, error: 'LANGUAGE_NOT_SELECTED' }, { status: 409 });
     originalLang = 'ko';
     const to = preferred;
-    if (to === 'ko') {
-      translated[to] = text;
-    } else {
+    if (to === 'ko') translated[to] = text;
+    else {
       try {
         const out = await openAiCustomerTranslator.translate(text, 'ko' as CustomerLang, to as CustomerLang);
         if (out) translated[to] = out;
@@ -111,7 +154,7 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
   }
 
   try {
-    const message = await appendMessage(channelKey, { sender, original: text, original_lang: originalLang, translated });
+    const message = await appendMessage({ channelKey, sessionId: session.id, sender, original: text, original_lang: originalLang, translated });
     return NextResponse.json({ ok: true, message }, { status: 201 });
   } catch (e) {
     return dbError(e);

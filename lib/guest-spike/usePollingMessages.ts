@@ -9,12 +9,12 @@ import { fetchGuestMessages, type GuestMessagesResult, type GuestSpikeMsg } from
 
 const EMPTY: GuestMessagesResult = { messages: [], preferred_language: null, language_source: null };
 
-export function usePollingMessages(channelKey: string, intervalMs = 2000) {
+export function usePollingMessages(channelKey: string, asStaff?: boolean, intervalMs = 2000) {
   const [state, setState] = useState<GuestMessagesResult>(EMPTY);
 
   const reload = useCallback(async () => {
-    setState(await fetchGuestMessages(channelKey));
-  }, [channelKey]);
+    setState(await fetchGuestMessages(channelKey, asStaff));
+  }, [channelKey, asStaff]);
 
   useEffect(() => {
     void reload();

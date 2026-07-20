@@ -33,11 +33,14 @@ export function GuestChatPanel({
   sendLabel,
   disabledNotice,
   onChannelMeta,
+  asStaff,
 }: {
   channelKey: string;
   viewerLang: string;
   counterpartLang: string;
   ownSender: 'guest' | 'staff';
+  /** Phase 1H.7 — staff operates on the channel's ACTIVE session (ignores guest cookie). */
+  asStaff?: boolean;
   ownLabel: string;
   otherLabel: string;
   emptyText: string;
@@ -50,7 +53,7 @@ export function GuestChatPanel({
    *  room reuse a single poll (no separate meta poll). Fired whenever the value changes. */
   onChannelMeta?: (meta: { preferred_language: string | null; language_source: string | null }) => void;
 }) {
-  const { messages, preferred_language, language_source, reload } = usePollingMessages(channelKey);
+  const { messages, preferred_language, language_source, reload } = usePollingMessages(channelKey, asStaff);
 
   useEffect(() => {
     onChannelMeta?.({ preferred_language, language_source });
@@ -61,10 +64,10 @@ export function GuestChatPanel({
     async (text: string) => {
       // The server decides language: guest → LLM detect+translate→ko; staff → ko→preferred.
       // The panel only forwards the text (a 409/failed send throws → the input keeps the draft).
-      await sendGuestMessage(channelKey, { text, sender: ownSender });
+      await sendGuestMessage(channelKey, { text, sender: ownSender }, asStaff);
       await reload();
     },
-    [channelKey, ownSender, reload],
+    [channelKey, ownSender, asStaff, reload],
   );
 
   return (
