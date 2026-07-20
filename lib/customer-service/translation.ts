@@ -42,6 +42,67 @@ function getOpenAI(): OpenAI | null {
   return client;
 }
 
+// Phase 1H.5 — additive: detect the guest message's source language AND translate it to
+// Korean in ONE LLM call. Returns { detected, ko }; either may be null. NEVER throws — a
+// parse/API failure yields nulls so the caller falls back to the heuristic (detected) and
+// preserves the original (ko). Does NOT modify translate() above.
+const DETECT_TRANSLATE_PROMPT = `You are a hotel front-desk translator. Detect the source language of the guest message (one of: ko, en, ja, zh-CN, ru) and translate the message into Korean.
+Preserve exactly: room numbers, dates, times, numbers, prices/amounts and currency, place/landmark/line names.
+Respond with ONLY a JSON object: {"lang":"<one of ko|en|ja|zh-CN|ru>","ko":"<Korean translation>"}.`;
+
+const GUEST_LANGS = ['ko', 'en', 'ja', 'zh-CN', 'ru'] as const;
+
+export async function detectAndTranslateToKorean(
+  text: string,
+): Promise<{ detected: CustomerLang | null; ko: string | null }> {
+  const input = String(text || '').trim();
+  if (!input) return { detected: null, ko: null };
+  const openai = getOpenAI();
+  if (!openai) {
+    console.log('[GUEST_DETECT_TRANSLATE_FALLBACK]', { reason: 'missing_openai_key' });
+    return { detected: null, ko: null };
+  }
+  try {
+    const response = await Promise.race([
+      openai.chat.completions.create({
+        model: MODEL,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: DETECT_TRANSLATE_PROMPT },
+          { role: 'user', content: input },
+        ],
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('TRANSLATION_TIMEOUT')), TRANSLATE_TIMEOUT_MS)),
+    ]);
+    // Normalize + validate INSIDE the adapter — the caller never JSON.parses. Strips a
+    // ```json fence, isolates the object, parses, validates the field shapes.
+    const raw = String(response.choices[0]?.message?.content || '').trim();
+    let jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const objMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (objMatch) jsonStr = objMatch[0];
+    let parsed: { lang?: unknown; ko?: unknown };
+    try {
+      parsed = JSON.parse(jsonStr) as { lang?: unknown; ko?: unknown };
+    } catch {
+      console.log('[GUEST_DETECT_TRANSLATE_FALLBACK]', { reason: 'json_parse_failed' });
+      return { detected: null, ko: null };
+    }
+    const langRaw = typeof parsed.lang === 'string' ? parsed.lang.trim() : '';
+    const detected = (GUEST_LANGS as readonly string[]).includes(langRaw) ? (langRaw as CustomerLang) : null;
+    const ko = typeof parsed.ko === 'string' && parsed.ko.trim() ? parsed.ko.trim() : null;
+    return { detected, ko };
+  } catch (error: unknown) {
+    if (error instanceof APIError) {
+      console.log('[CUSTOMER_OPENAI_API_ERROR]', formatOpenAiApiErrorDetail(error));
+    } else {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.log('[GUEST_DETECT_TRANSLATE_FALLBACK]', { reason: msg.includes('TIMEOUT') ? 'timeout' : 'openai_error' });
+    }
+    return { detected: null, ko: null };
+  }
+}
+
 export const openAiCustomerTranslator: CustomerTranslator = {
   name: 'openai:gpt-4o-mini',
   async translate(text, from, to) {

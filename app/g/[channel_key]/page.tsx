@@ -1,35 +1,144 @@
 'use client';
 
-// Phase 1G.4/1H.2 — guest mobile chat page. Reached by scanning the room QR
-// (/g/<channel_key>). Now a thin shell around the shared GuestChatPanel (Composition
-// Root) — identical code path to /g-staff and /chat's customer room.
+// Phase 1G.4/1H.5 — guest mobile chat. Language is chosen by the guest, not hardcoded.
+// Priority (server is SoT): server preferred_language → else language-selection screen.
+// A stale localStorage value is NEVER auto-applied when the server is empty (room QR is
+// reused across guests) — it only pre-highlights a suggestion. Selection persists to the
+// server (PUT) BEFORE entering chat.
 
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
 import { GuestChatPanel } from '@/components/guest-spike/GuestChatPanel';
+import { fetchChannelMeta, setGuestLanguage } from '@/lib/guest-spike/api';
+import { isGuestLang, langDisplayName, SUPPORTED_LANGS, uiTextFor, type GuestLang } from '@/lib/guest-spike/languages';
 
-const GUEST_LANG = 'ja'; // spike: 308 = Japanese (viewer reads this)
-const STAFF_LANG = 'ko'; // counterpart (staff) language — secondary line
+const STAFF_LANG = 'ko';
+const lsKey = (channelKey: string) => `guest-chat-language:${channelKey}`;
 
 export default function GuestChatPage() {
   const params = useParams();
   const channelKey = decodeURIComponent(String(params.channel_key ?? ''));
 
+  const [phase, setPhase] = useState<'resolving' | 'selecting' | 'chatting'>('resolving');
+  const [preferred, setPreferred] = useState<GuestLang | null>(null);
+  const [suggested, setSuggested] = useState<GuestLang | null>(null); // from localStorage, highlight only
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Resolve on mount: server is authoritative. localStorage is only a suggestion.
+  useEffect(() => {
+    let alive = true;
+    let ls: GuestLang | null = null;
+    try {
+      const v = localStorage.getItem(lsKey(channelKey));
+      if (isGuestLang(v)) ls = v;
+    } catch {}
+    setSuggested(ls);
+    (async () => {
+      const meta = await fetchChannelMeta(channelKey);
+      if (!alive) return;
+      if (isGuestLang(meta.preferred_language)) {
+        setPreferred(meta.preferred_language);
+        try {
+          localStorage.setItem(lsKey(channelKey), meta.preferred_language);
+        } catch {}
+        setPhase('chatting');
+      } else {
+        setPhase('selecting'); // server empty → require explicit selection (no auto-apply of ls)
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [channelKey]);
+
+  const choose = useCallback(
+    async (lang: GuestLang) => {
+      if (saving) return;
+      setSaving(true);
+      setError(null);
+      try {
+        await setGuestLanguage(channelKey, lang); // server PUT must succeed first
+        try {
+          localStorage.setItem(lsKey(channelKey), lang);
+        } catch {}
+        setPreferred(lang);
+        setPhase('chatting');
+      } catch {
+        setError(uiTextFor(suggested).errorLanguageSave);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [channelKey, saving, suggested],
+  );
+
+  const roomLabel = channelKey.replace(/[^0-9]/g, '') || channelKey;
+
+  if (phase === 'resolving') {
+    return (
+      <main style={{ display: 'flex', height: '100dvh', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontFamily: 'system-ui, sans-serif' }}>
+        …
+      </main>
+    );
+  }
+
+  if (phase === 'selecting') {
+    return (
+      <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', background: '#f2f4f7', fontFamily: 'system-ui, sans-serif', padding: 20 }}>
+        <div style={{ marginTop: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#111' }}>{roomLabel} · 고객 채팅</div>
+          <div style={{ marginTop: 16, fontSize: 16, color: '#111' }}>언어를 선택해 주세요</div>
+          <div style={{ fontSize: 13, color: '#6b7280' }}>Please select your language</div>
+        </div>
+        <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {SUPPORTED_LANGS.map((lang) => (
+            <button
+              key={lang}
+              type="button"
+              disabled={saving}
+              onClick={() => void choose(lang)}
+              style={{
+                padding: '14px 16px', borderRadius: 14, fontSize: 16, fontWeight: 600, cursor: 'pointer',
+                border: suggested === lang ? '2px solid #FEE500' : '1px solid #d1d5db',
+                background: '#fff', color: '#111', opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {langDisplayName(lang)}
+              {suggested === lang ? ' ·' : ''}
+            </button>
+          ))}
+        </div>
+        {error && <div style={{ marginTop: 16, textAlign: 'center', fontSize: 13, color: '#dc2626' }}>{error}</div>}
+      </main>
+    );
+  }
+
+  // chatting
+  const t = uiTextFor(preferred);
   return (
     <main style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#f2f4f7', fontFamily: 'system-ui, sans-serif' }}>
-      <header style={{ padding: '12px 16px', background: '#1f2937', color: '#fff', fontWeight: 700 }}>
-        AutoFlow · ルーム {channelKey.replace(/[^0-9]/g, '') || channelKey} · スタッフとチャット
+      <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', background: '#1f2937', color: '#fff' }}>
+        <span style={{ fontWeight: 700 }}>{roomLabel} · {t.title}</span>
+        <button
+          type="button"
+          onClick={() => setPhase('selecting')}
+          style={{ marginLeft: 'auto', fontSize: 12, borderRadius: 999, border: '1px solid #4b5563', background: 'transparent', color: '#e5e7eb', padding: '4px 10px', cursor: 'pointer' }}
+        >
+          🌐 {t.changeLanguage}
+        </button>
       </header>
       <GuestChatPanel
         channelKey={channelKey}
-        viewerLang={GUEST_LANG}
+        viewerLang={preferred ?? 'en'}
         counterpartLang={STAFF_LANG}
         ownSender="guest"
-        ownLabel="あなた"
-        otherLabel="スタッフ"
-        emptyText="メッセージを送ってください（日本語でOK）"
-        inputPlaceholder="メッセージを入力"
-        sendLabel="送信"
+        ownLabel={t.title === 'Room Guest Chat' ? 'You' : 'あなた'}
+        otherLabel="Staff"
+        emptyText={t.placeholder}
+        inputPlaceholder={t.placeholder}
+        sendLabel={t.send}
       />
     </main>
   );

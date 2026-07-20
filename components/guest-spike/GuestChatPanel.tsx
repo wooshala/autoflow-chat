@@ -14,7 +14,7 @@
 //
 // TODO(canonical-namespace): guest-spike → guest-chat (later refactor step).
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 
 import { usePollingMessages } from '@/lib/guest-spike/usePollingMessages';
 import { sendGuestMessage } from '@/lib/guest-spike/api';
@@ -31,6 +31,8 @@ export function GuestChatPanel({
   emptyText,
   inputPlaceholder,
   sendLabel,
+  disabledNotice,
+  onChannelMeta,
 }: {
   channelKey: string;
   viewerLang: string;
@@ -41,21 +43,28 @@ export function GuestChatPanel({
   emptyText: string;
   inputPlaceholder: string;
   sendLabel: string;
+  /** Phase 1H.5 — when set, the composer is replaced by this notice (e.g. staff cannot
+   *  reply until the guest has chosen a language). Messages still render + poll. */
+  disabledNotice?: string;
+  /** Phase 1H.5 — the channel language from THIS panel's own message poll. Lets the open
+   *  room reuse a single poll (no separate meta poll). Fired whenever the value changes. */
+  onChannelMeta?: (meta: { preferred_language: string | null; language_source: string | null }) => void;
 }) {
-  const { messages, reload } = usePollingMessages(channelKey);
+  const { messages, preferred_language, language_source, reload } = usePollingMessages(channelKey);
+
+  useEffect(() => {
+    onChannelMeta?.({ preferred_language, language_source });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferred_language, language_source]);
 
   const handleSend = useCallback(
     async (text: string) => {
-      // guest sends in its own language; staff sends Korean (server default). Direction
-      // of translation is decided server-side — the panel only forwards the text.
-      await sendGuestMessage(channelKey, {
-        text,
-        sender: ownSender,
-        lang: ownSender === 'guest' ? viewerLang : undefined,
-      });
+      // The server decides language: guest → LLM detect+translate→ko; staff → ko→preferred.
+      // The panel only forwards the text (a 409/failed send throws → the input keeps the draft).
+      await sendGuestMessage(channelKey, { text, sender: ownSender });
       await reload();
     },
-    [channelKey, ownSender, viewerLang, reload],
+    [channelKey, ownSender, reload],
   );
 
   return (
@@ -69,7 +78,13 @@ export function GuestChatPanel({
         otherLabel={otherLabel}
         emptyText={emptyText}
       />
-      <GuestMessageInput onSend={handleSend} placeholder={inputPlaceholder} sendLabel={sendLabel} />
+      {disabledNotice ? (
+        <div style={{ padding: 14, background: '#fff', borderTop: '1px solid #e5e7eb', color: '#6b7280', fontSize: 13, textAlign: 'center', lineHeight: 1.5 }}>
+          {disabledNotice}
+        </div>
+      ) : (
+        <GuestMessageInput onSend={handleSend} placeholder={inputPlaceholder} sendLabel={sendLabel} />
+      )}
     </div>
   );
 }

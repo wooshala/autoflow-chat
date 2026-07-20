@@ -1,19 +1,19 @@
 'use client';
 
-// Phase 1H.2 — POLLING CONTROLLER. Owns the fetch-loop lifecycle only; no rendering,
-// no display logic. Returns the current messages + a manual reload (used after a send).
-// Unmounting (e.g. switching rooms in /chat) clears the interval automatically.
-//
-// TODO(canonical-namespace): guest-spike → guest-chat (later refactor step).
+// Phase 1H.2/1H.5 — POLLING CONTROLLER. Owns the fetch-loop lifecycle only. Returns the
+// current messages + the channel language (from the SAME full GET, so the open room needs
+// no separate meta poll) + a manual reload. Unmounting clears the interval.
 
 import { useCallback, useEffect, useState } from 'react';
-import { fetchGuestMessages, type GuestSpikeMsg } from './api';
+import { fetchGuestMessages, type GuestMessagesResult, type GuestSpikeMsg } from './api';
+
+const EMPTY: GuestMessagesResult = { messages: [], preferred_language: null, language_source: null };
 
 export function usePollingMessages(channelKey: string, intervalMs = 2000) {
-  const [messages, setMessages] = useState<GuestSpikeMsg[]>([]);
+  const [state, setState] = useState<GuestMessagesResult>(EMPTY);
 
   const reload = useCallback(async () => {
-    setMessages(await fetchGuestMessages(channelKey));
+    setState(await fetchGuestMessages(channelKey));
   }, [channelKey]);
 
   useEffect(() => {
@@ -22,5 +22,10 @@ export function usePollingMessages(channelKey: string, intervalMs = 2000) {
     return () => clearInterval(t);
   }, [reload, intervalMs]);
 
-  return { messages, reload };
+  return {
+    messages: state.messages as GuestSpikeMsg[],
+    preferred_language: state.preferred_language,
+    language_source: state.language_source,
+    reload,
+  };
 }

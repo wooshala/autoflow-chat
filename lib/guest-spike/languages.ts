@@ -1,0 +1,134 @@
+// Phase 1H.5 — guest language support: the supported set, a script-based heuristic
+// detector (fallback under the LLM), original_lang priority resolver, and per-language
+// guest UI strings. Pure + import-free (no @/ alias) so it runs under `node --test`.
+// Language NAMES only — never flags (language ≠ nationality). GuestLang is structurally
+// identical to CustomerLang (same 5 literals), so it is assignable across the codebase.
+
+export type GuestLang = 'ko' | 'en' | 'ja' | 'zh-CN' | 'ru';
+
+/** Ordered for the selection screen. */
+export const SUPPORTED_LANGS: readonly GuestLang[] = ['ko', 'en', 'ja', 'zh-CN', 'ru'];
+
+export function isGuestLang(v: unknown): v is GuestLang {
+  return typeof v === 'string' && (SUPPORTED_LANGS as readonly string[]).includes(v);
+}
+
+const LANG_NAME: Record<GuestLang, string> = {
+  ko: '한국어',
+  en: 'English',
+  ja: '日本語',
+  'zh-CN': '中文(简体)',
+  ru: 'Русский',
+};
+
+export function langDisplayName(lang: GuestLang): string {
+  return LANG_NAME[lang];
+}
+
+/**
+ * Heuristic language detector (FALLBACK under the LLM). Order matters: kana before Han
+ * (Japanese uses Han too), then Hangul / Cyrillic / Han-only(→zh-CN) / Latin(→en).
+ * Returns null when nothing classifies (empty / symbols / emoji) so the caller can fall
+ * back to the channel preferred language.
+ */
+export function detectGuestLangHeuristic(text: string): GuestLang | null {
+  const s = String(text || '');
+  if (/[぀-ヿ]/.test(s)) return 'ja'; // Hiragana / Katakana
+  if (/[가-힣]/.test(s)) return 'ko'; // Hangul syllables
+  if (/[Ѐ-ӿ]/.test(s)) return 'ru'; // Cyrillic
+  if (/[一-鿿]/.test(s)) return 'zh-CN'; // Han without kana → Simplified Chinese
+  if (/[a-zA-Z]/.test(s)) return 'en'; // Latin
+  return null;
+}
+
+/**
+ * Resolve a guest message's original_lang. Priority: LLM detected → heuristic → channel
+ * preferred → 'en' last resort. `usedFallback` is true when neither the LLM nor the
+ * heuristic classified the text (caller logs GUEST_LANGUAGE_DETECTION_FALLBACK).
+ */
+export function resolveOriginalLang(input: {
+  llmDetected: GuestLang | null;
+  text: string;
+  preferred: GuestLang | null;
+}): { lang: GuestLang; usedFallback: boolean } {
+  if (input.llmDetected) return { lang: input.llmDetected, usedFallback: false };
+  const heuristic = detectGuestLangHeuristic(input.text);
+  if (heuristic) return { lang: heuristic, usedFallback: false };
+  return { lang: input.preferred ?? 'en', usedFallback: true };
+}
+
+// ── guest UI strings (simple constant map; NOT a full i18n framework) ─────────────
+export interface GuestUiText {
+  title: string;
+  selectPrompt: string;
+  selectPromptEn: string; // always shown under the localized prompt
+  placeholder: string;
+  send: string;
+  sending: string;
+  changeLanguage: string;
+  errorSend: string; // translation/send failed — draft kept
+  errorLanguageSave: string; // PUT language failed
+}
+
+export const guestUiText: Record<GuestLang, GuestUiText> = {
+  ko: {
+    title: '객실 고객 채팅',
+    selectPrompt: '언어를 선택해 주세요',
+    selectPromptEn: 'Please select your language',
+    placeholder: '메시지를 입력하세요',
+    send: '전송',
+    sending: '전송 중…',
+    changeLanguage: '언어 변경',
+    errorSend: '전송에 실패했습니다. 다시 시도해 주세요.',
+    errorLanguageSave: '언어 저장에 실패했습니다. 다시 시도해 주세요.',
+  },
+  en: {
+    title: 'Room Guest Chat',
+    selectPrompt: 'Please select your language',
+    selectPromptEn: 'Please select your language',
+    placeholder: 'Type a message',
+    send: 'Send',
+    sending: 'Sending…',
+    changeLanguage: 'Change language',
+    errorSend: 'Failed to send. Please try again.',
+    errorLanguageSave: 'Failed to save language. Please try again.',
+  },
+  ja: {
+    title: 'ルームチャット',
+    selectPrompt: '言語を選択してください',
+    selectPromptEn: 'Please select your language',
+    placeholder: 'メッセージを入力',
+    send: '送信',
+    sending: '送信中…',
+    changeLanguage: '言語を変更',
+    errorSend: '送信に失敗しました。もう一度お試しください。',
+    errorLanguageSave: '言語の保存に失敗しました。もう一度お試しください。',
+  },
+  'zh-CN': {
+    title: '客房聊天',
+    selectPrompt: '请选择语言',
+    selectPromptEn: 'Please select your language',
+    placeholder: '输入消息',
+    send: '发送',
+    sending: '发送中…',
+    changeLanguage: '更改语言',
+    errorSend: '发送失败，请重试。',
+    errorLanguageSave: '语言保存失败，请重试。',
+  },
+  ru: {
+    title: 'Чат номера',
+    selectPrompt: 'Пожалуйста, выберите язык',
+    selectPromptEn: 'Please select your language',
+    placeholder: 'Введите сообщение',
+    send: 'Отправить',
+    sending: 'Отправка…',
+    changeLanguage: 'Сменить язык',
+    errorSend: 'Не удалось отправить. Попробуйте снова.',
+    errorLanguageSave: 'Не удалось сохранить язык. Попробуйте снова.',
+  },
+};
+
+/** UI text for a possibly-unresolved language (selection screen defaults to English). */
+export function uiTextFor(lang: GuestLang | null): GuestUiText {
+  return guestUiText[lang ?? 'en'];
+}

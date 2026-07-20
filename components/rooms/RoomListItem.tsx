@@ -6,6 +6,10 @@
 
 import { OPERATIONS_ROOM_ID, type Room } from '@/lib/rooms/roomTypes';
 import { roomColorText } from '@/lib/rooms/roomTheme';
+import { LANG_DISPLAY } from '@/lib/customer-service/translationLangs';
+import { useRoomNavigation } from './RoomNavigationContext';
+import { lookupChannelKey } from '@/lib/guest-spike/channels';
+import { langDisplayName } from '@/lib/guest-spike/languages';
 
 const FLAG: Record<string, string> = {
   'zh-CN': '🇨🇳',
@@ -14,6 +18,18 @@ const FLAG: Record<string, string> = {
   ru: '🇷🇺',
   ko: '🇰🇷',
 };
+
+/** Phase 1H.5 — the customer room's language LABEL. Channel-mapped rooms use the live
+ *  guest-selected language ("언어 미선택" until chosen); unmapped mock rooms keep static. */
+function useRoomLanguageLabel(room: Room): string | null {
+  const { channelLanguages } = useRoomNavigation();
+  if (room.category !== 'customer') return null;
+  if (lookupChannelKey(room.id)) {
+    const lang = channelLanguages[room.id];
+    return lang ? langDisplayName(lang) : '언어 미선택';
+  }
+  return room.language ? LANG_DISPLAY[room.language] : null;
+}
 
 export function RoomListItem({
   room,
@@ -34,6 +50,7 @@ export function RoomListItem({
 }) {
   const canHide = room.id !== OPERATIONS_ROOM_ID;
   const icon = room.icon ?? (room.language ? FLAG[room.language] : null);
+  const languageLabel = useRoomLanguageLabel(room);
 
   return (
     <li>
@@ -46,6 +63,11 @@ export function RoomListItem({
           <div className="flex items-center gap-1.5">
             {icon && <span aria-hidden className={roomColorText(room.colorToken)}>{icon}</span>}
             <span className="truncate font-medium text-gray-800">{room.title}</span>
+            {languageLabel && (
+              <span className="shrink-0 rounded bg-blue-100 px-1 text-[10px] font-medium text-blue-800">
+                {languageLabel}
+              </span>
+            )}
             {room.dataBinding === 'live' ? (
               <span className="rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-700">실시간</span>
             ) : (

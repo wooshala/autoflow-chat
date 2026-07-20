@@ -35,7 +35,9 @@ const TEAM_ROOMS: Room[] = [
 
 const CUSTOMER_ROOMS: Room[] = [
   { id: 'cust-503', category: 'customer', dataBinding: 'mock', title: '503호 · 中文(简体)', colorToken: 'customer', defaultOrder: 40, room_no: '503', language: 'zh-CN', status: 'active', unread: 2, lastActiveAt: T(9, 15) },
-  { id: 'cust-308', category: 'customer', dataBinding: 'mock', title: '308호 · 日本語', colorToken: 'customer', defaultOrder: 41, room_no: '308', language: 'ja', status: 'active', unread: 1, lastActiveAt: T(21, 40) },
+  // Phase 1H.5 — 308 is the live guest-chat room; its language is guest-selected (server),
+  // NOT hardcoded here. Title carries no language; RoomHeader/RoomListItem show it dynamically.
+  { id: 'cust-308', category: 'customer', dataBinding: 'mock', title: '308호', colorToken: 'customer', defaultOrder: 41, room_no: '308', status: 'active', unread: 1, lastActiveAt: T(21, 40) },
   { id: 'cust-606', category: 'customer', dataBinding: 'mock', title: '606호 · English', colorToken: 'customer', defaultOrder: 42, room_no: '606', language: 'en', status: 'active', lastActiveAt: T(10, 6) },
   { id: 'cust-701', category: 'customer', dataBinding: 'mock', title: '701호 · Русский', colorToken: 'customer', defaultOrder: 43, room_no: '701', language: 'ru', status: 'active', unread: 1, lastActiveAt: T(19, 25) },
   { id: 'cust-502', category: 'customer', dataBinding: 'mock', title: '502호 · 中文(简体)', colorToken: 'customer', defaultOrder: 44, room_no: '502', language: 'zh-CN', status: 'active', lastActiveAt: T(8, 30) },

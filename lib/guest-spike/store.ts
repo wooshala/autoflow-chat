@@ -72,8 +72,45 @@ export async function appendMessage(channelKey: string, m: NewGuestMsg): Promise
   return rowToMsg(data as Row);
 }
 
-/** Spike channel → guest language (translation direction). 308 = Japanese. */
-export function guestLangForChannel(channelKey: string): string {
-  if (channelKey.includes('308')) return 'ja';
-  return 'ja';
+// ── channel preferred language (Phase 1H.5; guest-selected, NOT room-number hardcoded) ──
+
+const CHANNELS_TABLE = 'guest_chat_channels';
+
+export type ChannelLanguage = {
+  preferred_language: string | null;
+  language_source: string | null;
+};
+
+/** Read a channel's preferred language, or {null,null} when unset. */
+export async function getChannelLanguage(channelKey: string): Promise<ChannelLanguage> {
+  const { data, error } = await db()
+    .from(CHANNELS_TABLE)
+    .select('preferred_language, language_source')
+    .eq('channel_key', channelKey)
+    .maybeSingle();
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  const row = data as { preferred_language?: string; language_source?: string } | null;
+  return {
+    preferred_language: row?.preferred_language ?? null,
+    language_source: row?.language_source ?? null,
+  };
+}
+
+/** Upsert a channel's preferred language. */
+export async function setChannelLanguage(
+  channelKey: string,
+  preferred_language: string,
+  language_source: 'user_selected' | 'staff_selected' | 'system_default' = 'user_selected',
+): Promise<ChannelLanguage> {
+  const { data, error } = await db()
+    .from(CHANNELS_TABLE)
+    .upsert(
+      { channel_key: channelKey, preferred_language, language_source, updated_at: new Date().toISOString() },
+      { onConflict: 'channel_key' },
+    )
+    .select('preferred_language, language_source')
+    .single();
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  const row = data as { preferred_language: string; language_source: string };
+  return { preferred_language: row.preferred_language, language_source: row.language_source };
 }

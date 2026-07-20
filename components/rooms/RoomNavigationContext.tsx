@@ -13,6 +13,8 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
+import { useChannelLanguages, type RoomChannelLanguages } from '@/lib/guest-spike/useChannelLanguages';
+import type { GuestLang } from '@/lib/guest-spike/languages';
 import { MOCK_CUSTOMER_MESSAGES, MOCK_MEMBERSHIP, MOCK_ROOMS, OPERATIONS_ROOM } from '@/lib/rooms/roomsMock';
 import {
   OPERATIONS_ROOM_ID,
@@ -48,6 +50,10 @@ interface RoomNavigationValue {
   membership: ReadonlySet<string>;
   sectionCollapse: SectionCollapseState;
   customerMessages: Record<string, MockMessage[]>;
+  /** Phase 1H.5 — live guest-selected language per channel-mapped customer room (roomId → lang|null). */
+  channelLanguages: RoomChannelLanguages;
+  /** Phase 1H.5 — the open room reports its language (from its own message poll) here. */
+  reportChannelLanguage: (roomId: string, lang: GuestLang | null) => void;
   setSearch: (v: string) => void;
   setTab: (t: RoomTab) => void;
   selectRoom: (id: string) => void;
@@ -76,6 +82,19 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
   const selectedRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) ?? OPERATIONS_ROOM,
     [rooms, selectedRoomId],
+  );
+
+  // Phase 1H.5 — closed mapped rooms meta-poll; the OPEN room reports from its own message
+  // poll (reportChannelLanguage). Merge both so the list + header have every room's language.
+  const roomIds = useMemo(() => rooms.map((r) => r.id), [rooms]);
+  const metaLanguages = useChannelLanguages(roomIds, selectedRoomId);
+  const [reportedLanguages, setReportedLanguages] = useState<RoomChannelLanguages>({});
+  const reportChannelLanguage = useCallback((roomId: string, lang: GuestLang | null) => {
+    setReportedLanguages((prev) => (prev[roomId] === lang ? prev : { ...prev, [roomId]: lang }));
+  }, []);
+  const channelLanguages = useMemo<RoomChannelLanguages>(
+    () => ({ ...metaLanguages, ...reportedLanguages }),
+    [metaLanguages, reportedLanguages],
   );
 
   const selectRoom = useCallback((id: string) => {
@@ -149,6 +168,8 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       membership,
       sectionCollapse,
       customerMessages,
+      channelLanguages,
+      reportChannelLanguage,
       setSearch,
       setTab,
       selectRoom,
@@ -168,6 +189,8 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       membership,
       sectionCollapse,
       customerMessages,
+      channelLanguages,
+      reportChannelLanguage,
       selectRoom,
       toggleFavorite,
       toggleHidden,
