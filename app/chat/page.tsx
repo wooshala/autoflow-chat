@@ -1245,7 +1245,7 @@ export default function ChatPage() {
     <RoomNavigationProvider>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <RoomNavigation widthClassName="w-64" />
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <RoomCenter staffGlobalSlot={standardChatBody} />
         </section>
       </div>

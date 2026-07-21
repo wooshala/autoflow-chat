@@ -50,7 +50,7 @@ export function CustomerRoom({ room }: { room: Room }) {
   }, [channelKey]);
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-[#B2C7D9]">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#B2C7D9]">
       <RoomHeader room={room} />
       {channelKey ? (
         hasSession ? (
