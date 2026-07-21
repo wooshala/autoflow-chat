@@ -148,3 +148,24 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
 export function uiTextFor(lang: GuestLang | null): GuestUiText {
   return guestUiText[lang ?? 'en'];
 }
+
+// ── staff room-language badge decision (Phase 1H.7 language-on-session fix) ────────────────
+// The staff UI must NEVER confuse "no active guest" with "guest present, no language yet".
+export type GuestLanguageBadge =
+  | { kind: 'hidden' } //     no active guest → show no language badge
+  | { kind: 'unselected' } // guest present, hasn't chosen → gray "언어 미선택"
+  | { kind: 'language'; lang: GuestLang }; // guest present + language → the language badge
+
+/**
+ * Decide the staff-side language badge from the session_status + language of an active session.
+ *  - session_status !== 'open' ('none' / unknown-null) → hidden  (no active guest)
+ *  - open + no language                                → unselected
+ *  - open + language                                   → language
+ */
+export function resolveGuestLanguageBadge(input: {
+  sessionStatus: 'open' | 'none' | null;
+  language: GuestLang | null;
+}): GuestLanguageBadge {
+  if (input.sessionStatus !== 'open') return { kind: 'hidden' };
+  return input.language ? { kind: 'language', lang: input.language } : { kind: 'unselected' };
+}

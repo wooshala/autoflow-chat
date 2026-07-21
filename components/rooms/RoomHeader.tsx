@@ -9,27 +9,41 @@ import { roomColorText } from '@/lib/rooms/roomTheme';
 import type { Room } from '@/lib/rooms/roomTypes';
 import { useRoomNavigation } from './RoomNavigationContext';
 import { lookupChannelKey } from '@/lib/guest-spike/channels';
-import { langDisplayName } from '@/lib/guest-spike/languages';
+import { langDisplayName, resolveGuestLanguageBadge } from '@/lib/guest-spike/languages';
 
 export function RoomHeader({ room }: { room: Room }) {
-  const { channelLanguages } = useRoomNavigation();
-  // Phase 1H.5 — channel-mapped rooms show the live guest-selected language ("언어 미선택"
-  // until chosen); unmapped mock rooms keep their static language.
-  const languageLabel =
-    room.category !== 'customer'
-      ? null
-      : lookupChannelKey(room.id)
-        ? (channelLanguages[room.id] ? langDisplayName(channelLanguages[room.id]!) : '언어 미선택')
-        : room.language
-          ? LANG_DISPLAY[room.language]
-          : null;
+  const { channelLanguages, channelSessionStatus } = useRoomNavigation();
+  // Phase 1H.7 — channel-mapped rooms: distinguish "no active guest" (no badge) from
+  // "guest present, no language" (gray 언어 미선택) from a chosen language (blue). Unmapped mock
+  // rooms keep their static language badge.
+  const badge: { text: string; muted: boolean } | null = (() => {
+    if (room.category !== 'customer') return null;
+    if (lookupChannelKey(room.id)) {
+      const b = resolveGuestLanguageBadge({
+        sessionStatus: channelSessionStatus[room.id] ?? null,
+        language: channelLanguages[room.id] ?? null,
+      });
+      if (b.kind === 'hidden') return null; // no active guest → no badge
+      if (b.kind === 'unselected') return { text: '언어 미선택', muted: true };
+      return { text: langDisplayName(b.lang), muted: false };
+    }
+    return room.language ? { text: LANG_DISPLAY[room.language], muted: false } : null;
+  })();
 
   return (
     <header className="flex shrink-0 items-center gap-2 border-b border-gray-300/50 bg-[#B2C7D9] px-4 py-2">
       {room.icon && <span aria-hidden className={roomColorText(room.colorToken)}>{room.icon}</span>}
       <span className="font-semibold text-gray-800">{room.title}</span>
-      {languageLabel && (
-        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-800">{languageLabel}</span>
+      {badge && (
+        <span
+          className={
+            badge.muted
+              ? 'rounded bg-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500'
+              : 'rounded bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-800'
+          }
+        >
+          {badge.text}
+        </span>
       )}
       {room.dataBinding === 'mock' && (
         <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">DEV · mock</span>

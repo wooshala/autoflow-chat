@@ -10,7 +10,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
 import { GuestChatPanel } from '@/components/guest-spike/GuestChatPanel';
-import { fetchChannelMeta, fetchGuestSession, setGuestLanguage } from '@/lib/guest-spike/api';
+import { fetchGuestSession, setGuestLanguage } from '@/lib/guest-spike/api';
+import { decideGuestEntryPhase } from '@/lib/guest-spike/sessionPolicy';
 import { isGuestLang, langDisplayName, SUPPORTED_LANGS, uiTextFor, type GuestLang } from '@/lib/guest-spike/languages';
 
 const STAFF_LANG = 'ko';
@@ -36,29 +37,20 @@ export default function GuestChatPage() {
     } catch {}
     setSuggested(ls);
     (async () => {
-      // Phase 1H.7 — establish the guest session first (sets HttpOnly cookie). A closed
-      // session (previous guest, staff ended the chat) shows the ended screen.
-      const sessionStatus = await fetchGuestSession(channelKey);
+      // Phase 1H.7 — establish the guest session (sets HttpOnly cookie) AND read THIS session's
+      // language in one response. The entry screen is decided from the session alone — never a
+      // stale channel value — so a fresh session ALWAYS shows the language selection screen and
+      // only a reconnecting guest whose own session already has a language skips it.
+      const session = await fetchGuestSession(channelKey);
       if (!alive) return;
-      if (sessionStatus === 'closed') {
-        setPhase('closed');
-        return;
-      }
-      if (sessionStatus === 'occupied') {
-        setPhase('occupied');
-        return;
-      }
-      const meta = await fetchChannelMeta(channelKey);
-      if (!alive) return;
-      if (isGuestLang(meta.preferred_language)) {
-        setPreferred(meta.preferred_language);
+      const entry = decideGuestEntryPhase({ status: session.status, languageCode: session.language_code });
+      if (entry === 'chatting' && isGuestLang(session.language_code)) {
+        setPreferred(session.language_code);
         try {
-          localStorage.setItem(lsKey(channelKey), meta.preferred_language);
+          localStorage.setItem(lsKey(channelKey), session.language_code);
         } catch {}
-        setPhase('chatting');
-      } else {
-        setPhase('selecting'); // server empty → require explicit selection (no auto-apply of ls)
       }
+      setPhase(entry);
     })();
     return () => {
       alive = false;

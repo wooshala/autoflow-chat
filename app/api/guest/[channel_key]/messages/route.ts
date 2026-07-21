@@ -2,7 +2,7 @@
 //   GET ?meta=1 → { ok, preferred_language, language_source }
 //   GET         → { ok, messages, preferred_language, language_source }  (session-scoped internally)
 //   POST        → send a message into the ACTIVE session (guest: LLM detect+translate→ko; staff: ko→preferred)
-//   PUT { preferred_language } → set the channel's language
+//   PUT { preferred_language } → set the GUEST SESSION's language (Phase 1H.7; not the channel)
 //
 // Phase 1H.7 — messages are session-scoped. Guest uses its afg_sid cookie's session; staff
 // uses the channel's active session (?as=staff). A closed guest session → empty (GET) / 409
@@ -13,10 +13,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   appendMessage,
   getActiveSession,
-  getChannelLanguage,
   getSessionById,
   listMessagesBySession,
-  setChannelLanguage,
+  setGuestSessionLanguage,
   type GuestSession,
 } from '@/lib/guest-spike/store';
 import { detectAndTranslateToKorean, openAiCustomerTranslator } from '@/lib/customer-service/translation';
@@ -64,36 +63,37 @@ async function resolveSession(req: NextRequest, channelKey: string): Promise<Res
   return active ? { ok: false, kind: 'occupied' } : { ok: true, session: null };
 }
 
-async function readChannelLanguageSafe(channelKey: string): Promise<{ preferred: GuestLang | null; source: string | null }> {
-  try {
-    const ch = await getChannelLanguage(channelKey);
-    return { preferred: isGuestLang(ch.preferred_language) ? ch.preferred_language : null, source: ch.language_source };
-  } catch {
-    return { preferred: null, source: null };
-  }
+// Phase 1H.7 — language is a SESSION property now. The preferred language for translation and
+// display comes ONLY from the resolved session (never the channel), so a stale channel value can
+// never leak into an active chat. No session (cookieless guest / no active) → no language.
+function sessionLanguage(session: GuestSession | null): { preferred: GuestLang | null; source: string | null } {
+  const preferred = session && isGuestLang(session.language_code) ? session.language_code : null;
+  return { preferred, source: session?.language_source ?? null };
 }
 
 export async function GET(req: NextRequest, { params }: { params: { channel_key: string } }) {
   const channelKey = params.channel_key;
   const meta = req.nextUrl.searchParams.get('meta') === '1';
-  if (meta) {
-    try {
-      const { preferred_language, language_source } = await getChannelLanguage(channelKey);
-      return NextResponse.json({ ok: true, preferred_language, language_source });
-    } catch (e) {
-      return dbError(e);
-    }
-  }
+  // Phase 1H.7 — staff-resolved responses carry session_status so the staff UI can tell
+  // "guest present, no language yet" (open) from "no active guest" (none). Derived ONLY from
+  // getActiveSession (open sessions); closed sessions are never read/reflected. Guest responses
+  // do NOT include it (not needed on the guest side).
+  const isStaff = req.nextUrl.searchParams.get('as') === 'staff';
   try {
-    const { preferred, source } = await readChannelLanguageSafe(channelKey);
+    // The language comes from the RESOLVED session (guest cookie or staff active) — not the channel.
     const r = await resolveSession(req, channelKey);
     if (!r.ok) {
       if (r.kind === 'unauthorized') return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 });
-      // closed / occupied → no messages (response shape preserved; the guest UI shows the state screen).
-      return NextResponse.json({ ok: true, messages: [], preferred_language: preferred, language_source: source });
+      // closed / occupied → no active session → no messages, no language (response shape preserved).
+      return meta
+        ? NextResponse.json({ ok: true, preferred_language: null, language_source: null })
+        : NextResponse.json({ ok: true, messages: [], preferred_language: null, language_source: null });
     }
+    const { preferred, source } = sessionLanguage(r.session);
+    const staffState = isStaff ? { session_status: (r.session ? 'open' : 'none') as 'open' | 'none' } : {};
+    if (meta) return NextResponse.json({ ok: true, ...staffState, preferred_language: preferred, language_source: source });
     const messages = r.session ? await listMessagesBySession(r.session.id) : [];
-    return NextResponse.json({ ok: true, messages, preferred_language: preferred, language_source: source });
+    return NextResponse.json({ ok: true, ...staffState, messages, preferred_language: preferred, language_source: source });
   } catch (e) {
     return dbError(e);
   }
@@ -125,7 +125,8 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
     return dbError(e);
   }
 
-  const { preferred } = await readChannelLanguageSafe(channelKey);
+  // Translation language comes from THIS session (staff → active session; guest → own session).
+  const { preferred } = sessionLanguage(session);
 
   let originalLang: string;
   const translated: Record<string, string> = {};
@@ -172,9 +173,20 @@ export async function PUT(req: NextRequest, { params }: { params: { channel_key:
   if (!isGuestLang(body.preferred_language)) {
     return NextResponse.json({ ok: false, error: 'INVALID_LANGUAGE' }, { status: 400 });
   }
+  const lang = body.preferred_language;
   try {
-    const { preferred_language, language_source } = await setChannelLanguage(channelKey, body.preferred_language, 'user_selected');
-    return NextResponse.json({ ok: true, preferred_language, language_source });
+    // The guest sets the language on their OWN session (resolved from the cookie), never the
+    // channel. Requires a valid channel cookie + OPEN session; closed/occupied/cookieless → 409.
+    const r = await resolveSession(req, channelKey);
+    if (!r.ok) {
+      if (r.kind === 'unauthorized') return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 });
+      if (r.kind === 'closed') return NextResponse.json({ ok: false, error: 'SESSION_CLOSED' }, { status: 409 });
+      return NextResponse.json({ ok: false, error: 'SESSION_OCCUPIED' }, { status: 409 });
+    }
+    if (!r.session) return NextResponse.json({ ok: false, error: 'NO_ACTIVE_SESSION' }, { status: 409 });
+    const updated = await setGuestSessionLanguage(r.session.id, lang, 'user_selected');
+    if (!updated) return NextResponse.json({ ok: false, error: 'SESSION_CLOSED' }, { status: 409 }); // raced to closed
+    return NextResponse.json({ ok: true, preferred_language: updated.language_code, language_source: updated.language_source });
   } catch (e) {
     return dbError(e);
   }

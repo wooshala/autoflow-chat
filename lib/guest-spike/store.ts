@@ -78,7 +78,8 @@ export async function appendMessage(
 
 // ── guest sessions (Phase 1H.7) ──────────────────────────────────────────────────
 const SESSIONS = 'guest_chat_sessions';
-const S_COLS = 'id, channel_key, status, started_at, closed_at';
+// Phase 1H.7 — language_code/language_source live on the SESSION (per-guest), not the channel.
+const S_COLS = 'id, channel_key, status, started_at, closed_at, language_code, language_source';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface GuestSession {
@@ -87,6 +88,9 @@ export interface GuestSession {
   status: 'open' | 'closed';
   started_at: string;
   closed_at: string | null;
+  /** The CURRENT guest's language (NULL until they select). NOT inherited across sessions. */
+  language_code: string | null;
+  language_source: string | null;
 }
 
 function rowToSession(r: Record<string, unknown>): GuestSession {
@@ -96,6 +100,8 @@ function rowToSession(r: Record<string, unknown>): GuestSession {
     status: r.status === 'closed' ? 'closed' : 'open',
     started_at: String(r.started_at),
     closed_at: (r.closed_at as string | null) ?? null,
+    language_code: (r.language_code as string | null) ?? null,
+    language_source: (r.language_source as string | null) ?? null,
   };
 }
 
@@ -143,6 +149,28 @@ export async function createSession(channelKey: string): Promise<CreateSessionRe
     throw new Error(`DB_ERROR: ${error.message}`);
   }
   return { created: rowToSession(data as Record<string, unknown>) };
+}
+
+/**
+ * Set the language on ONE guest session (the guest's own, resolved by the caller). Updates
+ * ONLY an OPEN session — a closed session (or wrong id) matches no row and returns null, so
+ * the caller can 409. Never touches the channel or other sessions.
+ */
+export async function setGuestSessionLanguage(
+  sessionId: string,
+  languageCode: string,
+  languageSource: 'user_selected' | 'staff_selected' | 'system_default' = 'user_selected',
+): Promise<GuestSession | null> {
+  if (!UUID_RE.test(sessionId)) return null;
+  const { data, error } = await db()
+    .from(SESSIONS)
+    .update({ language_code: languageCode, language_source: languageSource, updated_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('status', 'open')
+    .select(S_COLS)
+    .maybeSingle();
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  return data ? rowToSession(data as Record<string, unknown>) : null;
 }
 
 /** Close the channel's active session (staff "대화 종료"). Idempotent. */

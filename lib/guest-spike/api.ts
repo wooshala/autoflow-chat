@@ -19,16 +19,27 @@ const staffHeaders = (asStaff?: boolean): Record<string, string> => (asStaff ? s
 
 export type GuestSessionStatus = 'open' | 'closed' | 'occupied';
 
-/** Establish/check the guest session (sets the HttpOnly cookie server-side). */
-export async function fetchGuestSession(channelKey: string): Promise<GuestSessionStatus> {
+export interface GuestSessionResult {
+  status: GuestSessionStatus;
+  /** THIS session's language (Phase 1H.7). NULL on a fresh session → guest must select. */
+  language_code: string | null;
+  language_source: string | null;
+}
+
+/**
+ * Establish/check the guest session (sets the HttpOnly cookie server-side) AND return this
+ * session's language, so the entry screen is decided from ONE response — never a stale channel
+ * value. A fresh session returns language_code=null → selection screen.
+ */
+export async function fetchGuestSession(channelKey: string): Promise<GuestSessionResult> {
   try {
     const r = await fetch(sessionEndpoint(channelKey), { cache: 'no-store' });
     const j = await r.json();
-    if (j?.status === 'closed') return 'closed';
-    if (j?.status === 'occupied') return 'occupied';
-    return 'open';
+    const status: GuestSessionStatus = j?.status === 'closed' ? 'closed' : j?.status === 'occupied' ? 'occupied' : 'open';
+    return { status, language_code: j?.language_code ?? null, language_source: j?.language_source ?? null };
   } catch {
-    return 'open';
+    // Network error → treat as a fresh open session with no language (guest selects).
+    return { status: 'open', language_code: null, language_source: null };
   }
 }
 
@@ -37,26 +48,33 @@ export async function closeGuestSession(channelKey: string): Promise<void> {
   await fetch(sessionEndpoint(channelKey), { method: 'DELETE', headers: staffSessionAuthHeaders() });
 }
 
+/** Phase 1H.7 — staff responses carry the active-session state so the UI distinguishes
+ *  "guest present, no language" (open) from "no active guest" (none). null on guest reads /
+ *  errors / pre-auth (field absent). */
+export type GuestSessionState = 'open' | 'none' | null;
+
 export interface GuestMessagesResult {
   messages: GuestSpikeMsg[];
   preferred_language: string | null;
   language_source: string | null;
+  session_status: GuestSessionState;
 }
 
-/** Full messages GET — also carries the channel language, so the OPEN room reuses this
- *  single poll for both (no separate meta poll). Read swallows errors → empty/null. */
+/** Full messages GET — also carries the session language + session_status (staff), so the OPEN
+ *  room reuses this single poll (no separate meta poll). Read swallows errors → empty/null. */
 export async function fetchGuestMessages(channelKey: string, asStaff?: boolean): Promise<GuestMessagesResult> {
   try {
     const r = await fetch(withStaff(endpoint(channelKey), asStaff), { cache: 'no-store', headers: staffHeaders(asStaff) });
     const j = await r.json();
-    if (!j?.ok) return { messages: [], preferred_language: null, language_source: null };
+    if (!j?.ok) return { messages: [], preferred_language: null, language_source: null, session_status: null };
     return {
       messages: j.messages ?? [],
       preferred_language: j.preferred_language ?? null,
       language_source: j.language_source ?? null,
+      session_status: j.session_status ?? null,
     };
   } catch {
-    return { messages: [], preferred_language: null, language_source: null };
+    return { messages: [], preferred_language: null, language_source: null, session_status: null };
   }
 }
 
@@ -76,16 +94,23 @@ export async function sendGuestMessage(
 export interface ChannelMeta {
   preferred_language: string | null;
   language_source: string | null;
+  session_status: GuestSessionState;
 }
 
-/** Lightweight channel language read (?meta=1) — no message array. Read swallows errors. */
-export async function fetchChannelMeta(channelKey: string): Promise<ChannelMeta> {
+/**
+ * Lightweight language read (?meta=1) — no message array. Phase 1H.7: language is session-owned,
+ * so the STAFF room-list poll passes asStaff to resolve each room's ACTIVE session (a plain guest
+ * read has no session context). Read swallows errors → null. */
+export async function fetchChannelMeta(channelKey: string, asStaff?: boolean): Promise<ChannelMeta> {
   try {
-    const r = await fetch(`${endpoint(channelKey)}?meta=1`, { cache: 'no-store' });
+    const url = `${endpoint(channelKey)}?meta=1${asStaff ? '&as=staff' : ''}`;
+    const r = await fetch(url, { cache: 'no-store', headers: staffHeaders(asStaff) });
     const j = await r.json();
-    return j?.ok ? { preferred_language: j.preferred_language ?? null, language_source: j.language_source ?? null } : { preferred_language: null, language_source: null };
+    return j?.ok
+      ? { preferred_language: j.preferred_language ?? null, language_source: j.language_source ?? null, session_status: j.session_status ?? null }
+      : { preferred_language: null, language_source: null, session_status: null };
   } catch {
-    return { preferred_language: null, language_source: null };
+    return { preferred_language: null, language_source: null, session_status: null };
   }
 }
 

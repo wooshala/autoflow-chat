@@ -9,7 +9,7 @@ import { roomColorText } from '@/lib/rooms/roomTheme';
 import { LANG_DISPLAY } from '@/lib/customer-service/translationLangs';
 import { useRoomNavigation } from './RoomNavigationContext';
 import { lookupChannelKey } from '@/lib/guest-spike/channels';
-import { langDisplayName } from '@/lib/guest-spike/languages';
+import { langDisplayName, resolveGuestLanguageBadge } from '@/lib/guest-spike/languages';
 
 const FLAG: Record<string, string> = {
   'zh-CN': '🇨🇳',
@@ -19,16 +19,22 @@ const FLAG: Record<string, string> = {
   ko: '🇰🇷',
 };
 
-/** Phase 1H.5 — the customer room's language LABEL. Channel-mapped rooms use the live
- *  guest-selected language ("언어 미선택" until chosen); unmapped mock rooms keep static. */
-function useRoomLanguageLabel(room: Room): string | null {
-  const { channelLanguages } = useRoomNavigation();
+/** Phase 1H.7 — the customer room's language badge. Channel-mapped rooms distinguish "no active
+ *  guest" (no badge) from "guest present, no language" (gray 언어 미선택) from a chosen language
+ *  (blue); unmapped mock rooms keep their static language badge. */
+function useRoomLanguageBadge(room: Room): { text: string; muted: boolean } | null {
+  const { channelLanguages, channelSessionStatus } = useRoomNavigation();
   if (room.category !== 'customer') return null;
   if (lookupChannelKey(room.id)) {
-    const lang = channelLanguages[room.id];
-    return lang ? langDisplayName(lang) : '언어 미선택';
+    const b = resolveGuestLanguageBadge({
+      sessionStatus: channelSessionStatus[room.id] ?? null,
+      language: channelLanguages[room.id] ?? null,
+    });
+    if (b.kind === 'hidden') return null;
+    if (b.kind === 'unselected') return { text: '언어 미선택', muted: true };
+    return { text: langDisplayName(b.lang), muted: false };
   }
-  return room.language ? LANG_DISPLAY[room.language] : null;
+  return room.language ? { text: LANG_DISPLAY[room.language], muted: false } : null;
 }
 
 export function RoomListItem({
@@ -50,7 +56,7 @@ export function RoomListItem({
 }) {
   const canHide = room.id !== OPERATIONS_ROOM_ID;
   const icon = room.icon ?? (room.language ? FLAG[room.language] : null);
-  const languageLabel = useRoomLanguageLabel(room);
+  const languageBadge = useRoomLanguageBadge(room);
 
   return (
     <li>
@@ -63,9 +69,15 @@ export function RoomListItem({
           <div className="flex items-center gap-1.5">
             {icon && <span aria-hidden className={roomColorText(room.colorToken)}>{icon}</span>}
             <span className="truncate font-medium text-gray-800">{room.title}</span>
-            {languageLabel && (
-              <span className="shrink-0 rounded bg-blue-100 px-1 text-[10px] font-medium text-blue-800">
-                {languageLabel}
+            {languageBadge && (
+              <span
+                className={
+                  languageBadge.muted
+                    ? 'shrink-0 rounded bg-gray-200 px-1 text-[10px] font-medium text-gray-500'
+                    : 'shrink-0 rounded bg-blue-100 px-1 text-[10px] font-medium text-blue-800'
+                }
+              >
+                {languageBadge.text}
               </span>
             )}
             {room.dataBinding === 'live' ? (

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchGuestMessages, type GuestMessagesResult, type GuestSpikeMsg } from './api';
 
-const EMPTY: GuestMessagesResult = { messages: [], preferred_language: null, language_source: null };
+const EMPTY: GuestMessagesResult = { messages: [], preferred_language: null, language_source: null, session_status: null };
 
 export function usePollingMessages(channelKey: string, asStaff?: boolean, intervalMs = 2000) {
   const [state, setState] = useState<GuestMessagesResult>(EMPTY);
@@ -26,6 +26,7 @@ export function usePollingMessages(channelKey: string, asStaff?: boolean, interv
     messages: state.messages as GuestSpikeMsg[],
     preferred_language: state.preferred_language,
     language_source: state.language_source,
+    session_status: state.session_status,
     reload,
   };
 }

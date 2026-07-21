@@ -35,10 +35,10 @@ export function CustomerRoom({ room }: { room: Room }) {
   // poll) and reports it to the context so the list/header stay in sync.
   const [preferred, setPreferred] = useState<GuestLang | null>(null);
   const onChannelMeta = useCallback(
-    (m: { preferred_language: string | null }) => {
+    (m: { preferred_language: string | null; session_status: 'open' | 'none' | null }) => {
       const p = isGuestLang(m.preferred_language) ? m.preferred_language : null;
       setPreferred(p);
-      reportChannelLanguage(room.id, p);
+      reportChannelLanguage(room.id, p, m.session_status);
     },
     [reportChannelLanguage, room.id],
   );

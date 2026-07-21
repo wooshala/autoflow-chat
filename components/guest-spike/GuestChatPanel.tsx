@@ -51,14 +51,18 @@ export function GuestChatPanel({
   disabledNotice?: string;
   /** Phase 1H.5 — the channel language from THIS panel's own message poll. Lets the open
    *  room reuse a single poll (no separate meta poll). Fired whenever the value changes. */
-  onChannelMeta?: (meta: { preferred_language: string | null; language_source: string | null }) => void;
+  onChannelMeta?: (meta: {
+    preferred_language: string | null;
+    language_source: string | null;
+    session_status: 'open' | 'none' | null;
+  }) => void;
 }) {
-  const { messages, preferred_language, language_source, reload } = usePollingMessages(channelKey, asStaff);
+  const { messages, preferred_language, language_source, session_status, reload } = usePollingMessages(channelKey, asStaff);
 
   useEffect(() => {
-    onChannelMeta?.({ preferred_language, language_source });
+    onChannelMeta?.({ preferred_language, language_source, session_status });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preferred_language, language_source]);
+  }, [preferred_language, language_source, session_status]);
 
   const handleSend = useCallback(
     async (text: string) => {

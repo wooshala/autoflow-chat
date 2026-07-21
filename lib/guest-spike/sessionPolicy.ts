@@ -22,3 +22,22 @@ export function decideSessionOutcome(input: {
   // NEVER auto-join an existing open session — that would let anyone with the room URL read it.
   return input.hasActiveSession ? { kind: 'occupied' } : { kind: 'create' };
 }
+
+// ── guest entry phase (Phase 1H.7 language-on-session fix) ────────────────────────────────
+// Decides the FIRST screen the guest sees, from the SESSION response alone (no channel meta).
+// Language now lives on the session, so a fresh session (language_code = NULL) ALWAYS shows the
+// selection screen, and a stale channel language can never skip it. Only a reconnecting guest
+// whose OWN open session already has a language goes straight to chatting.
+export type GuestEntryPhase = 'closed' | 'occupied' | 'selecting' | 'chatting';
+
+const SUPPORTED = new Set(['ko', 'en', 'ja', 'zh-CN', 'ru']);
+
+export function decideGuestEntryPhase(session: {
+  status: 'open' | 'closed' | 'occupied';
+  languageCode: string | null;
+}): GuestEntryPhase {
+  if (session.status === 'closed') return 'closed';
+  if (session.status === 'occupied') return 'occupied';
+  // open: chat only if THIS session already has a valid language; otherwise select.
+  return session.languageCode && SUPPORTED.has(session.languageCode) ? 'chatting' : 'selecting';
+}

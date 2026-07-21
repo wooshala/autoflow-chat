@@ -13,7 +13,11 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
-import { useChannelLanguages, type RoomChannelLanguages } from '@/lib/guest-spike/useChannelLanguages';
+import {
+  useChannelLanguages,
+  type RoomChannelLanguages,
+  type RoomChannelSessionStatus,
+} from '@/lib/guest-spike/useChannelLanguages';
 import type { GuestLang } from '@/lib/guest-spike/languages';
 import { MOCK_CUSTOMER_MESSAGES, MOCK_MEMBERSHIP, MOCK_ROOMS, OPERATIONS_ROOM } from '@/lib/rooms/roomsMock';
 import {
@@ -52,8 +56,11 @@ interface RoomNavigationValue {
   customerMessages: Record<string, MockMessage[]>;
   /** Phase 1H.5 — live guest-selected language per channel-mapped customer room (roomId → lang|null). */
   channelLanguages: RoomChannelLanguages;
-  /** Phase 1H.5 — the open room reports its language (from its own message poll) here. */
-  reportChannelLanguage: (roomId: string, lang: GuestLang | null) => void;
+  /** Phase 1H.7 — active-session state per room (roomId → 'open'|'none'|null). Lets the UI tell
+   *  "guest present, no language" from "no active guest". */
+  channelSessionStatus: RoomChannelSessionStatus;
+  /** Phase 1H.5/1H.7 — the open room reports its language + session_status (from its own poll). */
+  reportChannelLanguage: (roomId: string, lang: GuestLang | null, sessionStatus: 'open' | 'none' | null) => void;
   setSearch: (v: string) => void;
   setTab: (t: RoomTab) => void;
   selectRoom: (id: string) => void;
@@ -87,14 +94,23 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
   // Phase 1H.5 — closed mapped rooms meta-poll; the OPEN room reports from its own message
   // poll (reportChannelLanguage). Merge both so the list + header have every room's language.
   const roomIds = useMemo(() => rooms.map((r) => r.id), [rooms]);
-  const metaLanguages = useChannelLanguages(roomIds, selectedRoomId);
+  const { languages: metaLanguages, sessionStatus: metaSessionStatus } = useChannelLanguages(roomIds, selectedRoomId);
   const [reportedLanguages, setReportedLanguages] = useState<RoomChannelLanguages>({});
-  const reportChannelLanguage = useCallback((roomId: string, lang: GuestLang | null) => {
-    setReportedLanguages((prev) => (prev[roomId] === lang ? prev : { ...prev, [roomId]: lang }));
-  }, []);
+  const [reportedSessionStatus, setReportedSessionStatus] = useState<RoomChannelSessionStatus>({});
+  const reportChannelLanguage = useCallback(
+    (roomId: string, lang: GuestLang | null, sessionStatus: 'open' | 'none' | null) => {
+      setReportedLanguages((prev) => (prev[roomId] === lang ? prev : { ...prev, [roomId]: lang }));
+      setReportedSessionStatus((prev) => (prev[roomId] === sessionStatus ? prev : { ...prev, [roomId]: sessionStatus }));
+    },
+    [],
+  );
   const channelLanguages = useMemo<RoomChannelLanguages>(
     () => ({ ...metaLanguages, ...reportedLanguages }),
     [metaLanguages, reportedLanguages],
+  );
+  const channelSessionStatus = useMemo<RoomChannelSessionStatus>(
+    () => ({ ...metaSessionStatus, ...reportedSessionStatus }),
+    [metaSessionStatus, reportedSessionStatus],
   );
 
   const selectRoom = useCallback((id: string) => {
@@ -169,6 +185,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       sectionCollapse,
       customerMessages,
       channelLanguages,
+      channelSessionStatus,
       reportChannelLanguage,
       setSearch,
       setTab,
@@ -190,6 +207,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       sectionCollapse,
       customerMessages,
       channelLanguages,
+      channelSessionStatus,
       reportChannelLanguage,
       selectRoom,
       toggleFavorite,

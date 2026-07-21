@@ -40,7 +40,15 @@ export async function GET(req: NextRequest, { params }: { params: { channel_key:
 
     switch (outcome.kind) {
       case 'reconnect':
-        return NextResponse.json({ ok: true, status: 'open' });
+        // Same guest returning: carry THIS session's language so the client can skip selection
+        // only when it is already set on the session (never from a stale channel value).
+        return NextResponse.json({
+          ok: true,
+          status: 'open',
+          session_id: cookieSess!.id,
+          language_code: cookieSess!.language_code,
+          language_source: cookieSess!.language_source,
+        });
       case 'closed':
         return NextResponse.json({ ok: true, status: 'closed' });
       case 'occupied':
@@ -54,7 +62,14 @@ export async function GET(req: NextRequest, { params }: { params: { channel_key:
         if ('conflict' in result) {
           return NextResponse.json({ ok: true, status: 'occupied', code: 'SESSION_ALREADY_CLAIMED' });
         }
-        const res = NextResponse.json({ ok: true, status: 'open' });
+        // Fresh session: language starts NULL → the client shows the selection screen.
+        const res = NextResponse.json({
+          ok: true,
+          status: 'open',
+          session_id: result.created.id,
+          language_code: result.created.language_code,
+          language_source: result.created.language_source,
+        });
         res.cookies.set(cookieName, result.created.id, sessionCookieOptions());
         return res;
       }
