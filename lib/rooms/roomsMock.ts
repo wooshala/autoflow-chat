@@ -7,6 +7,8 @@
 
 import type { CustomerLang } from '@/lib/customer-service/translationLangs';
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
+import { STAFF_ROOM_OPTIONS } from '../chat/staffRoomOptions';
+import { buildCustomerRooms } from './customerRoomsFromRoster';
 import { OPERATIONS_ROOM_ID, type Room } from './roomTypes';
 
 const T = (h: number, m: number) =>
@@ -33,15 +35,11 @@ const TEAM_ROOMS: Room[] = [
   { id: 'staff-maintenance', category: 'team', dataBinding: 'mock', title: '정비팀', icon: '🛠', colorToken: 'maintenance', defaultOrder: 30, team: 'maintenance', status: 'active', lastActiveAt: T(9, 10) },
 ];
 
-const CUSTOMER_ROOMS: Room[] = [
-  { id: 'cust-503', category: 'customer', dataBinding: 'mock', title: '503호 · 中文(简体)', colorToken: 'customer', defaultOrder: 40, room_no: '503', language: 'zh-CN', status: 'active', unread: 2, lastActiveAt: T(9, 15) },
-  // Phase 1H.5 — 308 is the live guest-chat room; its language is guest-selected (server),
-  // NOT hardcoded here. Title carries no language; RoomHeader/RoomListItem show it dynamically.
-  { id: 'cust-308', category: 'customer', dataBinding: 'mock', title: '308호', colorToken: 'customer', defaultOrder: 41, room_no: '308', status: 'active', unread: 1, lastActiveAt: T(21, 40) },
-  { id: 'cust-606', category: 'customer', dataBinding: 'mock', title: '606호 · English', colorToken: 'customer', defaultOrder: 42, room_no: '606', language: 'en', status: 'active', lastActiveAt: T(10, 6) },
-  { id: 'cust-701', category: 'customer', dataBinding: 'mock', title: '701호 · Русский', colorToken: 'customer', defaultOrder: 43, room_no: '701', language: 'ru', status: 'active', unread: 1, lastActiveAt: T(19, 25) },
-  { id: 'cust-502', category: 'customer', dataBinding: 'mock', title: '502호 · 中文(简体)', colorToken: 'customer', defaultOrder: 44, room_no: '502', language: 'zh-CN', status: 'active', lastActiveAt: T(8, 30) },
-];
+// Phase 1H.9 — customer rooms are GENERATED from the operational room roster (SSOT:
+// STAFF_ROOM_OPTIONS, 39 rooms) via the pure buildCustomerRooms(). Adding/removing a hotel room
+// is a single change in the roster — no per-room object here and no per-room channel entry
+// (channels.ts derives room-<no> from cust-<no>). See buildCustomerRooms for the mock/language notes.
+const CUSTOMER_ROOMS: Room[] = buildCustomerRooms(STAFF_ROOM_OPTIONS, 40);
 
 /** All seed rooms in nav order: operations first, then DEV team rooms, then customers. */
 export const MOCK_ROOMS: Room[] = [OPERATIONS_ROOM, ...TEAM_ROOMS, ...CUSTOMER_ROOMS];
