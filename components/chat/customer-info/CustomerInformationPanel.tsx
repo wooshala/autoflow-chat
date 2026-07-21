@@ -183,9 +183,21 @@ function Panel({ ctx }: { ctx: GuestCustomerContext }) {
   );
 }
 
-export function CustomerInformationPanel({ channelKey }: { channelKey: string; roomNo?: string | null }) {
+export function CustomerInformationPanel({
+  channelKey,
+  activeSessionId = null,
+}: {
+  channelKey: string;
+  roomNo?: string | null;
+  /** The room's current open session id (from the shared summary poll). When it changes — a new
+   *  guest opened a fresh session after the previous one closed — the context re-fetches with no
+   *  F5. It is stable within a session (never per message), so it does not disrupt an active edit. */
+  activeSessionId?: string | null;
+}) {
   const [reloadKey, setReloadKey] = useState(0);
-  const state = useCustomerContext(channelKey, reloadKey);
+  // Re-fetch on active-session change OR manual reload. useCustomerContext sets 'loading' on any
+  // change, so the previous guest's data is never shown during the transition (loading, then empty).
+  const state = useCustomerContext(channelKey, `${activeSessionId ?? 'none'}#${reloadKey}`);
 
   return (
     <aside className="flex h-full min-h-0 min-w-0 w-full flex-col bg-gray-50">

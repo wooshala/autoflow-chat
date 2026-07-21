@@ -70,6 +70,11 @@ interface RoomNavigationValue {
   channelUnread: Record<string, boolean>;
   /** Phase 1H.12 — latest guest message time per room (roomId → ISO|null) for unread-group sort. */
   channelLatestGuestAt: Record<string, string | null>;
+  /** Phase 2A.3 — active guest session id per room (roomId → session_id|null), from the SAME
+   *  /channels/summary poll. Lets the Customer Information panel re-fetch when a NEW guest session
+   *  appears (the previous one closed) without an F5 or room re-select. Stable within a session
+   *  (does NOT change per message), so an in-progress edit is not disrupted by chat traffic. */
+  channelActiveSessionId: Record<string, string | null>;
   /** Phase 1H.11 — mark a channel read up to its latest guest message (called when the open
    *  room's messages load). Monotonic + persisted to localStorage. */
   markChannelViewed: (channelKey: string, latestGuestMessageAt: string | null) => void;
@@ -185,6 +190,17 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     }
     return out;
   }, [rooms, summaryByChannel]);
+  // Phase 2A.3 — active session id per room (from the SAME summary). Changes only when the open
+  // session identity changes (A closed → B opened), never per message → a safe re-fetch trigger.
+  const channelActiveSessionId = useMemo<Record<string, string | null>>(() => {
+    const out: Record<string, string | null> = {};
+    for (const r of rooms) {
+      const ck = lookupChannelKey(r.id);
+      if (!ck) continue;
+      out[r.id] = summaryByChannel[ck]?.session_id ?? null;
+    }
+    return out;
+  }, [rooms, summaryByChannel]);
 
   const selectRoom = useCallback((id: string) => {
     const now = new Date().toISOString();
@@ -262,6 +278,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       reportChannelLanguage,
       channelUnread,
       channelLatestGuestAt,
+      channelActiveSessionId,
       markChannelViewed,
       setSearch,
       setTab,
@@ -287,6 +304,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       reportChannelLanguage,
       channelUnread,
       channelLatestGuestAt,
+      channelActiveSessionId,
       markChannelViewed,
       selectRoom,
       toggleFavorite,

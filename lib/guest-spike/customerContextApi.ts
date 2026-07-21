@@ -55,7 +55,7 @@ export type CustomerContextState =
   | { status: 'success'; context: GuestCustomerContext }
   | { status: 'error' };
 
-export function useCustomerContext(channelKey: string, reloadKey = 0): CustomerContextState {
+export function useCustomerContext(channelKey: string, reloadKey: string | number = 0): CustomerContextState {
   const [state, setState] = useState<CustomerContextState>({ status: 'loading' });
 
   useEffect(() => {
