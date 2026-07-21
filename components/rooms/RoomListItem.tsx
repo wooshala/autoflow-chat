@@ -84,11 +84,15 @@ export function RoomListItem({
                 {languageBadge.text}
               </span>
             )}
-            {room.dataBinding === 'live' ? (
-              <span className="rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-700">실시간</span>
-            ) : (
-              <span className="rounded bg-gray-200 px-1 text-[10px] font-semibold text-gray-500">DEV</span>
-            )}
+            {/* Phase 1H.12 — customer rooms are operational; drop the DEV/실시간 dev badge for them
+                (language + unread + room number stay). Staff/ops rooms keep their badge. */}
+            {room.category !== 'customer' ? (
+              room.dataBinding === 'live' ? (
+                <span className="rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-700">실시간</span>
+              ) : (
+                <span className="rounded bg-gray-200 px-1 text-[10px] font-semibold text-gray-500">DEV</span>
+              )
+            ) : null}
             {room.category === 'customer' ? (
               hasUnread ? (
                 <span

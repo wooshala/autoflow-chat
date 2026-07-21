@@ -26,7 +26,7 @@ export type RoomTeam = 'general' | 'cleaning' | 'maintenance' | 'front';
 export type RoomTab = 'all' | 'mine' | 'favorites';
 
 /** Left-nav section ids (collapse target is the SECTION, not an individual room). */
-export type RoomSectionId = 'staff' | 'customer' | 'recent' | 'trash';
+export type RoomSectionId = 'staff' | 'customer-unread' | 'customer' | 'recent' | 'trash';
 
 export type SectionCollapseState = Partial<Record<RoomSectionId, boolean>>;
 

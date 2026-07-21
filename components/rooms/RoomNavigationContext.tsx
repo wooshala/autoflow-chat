@@ -68,6 +68,8 @@ interface RoomNavigationValue {
   reportChannelLanguage: (roomId: string, lang: GuestLang | null, sessionStatus: 'open' | 'none' | null) => void;
   /** Phase 1H.11 — per-browser unread (roomId → boolean) for channel-mapped customer rooms. */
   channelUnread: Record<string, boolean>;
+  /** Phase 1H.12 — latest guest message time per room (roomId → ISO|null) for unread-group sort. */
+  channelLatestGuestAt: Record<string, string | null>;
   /** Phase 1H.11 — mark a channel read up to its latest guest message (called when the open
    *  room's messages load). Monotonic + persisted to localStorage. */
   markChannelViewed: (channelKey: string, latestGuestMessageAt: string | null) => void;
@@ -172,6 +174,17 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     }
     return out;
   }, [rooms, summaryByChannel, lastViewed, selectedRoomId]);
+  // Phase 1H.12 — latest guest message time per room (from the SAME summary) so the "안읽은 대화"
+  // group can sort newest-first. No extra request.
+  const channelLatestGuestAt = useMemo<Record<string, string | null>>(() => {
+    const out: Record<string, string | null> = {};
+    for (const r of rooms) {
+      const ck = lookupChannelKey(r.id);
+      if (!ck) continue;
+      out[r.id] = summaryByChannel[ck]?.latest_guest_message_at ?? null;
+    }
+    return out;
+  }, [rooms, summaryByChannel]);
 
   const selectRoom = useCallback((id: string) => {
     const now = new Date().toISOString();
@@ -248,6 +261,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       channelSessionStatus,
       reportChannelLanguage,
       channelUnread,
+      channelLatestGuestAt,
       markChannelViewed,
       setSearch,
       setTab,
@@ -272,6 +286,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       channelSessionStatus,
       reportChannelLanguage,
       channelUnread,
+      channelLatestGuestAt,
       markChannelViewed,
       selectRoom,
       toggleFavorite,

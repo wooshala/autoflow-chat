@@ -67,3 +67,21 @@ export function byDefaultOrder(a: Room, b: Room): number {
   if (ao !== bo) return ao - bo;
   return (b.lastActiveAt ?? '').localeCompare(a.lastActiveAt ?? '');
 }
+
+/**
+ * Phase 1H.12 — split customer rooms into the "안읽은 대화" group (unread, NEWEST guest message
+ * first) and everything else (kept in the caller's incoming order, i.e. numeric). Each room lands
+ * in exactly ONE group so nothing is ever listed twice; when a room is read it simply drops out of
+ * `unread` and reappears at its numeric position in `others`. Pure — sorts a copy, no mutation.
+ */
+export function splitCustomerRoomsByUnread(
+  customerRooms: readonly Room[],
+  channelUnread: Readonly<Record<string, boolean>>,
+  latestGuestAt: Readonly<Record<string, string | null>>,
+): { unread: Room[]; others: Room[] } {
+  const unread: Room[] = [];
+  const others: Room[] = [];
+  for (const r of customerRooms) (channelUnread[r.id] ? unread : others).push(r);
+  unread.sort((a, b) => (latestGuestAt[b.id] ?? '').localeCompare(latestGuestAt[a.id] ?? '')); // desc
+  return { unread, others };
+}

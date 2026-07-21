@@ -8,7 +8,13 @@
 import { useRoomNavigation } from './RoomNavigationContext';
 import { RoomSection } from './RoomSection';
 import { RoomListItem } from './RoomListItem';
-import { byDefaultOrder, hiddenRooms, recentRooms, visibleRooms } from '@/lib/rooms/roomsQuery';
+import {
+  byDefaultOrder,
+  hiddenRooms,
+  recentRooms,
+  splitCustomerRoomsByUnread,
+  visibleRooms,
+} from '@/lib/rooms/roomsQuery';
 import type { Room, RoomSectionId } from '@/lib/rooms/roomTypes';
 
 export function RoomList() {
@@ -21,6 +27,8 @@ export function RoomList() {
     hidden,
     membership,
     sectionCollapse,
+    channelUnread,
+    channelLatestGuestAt,
     selectRoom,
     toggleFavorite,
     toggleHidden,
@@ -31,6 +39,13 @@ export function RoomList() {
   const active = visibleRooms(rooms, filter);
   const staffRooms = active.filter((r) => r.category !== 'customer').sort(byDefaultOrder);
   const customerRooms = active.filter((r) => r.category === 'customer').sort(byDefaultOrder);
+  // Phase 1H.12 — unread customer rooms float to a top "안읽은 대화" group (newest guest first);
+  // the rest stay in numeric order under "전체 객실". A room is in exactly one group (no dupes).
+  const { unread: unreadCustomerRooms, others: otherCustomerRooms } = splitCustomerRoomsByUnread(
+    customerRooms,
+    channelUnread,
+    channelLatestGuestAt,
+  );
   const recent = recentRooms(rooms, filter, 3);
   const trash = hiddenRooms(rooms, { search, hidden });
 
@@ -64,7 +79,8 @@ export function RoomList() {
   return (
     <div className="flex-1 overflow-y-auto">
       {section('staff', '직원 채팅', staffRooms)}
-      {section('customer', '고객 채팅방', customerRooms)}
+      {section('customer-unread', '안읽은 대화', unreadCustomerRooms)}
+      {section('customer', '전체 객실', otherCustomerRooms)}
       {section('recent', '최근 대화방', recent, false)}
       {section('trash', '휴지통', trash)}
       {nothing && <div className="px-3 py-6 text-center text-xs text-gray-400">검색 결과가 없습니다.</div>}

@@ -45,7 +45,8 @@ export function RoomHeader({ room }: { room: Room }) {
           {badge.text}
         </span>
       )}
-      {room.dataBinding === 'mock' && (
+      {/* Phase 1H.12 — customer rooms are operational: no DEV·mock badge (kept for staff/team mock rooms). */}
+      {room.dataBinding === 'mock' && room.category !== 'customer' && (
         <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">DEV · mock</span>
       )}
       <span className="ml-auto text-xs text-gray-400">대화 타임라인</span>
