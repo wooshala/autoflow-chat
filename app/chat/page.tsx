@@ -60,6 +60,7 @@ import {
 import { RoomNavigationProvider } from '@/components/rooms/RoomNavigationContext';
 import RoomNavigation from '@/components/rooms/RoomNavigation';
 import { RoomCenter } from '@/components/rooms/RoomCenter';
+import { RoomRightPanel } from '@/components/rooms/RoomRightPanel';
 import { useRoomNavigationPilotShortcut } from '@/lib/hooks/useRoomNavigationPilotShortcut';
 import { resolveLeftNavigationMode, type ChatLayoutMode } from '@/lib/rooms/chatLayout';
 
@@ -1169,7 +1170,7 @@ export default function ChatPage() {
     ) : (
       existingStaffCenterColumn
     );
-    const rightPanel = (
+    const opsRightPanel = (
       <ChatOperationPanel
         selectedRoomNo={consoleRoomNo}
         recentPhotoMessage={recentPhotoMessage}
@@ -1182,6 +1183,14 @@ export default function ChatPage() {
         maintenanceRefreshKey={maintenanceRefreshKey}
         widthClassName={panelWidthClass}
       />
+    );
+    // Phase 1I.1-B — for a CUSTOMER room the right slot shows read-only Customer Information;
+    // every other room keeps the existing Event Center. RoomRightPanel reads the selection under
+    // the provider (below); when room-nav is off, the right slot is byte-identical to before.
+    const rightPanel = roomNavigationEnabled ? (
+      <RoomRightPanel fallback={opsRightPanel} />
+    ) : (
+      opsRightPanel
     );
     // Phase 1C: wrap the 3-panel body in the Room Navigation provider ONLY when the flag
     // is on. Off → identical to before. Provider unmounts when the flag flips off, so the
