@@ -14,7 +14,7 @@
 //
 // TODO(canonical-namespace): guest-spike → guest-chat (later refactor step).
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { usePollingMessages } from '@/lib/guest-spike/usePollingMessages';
 import { sendGuestMessage } from '@/lib/guest-spike/api';
@@ -55,14 +55,22 @@ export function GuestChatPanel({
     preferred_language: string | null;
     language_source: string | null;
     session_status: 'open' | 'none' | null;
+    /** Phase 1H.11 — created_at of the newest GUEST message in the loaded list (for read-marking). */
+    latest_guest_message_at: string | null;
   }) => void;
 }) {
   const { messages, preferred_language, language_source, session_status, reload } = usePollingMessages(channelKey, asStaff);
 
+  // Newest guest message timestamp from the LOADED messages (asc-ordered → scan from the end).
+  const latestGuestMessageAt = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].sender === 'guest') return messages[i].created_at;
+    return null;
+  }, [messages]);
+
   useEffect(() => {
-    onChannelMeta?.({ preferred_language, language_source, session_status });
+    onChannelMeta?.({ preferred_language, language_source, session_status, latest_guest_message_at: latestGuestMessageAt });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preferred_language, language_source, session_status]);
+  }, [preferred_language, language_source, session_status, latestGuestMessageAt]);
 
   const handleSend = useCallback(
     async (text: string) => {

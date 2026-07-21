@@ -11,6 +11,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { isOneOpenConflict } from './sessionConflict';
+import type { OpenSessionRow, SummaryMessageRow } from './guestChannelSummary';
 import type { GuestSpikeMsg, NewGuestMsg } from './types';
 
 export type { GuestSpikeMsg, NewGuestMsg };
@@ -171,6 +172,32 @@ export async function setGuestSessionLanguage(
     .maybeSingle();
   if (error) throw new Error(`DB_ERROR: ${error.message}`);
   return data ? rowToSession(data as Record<string, unknown>) : null;
+}
+
+/**
+ * Phase 1H.11 — data for the staff channel summary in TWO aggregate reads (no N+1, no bodies):
+ *   1) every OPEN session (channel_key + language),
+ *   2) the minimal message rows of those sessions (id/sender/created_at only).
+ * The pure buildChannelSummaries() folds these into per-channel latest/latest-guest info.
+ */
+export async function listOpenChannelSummaryData(): Promise<{
+  sessions: OpenSessionRow[];
+  messages: SummaryMessageRow[];
+}> {
+  const { data: sessions, error } = await db()
+    .from(SESSIONS)
+    .select('id, channel_key, language_code, language_source')
+    .eq('status', 'open');
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  const rows = (sessions ?? []) as OpenSessionRow[];
+  const ids = rows.map((s) => s.id);
+  if (ids.length === 0) return { sessions: rows, messages: [] };
+  const { data: messages, error: mErr } = await db()
+    .from(TABLE)
+    .select('id, session_id, sender, created_at')
+    .in('session_id', ids);
+  if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
+  return { sessions: rows, messages: (messages ?? []) as SummaryMessageRow[] };
 }
 
 /** Close the channel's active session (staff "대화 종료"). Idempotent. */

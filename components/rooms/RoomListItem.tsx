@@ -57,6 +57,10 @@ export function RoomListItem({
   const canHide = room.id !== OPERATIONS_ROOM_ID;
   const icon = room.icon ?? (room.language ? FLAG[room.language] : null);
   const languageBadge = useRoomLanguageBadge(room);
+  // Phase 1H.11 — customer rooms show a live unread DOT (from the summary poll), not a fake
+  // number. Team/system rooms keep their existing mock numeric badge.
+  const { channelUnread } = useRoomNavigation();
+  const hasUnread = room.category === 'customer' && !!channelUnread[room.id];
 
   return (
     <li>
@@ -85,7 +89,14 @@ export function RoomListItem({
             ) : (
               <span className="rounded bg-gray-200 px-1 text-[10px] font-semibold text-gray-500">DEV</span>
             )}
-            {room.unread ? (
+            {room.category === 'customer' ? (
+              hasUnread ? (
+                <span
+                  className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
+                  aria-label="안읽은 고객 메시지"
+                />
+              ) : null
+            ) : room.unread ? (
               <span className="ml-auto rounded-full bg-red-500 px-1.5 text-[11px] font-bold text-white">
                 {room.unread}
               </span>

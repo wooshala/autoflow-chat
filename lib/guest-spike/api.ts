@@ -6,9 +6,11 @@
 // TODO(canonical-namespace): guest-spike → guest-chat (later refactor step).
 
 import type { GuestSpikeMsg } from './types';
+import type { GuestChannelSummary } from './guestChannelSummary';
 import { staffSessionAuthHeaders } from '@/lib/auth/staffAccountSession';
 
 export type { GuestSpikeMsg };
+export type { GuestChannelSummary };
 
 const endpoint = (channelKey: string) => `/api/guest/${encodeURIComponent(channelKey)}/messages`;
 const sessionEndpoint = (channelKey: string) => `/api/guest/${encodeURIComponent(channelKey)}/session`;
@@ -111,6 +113,23 @@ export async function fetchChannelMeta(channelKey: string, asStaff?: boolean): P
       : { preferred_language: null, language_source: null, session_status: null };
   } catch {
     return { preferred_language: null, language_source: null, session_status: null };
+  }
+}
+
+/**
+ * Phase 1H.11 — staff channel summary (ONE request for all open customer channels). Replaces
+ * the per-room language meta fan-out. Read swallows errors → null so the caller keeps its last
+ * good summary (never crashes Room Navigation). Returns null (not []) on failure to distinguish
+ * "no open channels" from "request failed".
+ */
+export async function fetchGuestChannelSummaries(): Promise<GuestChannelSummary[] | null> {
+  try {
+    const r = await fetch('/api/guest/channels/summary', { cache: 'no-store', headers: staffSessionAuthHeaders() });
+    const j = await r.json();
+    if (!r.ok || !j?.ok || !Array.isArray(j.channels)) return null;
+    return j.channels as GuestChannelSummary[];
+  } catch {
+    return null;
   }
 }
 

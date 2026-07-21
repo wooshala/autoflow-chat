@@ -24,7 +24,7 @@ import { isGuestLang, type GuestLang } from '@/lib/guest-spike/languages';
 import type { Room } from '@/lib/rooms/roomTypes';
 
 export function CustomerRoom({ room }: { room: Room }) {
-  const { customerMessages, appendCustomerMessage, reportChannelLanguage } = useRoomNavigation();
+  const { customerMessages, appendCustomerMessage, reportChannelLanguage, markChannelViewed } = useRoomNavigation();
   const channelKey = lookupChannelKey(room.id); // SSOT — no hardcoded room branch
   const lang = room.language ?? 'en';
   // Phase 1H.7 — reading/replying to guest messages requires a REAL staff session (server
@@ -35,12 +35,19 @@ export function CustomerRoom({ room }: { room: Room }) {
   // poll) and reports it to the context so the list/header stay in sync.
   const [preferred, setPreferred] = useState<GuestLang | null>(null);
   const onChannelMeta = useCallback(
-    (m: { preferred_language: string | null; session_status: 'open' | 'none' | null }) => {
+    (m: {
+      preferred_language: string | null;
+      session_status: 'open' | 'none' | null;
+      latest_guest_message_at: string | null;
+    }) => {
       const p = isGuestLang(m.preferred_language) ? m.preferred_language : null;
       setPreferred(p);
       reportChannelLanguage(room.id, p, m.session_status);
+      // Phase 1H.11 — this room is OPEN and its messages just loaded → mark read up to the newest
+      // loaded guest message (monotonic). Clears/keeps its unread dot correctly on leave.
+      if (channelKey) markChannelViewed(channelKey, m.latest_guest_message_at);
     },
-    [reportChannelLanguage, room.id],
+    [reportChannelLanguage, markChannelViewed, room.id, channelKey],
   );
 
   const endSession = useCallback(async () => {

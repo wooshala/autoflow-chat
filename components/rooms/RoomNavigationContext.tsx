@@ -10,15 +10,20 @@
 // separately from the shared Room definition (Q2=A). It lives in provider local state
 // only: no DB writes, no localStorage, no cross-refresh persistence.
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
+import type { RoomChannelLanguages, RoomChannelSessionStatus } from '@/lib/guest-spike/useChannelLanguages';
+import { useGuestChannelSummaries } from '@/lib/guest-spike/useGuestChannelSummaries';
+import { lookupChannelKey } from '@/lib/guest-spike/channels';
+import { isGuestChannelUnread } from '@/lib/guest-spike/guestChannelUnread';
 import {
-  useChannelLanguages,
-  type RoomChannelLanguages,
-  type RoomChannelSessionStatus,
-} from '@/lib/guest-spike/useChannelLanguages';
-import type { GuestLang } from '@/lib/guest-spike/languages';
+  mergeLastViewed,
+  readGuestRoomLastViewed,
+  writeGuestRoomLastViewed,
+  type GuestRoomLastViewedMap,
+} from '@/lib/guest-spike/guestRoomLastViewed';
+import { isGuestLang, type GuestLang } from '@/lib/guest-spike/languages';
 import { MOCK_CUSTOMER_MESSAGES, MOCK_MEMBERSHIP, MOCK_ROOMS, OPERATIONS_ROOM } from '@/lib/rooms/roomsMock';
 import {
   OPERATIONS_ROOM_ID,
@@ -61,6 +66,11 @@ interface RoomNavigationValue {
   channelSessionStatus: RoomChannelSessionStatus;
   /** Phase 1H.5/1H.7 — the open room reports its language + session_status (from its own poll). */
   reportChannelLanguage: (roomId: string, lang: GuestLang | null, sessionStatus: 'open' | 'none' | null) => void;
+  /** Phase 1H.11 — per-browser unread (roomId → boolean) for channel-mapped customer rooms. */
+  channelUnread: Record<string, boolean>;
+  /** Phase 1H.11 — mark a channel read up to its latest guest message (called when the open
+   *  room's messages load). Monotonic + persisted to localStorage. */
+  markChannelViewed: (channelKey: string, latestGuestMessageAt: string | null) => void;
   setSearch: (v: string) => void;
   setTab: (t: RoomTab) => void;
   selectRoom: (id: string) => void;
@@ -91,10 +101,11 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     [rooms, selectedRoomId],
   );
 
-  // Phase 1H.5 — closed mapped rooms meta-poll; the OPEN room reports from its own message
-  // poll (reportChannelLanguage). Merge both so the list + header have every room's language.
-  const roomIds = useMemo(() => rooms.map((r) => r.id), [rooms]);
-  const { languages: metaLanguages, sessionStatus: metaSessionStatus } = useChannelLanguages(roomIds, selectedRoomId);
+  // Phase 1H.11 — ONE /channels/summary poll for the whole nav (replaces the per-room language
+  // meta fan-out). Language + session_status per room derive from the open-session summary; the
+  // OPEN room additionally reports from its own message poll (reportChannelLanguage), which wins
+  // because it is the most up-to-date.
+  const summaryByChannel = useGuestChannelSummaries();
   const [reportedLanguages, setReportedLanguages] = useState<RoomChannelLanguages>({});
   const [reportedSessionStatus, setReportedSessionStatus] = useState<RoomChannelSessionStatus>({});
   const reportChannelLanguage = useCallback(
@@ -104,14 +115,63 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const summaryLanguages = useMemo<RoomChannelLanguages>(() => {
+    const out: RoomChannelLanguages = {};
+    for (const r of rooms) {
+      const ck = lookupChannelKey(r.id);
+      if (!ck) continue;
+      const lang = summaryByChannel[ck]?.language_code ?? null;
+      out[r.id] = isGuestLang(lang) ? lang : null; // language is session-owned; absent channel → null
+    }
+    return out;
+  }, [rooms, summaryByChannel]);
+  const summarySessionStatus = useMemo<RoomChannelSessionStatus>(() => {
+    const out: RoomChannelSessionStatus = {};
+    for (const r of rooms) {
+      const ck = lookupChannelKey(r.id);
+      if (!ck) continue;
+      out[r.id] = summaryByChannel[ck] ? 'open' : 'none'; // summary only lists OPEN channels
+    }
+    return out;
+  }, [rooms, summaryByChannel]);
+
   const channelLanguages = useMemo<RoomChannelLanguages>(
-    () => ({ ...metaLanguages, ...reportedLanguages }),
-    [metaLanguages, reportedLanguages],
+    () => ({ ...summaryLanguages, ...reportedLanguages }),
+    [summaryLanguages, reportedLanguages],
   );
   const channelSessionStatus = useMemo<RoomChannelSessionStatus>(
-    () => ({ ...metaSessionStatus, ...reportedSessionStatus }),
-    [metaSessionStatus, reportedSessionStatus],
+    () => ({ ...summarySessionStatus, ...reportedSessionStatus }),
+    [summarySessionStatus, reportedSessionStatus],
   );
+
+  // Phase 1H.11 — per-browser unread. lastViewed[channel_key] advances (monotonically) when the
+  // OPEN room's messages load (markChannelViewed). Unread = a newer GUEST message exists and the
+  // room is not the one currently open.
+  const [lastViewed, setLastViewed] = useState<GuestRoomLastViewedMap>({});
+  useEffect(() => {
+    setLastViewed(readGuestRoomLastViewed());
+  }, []);
+  const markChannelViewed = useCallback((channelKey: string, latestGuestMessageAt: string | null) => {
+    setLastViewed((prev) => {
+      const next = mergeLastViewed(prev, channelKey, latestGuestMessageAt);
+      if (next !== prev) writeGuestRoomLastViewed(next);
+      return next;
+    });
+  }, []);
+  const channelUnread = useMemo<Record<string, boolean>>(() => {
+    const out: Record<string, boolean> = {};
+    for (const r of rooms) {
+      const ck = lookupChannelKey(r.id);
+      if (!ck) continue;
+      out[r.id] = isGuestChannelUnread({
+        latestGuestMessageAt: summaryByChannel[ck]?.latest_guest_message_at ?? null,
+        lastViewedAt: lastViewed[ck] ?? null,
+        isSelected: r.id === selectedRoomId,
+      });
+    }
+    return out;
+  }, [rooms, summaryByChannel, lastViewed, selectedRoomId]);
 
   const selectRoom = useCallback((id: string) => {
     const now = new Date().toISOString();
@@ -187,6 +247,8 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       channelLanguages,
       channelSessionStatus,
       reportChannelLanguage,
+      channelUnread,
+      markChannelViewed,
       setSearch,
       setTab,
       selectRoom,
@@ -209,6 +271,8 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       channelLanguages,
       channelSessionStatus,
       reportChannelLanguage,
+      channelUnread,
+      markChannelViewed,
       selectRoom,
       toggleFavorite,
       toggleHidden,
