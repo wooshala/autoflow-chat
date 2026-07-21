@@ -1,10 +1,8 @@
-// Phase 1I.1-B (option 2) — Customer Information panel contract (READ-ONLY, SESSION SKELETON).
-//
-// Phase 1I.1-C determined there is NO authoritative "current stay" source: the ledger carries only
-// clock times (no dates), OTA rows have no room_no, and no projection is both fresh and room+date+
-// status complete. So the panel intentionally shows NO derived reservation — no guest name, phone,
-// proximity match, or "참고 예약". The reservation block is a single 'pending' placeholder until a
-// first-class Reservation / CurrentStay entity is built. Only the SESSION block carries real data.
+// Phase 2A — Customer Information panel contract. The panel manages a SMALL, SESSION-SCOPED
+// operational memo (staff-edited), NOT a reservation. The `session` block is read-only (room /
+// status / start / language, from the guest session). The `customer` block is the editable memo
+// (name / phone / checkout date / vehicle / memo); it is null when there is no OPEN session, and
+// all-empty defaults for an open session with nothing saved yet. No reservation / PII estimation.
 
 export interface GuestCustomerContext {
   session: {
@@ -14,16 +12,17 @@ export interface GuestCustomerContext {
     startedAt: string | null;
     languageCode: string | null;
   };
-  reservation: {
-    // Always 'pending' — no authoritative reservation source exists yet (Phase 1I.1-C).
-    // Never populated with a derived/guessed guest. This is a deliberate empty state.
-    availability: 'pending';
-  };
-  sources: Array<{
-    type: 'guest_session';
-    label: string;
+  /** Editable, session-scoped memo. null when no open session (nothing to edit). */
+  customer: {
+    guestName: string;
+    guestPhone: string;
+    /** YYYY-MM-DD or null. */
+    checkOutDate: string | null;
+    vehicleNo: string;
+    memo: string;
     updatedAt: string | null;
-  }>;
+    updatedBy: string | null;
+  } | null;
 }
 
 export interface GuestCustomerContextResponse {
