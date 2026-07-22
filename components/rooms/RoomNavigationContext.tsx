@@ -241,9 +241,9 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       const seenId = notifySeenRef.current.get(r.id) ?? null;
       const isNew = Boolean(latestId) && latestId !== seenId;
       if (latestId) notifySeenRef.current.set(r.id, latestId); // dedup: mark handled (behavior 3)
-      // Viewing THIS room with the window focused → the staff sees it live, no notification.
-      const isViewing = selectedRoomId === r.id && focused;
-      if (!shouldNotifyGuestMessage({ latestId, isNew, isViewing, seeded: true })) continue;
+      // Sound fires for every NEW guest message even while the staff is viewing that room
+      // (operations requirement). The OS notification below stays background-only.
+      if (!shouldNotifyGuestMessage({ latestId, isNew, seeded: true })) continue;
 
       const roomNo = ck.replace(/^room-/, '') || null;
       const preview = summaryByChannel[ck]?.latest_guest_message_preview || '새 메시지가 도착했습니다';
@@ -259,7 +259,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
         });
       }
     }
-  }, [summaryByChannel, rooms, selectedRoomId, selectRoom]);
+  }, [summaryByChannel, rooms, selectRoom]);
 
   const toggleFavorite = useCallback((id: string) => {
     setFavorites((prev) => {

@@ -7,17 +7,16 @@
 
 export const GUEST_NOTIFY_TITLE = 'Guest Chat';
 
-/** Fire only for a genuinely NEW guest message (dedup by id), never when the staff is already
- *  viewing that room, and never for messages that predate the first summary (`seeded`). */
+/** Fire for a genuinely NEW guest message (dedup by id), and never for messages that predate the
+ *  first summary (`seeded`). The sound plays even while the staff is viewing that room — the
+ *  "same room, focused" suppression was removed per operations requirement. */
 export function shouldNotifyGuestMessage(p: {
   latestId: string | null;
-  isNew: boolean; //   latestId differs from the last id handled for this room
-  isViewing: boolean; // staff is looking at THIS room AND the window is focused → they see it live
-  seeded: boolean; //  baseline captured (don't notify for pre-existing messages)
+  isNew: boolean; // latestId differs from the last id handled for this room
+  seeded: boolean; // baseline captured (don't notify for pre-existing messages)
 }): boolean {
   if (!p.seeded) return false;
   if (!p.latestId) return false;
   if (!p.isNew) return false;
-  if (p.isViewing) return false;
   return true;
 }
