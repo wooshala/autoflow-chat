@@ -20,6 +20,12 @@ import { canShowBrowserNotification, showBrowserNotification } from '@/lib/chat/
 import { playNotificationTone } from '@/lib/chat/playNotificationTone';
 import { normalizeNotifyBody } from '@/lib/chat/normalizeNotifyBody';
 import { GUEST_NOTIFY_TITLE, shouldNotifyGuestMessage } from '@/lib/guest-spike/guestNotify';
+import {
+  isGuestSoundDebugEnabled,
+  recordGuestSoundDecision,
+  updateGuestSoundResult,
+} from '@/lib/guest-spike/guestSoundDebug';
+import { GuestSoundDebugPanel } from '@/components/rooms/GuestSoundDebugPanel';
 import { isGuestChannelUnread } from '@/lib/guest-spike/guestChannelUnread';
 import {
   mergeLastViewed,
@@ -221,14 +227,37 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
   const notifySeenRef = useRef<Map<string, string>>(new Map()); // roomId → last handled guest msg id
   const notifySeededRef = useRef(false);
   useEffect(() => {
+    // ?sounddebug=1 only — observe the decision path without changing it (all gated on this flag).
+    const soundDebug = isGuestSoundDebugEnabled();
     // Seed a baseline on the first summary so pre-existing messages never notify (behavior 2).
     if (!notifySeededRef.current) {
+      let seeded = 0;
       for (const r of rooms) {
         const ck = lookupChannelKey(r.id);
         const id = ck ? summaryByChannel[ck]?.latest_guest_message_id ?? null : null;
-        if (id) notifySeenRef.current.set(r.id, id);
+        if (id) {
+          notifySeenRef.current.set(r.id, id);
+          seeded += 1;
+        }
       }
       notifySeededRef.current = true;
+      if (soundDebug) {
+        recordGuestSoundDecision({
+          roomId: `baseline(${seeded})`,
+          sessionId: null,
+          messageId: null,
+          detectedNew: false,
+          shouldNotify: false,
+          reason: 'initial_baseline',
+          visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+          hasFocus:
+            typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : null,
+          isBackground: false,
+          canShowBrowserNotification: canShowBrowserNotification(),
+          playToneCalled: false,
+          showNotifCalled: false,
+        });
+      }
       return;
     }
     const focused =
@@ -243,10 +272,49 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       if (latestId) notifySeenRef.current.set(r.id, latestId); // dedup: mark handled (behavior 3)
       // Sound fires for every NEW guest message even while the staff is viewing that room
       // (operations requirement). The OS notification below stays background-only.
-      if (!shouldNotifyGuestMessage({ latestId, isNew, seeded: true })) continue;
+      const shouldNotify = shouldNotifyGuestMessage({ latestId, isNew, seeded: true });
+
+      if (!shouldNotify) {
+        if (soundDebug) {
+          recordGuestSoundDecision({
+            roomId: r.id,
+            sessionId: summaryByChannel[ck]?.session_id ?? null,
+            messageId: latestId,
+            detectedNew: isNew,
+            shouldNotify: false,
+            reason: latestId == null ? 'no_new_message' : 'dedupe',
+            visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+            hasFocus: focused,
+            isBackground,
+            canShowBrowserNotification: canShowBrowserNotification(),
+            playToneCalled: false,
+            showNotifCalled: false,
+          });
+        }
+        continue;
+      }
 
       const roomNo = ck.replace(/^room-/, '') || null;
       const preview = summaryByChannel[ck]?.latest_guest_message_preview || '새 메시지가 도착했습니다';
+      const willShowNotif = isBackground && canShowBrowserNotification();
+      // Debug: record the FIRE decision. reason explains why the OS toast is/ isn't shown even
+      // though the sound fires ('foreground' or 'notification_permission'); null = fully fired.
+      const debugEntry = soundDebug
+        ? recordGuestSoundDecision({
+            roomId: r.id,
+            sessionId: summaryByChannel[ck]?.session_id ?? null,
+            messageId: latestId,
+            detectedNew: isNew,
+            shouldNotify: true,
+            reason: willShowNotif ? null : !isBackground ? 'foreground' : 'notification_permission',
+            visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+            hasFocus: focused,
+            isBackground,
+            canShowBrowserNotification: canShowBrowserNotification(),
+            playToneCalled: true,
+            showNotifCalled: willShowNotif,
+          })
+        : null;
       // DIAGNOSTIC (log-only) — mirror the staff call-site logs so Staff vs Guest in-app playback
       // can be compared side by side. Does not change the fire-and-forget behavior.
       console.log('[SOUND_CALLSITE]', {
@@ -259,8 +327,9 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       });
       void playNotificationTone('info', { allowHidden: isBackground }).then((ok) => {
         console.log('[SOUND_RESULT]', { source: 'guest', ok });
+        if (debugEntry) updateGuestSoundResult(debugEntry, { playToneResult: ok, reason: ok ? debugEntry.reason : 'sound_locked' });
       });
-      if (isBackground && canShowBrowserNotification()) {
+      if (willShowNotif) {
         void showBrowserNotification({
           title: GUEST_NOTIFY_TITLE,
           body: normalizeNotifyBody(roomNo, preview),
@@ -268,6 +337,8 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
           messageId: latestId ?? undefined,
           source: 'guest_message_os',
           onClick: () => selectRoom(r.id), // click → open the room (behavior 5)
+        }).then((ok) => {
+          if (debugEntry) updateGuestSoundResult(debugEntry, { showNotifResult: ok });
         });
       }
     }
@@ -380,7 +451,13 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <RoomNavigationContext.Provider value={value}>{children}</RoomNavigationContext.Provider>;
+  return (
+    <RoomNavigationContext.Provider value={value}>
+      {children}
+      {/* Renders null unless ?sounddebug=1 — zero UI otherwise. */}
+      <GuestSoundDebugPanel />
+    </RoomNavigationContext.Provider>
+  );
 }
 
 export function useRoomNavigation(): RoomNavigationValue {
