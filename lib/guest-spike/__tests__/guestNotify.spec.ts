@@ -4,10 +4,15 @@ import { test } from 'node:test';
 import { shouldNotifyGuestMessage } from '../guestNotify';
 import { buildChannelSummaries } from '../guestChannelSummary';
 
-const base = { latestId: 'm1', isNew: true, isViewing: false, seeded: true };
+const base = { latestId: 'm1', isNew: true, seeded: true };
 
 test('shouldNotifyGuestMessage: fires for a new, unseen guest message', () => {
   assert.equal(shouldNotifyGuestMessage(base), true);
+});
+
+test('shouldNotifyGuestMessage: fires for a new message even while staff views that room (suppression removed)', () => {
+  // isViewing no longer exists — a new guest message always sounds. Same input as `base`.
+  assert.equal(shouldNotifyGuestMessage({ latestId: 'm2', isNew: true, seeded: true }), true);
 });
 
 test('shouldNotifyGuestMessage: not seeded → never fires (behavior 2: first load)', () => {
@@ -16,10 +21,6 @@ test('shouldNotifyGuestMessage: not seeded → never fires (behavior 2: first lo
 
 test('shouldNotifyGuestMessage: same id (not new) → no duplicate (behavior 3)', () => {
   assert.equal(shouldNotifyGuestMessage({ ...base, isNew: false }), false);
-});
-
-test('shouldNotifyGuestMessage: staff is viewing the room → no notification (behavior on click/open)', () => {
-  assert.equal(shouldNotifyGuestMessage({ ...base, isViewing: true }), false);
 });
 
 test('shouldNotifyGuestMessage: no latest id → nothing to notify', () => {
