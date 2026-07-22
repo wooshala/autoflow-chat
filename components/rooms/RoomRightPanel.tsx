@@ -11,17 +11,19 @@ import { useRoomNavigation } from './RoomNavigationContext';
 import { lookupChannelKey } from '@/lib/guest-spike/channels';
 import { CustomerInformationPanel } from '@/components/chat/customer-info/CustomerInformationPanel';
 
-export function RoomRightPanel({ fallback }: { fallback: ReactNode }) {
+export function RoomRightPanel({ fallback, widthClassName }: { fallback: ReactNode; widthClassName?: string }) {
   const { selectedRoom, channelActiveSessionId } = useRoomNavigation();
   const channelKey = selectedRoom.category === 'customer' ? lookupChannelKey(selectedRoom.id) : null;
   if (channelKey) {
     // Pass the room's live active session id (from the shared summary poll) so the panel re-fetches
     // when a NEW guest session opens after the previous one closed — no F5, no room re-select.
+    // widthClassName carries the same right-panel width contract as the Event Center fallback.
     return (
       <CustomerInformationPanel
         channelKey={channelKey}
         roomNo={selectedRoom.room_no ?? null}
         activeSessionId={channelActiveSessionId[selectedRoom.id] ?? null}
+        widthClassName={widthClassName}
       />
     );
   }

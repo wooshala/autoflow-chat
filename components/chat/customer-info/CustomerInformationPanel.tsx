@@ -186,6 +186,10 @@ function Panel({ ctx }: { ctx: GuestCustomerContext }) {
 export function CustomerInformationPanel({
   channelKey,
   activeSessionId = null,
+  // Right-panel width contract — MUST match ChatOperationPanel (Event Center) so the center chat
+  // keeps its width. In the non-resizable layout the caller passes undefined → this fixed default;
+  // in the resizable layout the caller passes 'w-full' to fill the wrapper's bounded slot.
+  widthClassName = 'w-72 shrink-0 lg:w-80',
 }: {
   channelKey: string;
   roomNo?: string | null;
@@ -193,6 +197,7 @@ export function CustomerInformationPanel({
    *  guest opened a fresh session after the previous one closed — the context re-fetches with no
    *  F5. It is stable within a session (never per message), so it does not disrupt an active edit. */
   activeSessionId?: string | null;
+  widthClassName?: string;
 }) {
   const [reloadKey, setReloadKey] = useState(0);
   // Re-fetch on active-session change OR manual reload. useCustomerContext sets 'loading' on any
@@ -200,7 +205,7 @@ export function CustomerInformationPanel({
   const state = useCustomerContext(channelKey, `${activeSessionId ?? 'none'}#${reloadKey}`);
 
   return (
-    <aside className="flex h-full min-h-0 min-w-0 w-full flex-col bg-gray-50">
+    <aside className={`flex h-full min-h-0 flex-col bg-gray-50 ${widthClassName}`}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {state.status === 'loading' && <div className="p-4 text-sm text-gray-500">고객 정보를 불러오는 중…</div>}
         {state.status === 'error' && (

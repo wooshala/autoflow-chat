@@ -1188,7 +1188,7 @@ export default function ChatPage() {
     // every other room keeps the existing Event Center. RoomRightPanel reads the selection under
     // the provider (below); when room-nav is off, the right slot is byte-identical to before.
     const rightPanel = roomNavigationEnabled ? (
-      <RoomRightPanel fallback={opsRightPanel} />
+      <RoomRightPanel fallback={opsRightPanel} widthClassName={panelWidthClass} />
     ) : (
       opsRightPanel
     );
