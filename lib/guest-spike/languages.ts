@@ -4,10 +4,10 @@
 // Language NAMES only — never flags (language ≠ nationality). GuestLang is structurally
 // identical to CustomerLang (same 5 literals), so it is assignable across the codebase.
 
-export type GuestLang = 'ko' | 'en' | 'ja' | 'zh-CN' | 'ru';
+export type GuestLang = 'ko' | 'en' | 'ja' | 'zh-CN' | 'ru' | 'fr' | 'es';
 
 /** Ordered for the selection screen. */
-export const SUPPORTED_LANGS: readonly GuestLang[] = ['ko', 'en', 'ja', 'zh-CN', 'ru'];
+export const SUPPORTED_LANGS: readonly GuestLang[] = ['ko', 'en', 'ja', 'zh-CN', 'ru', 'fr', 'es'];
 
 export function isGuestLang(v: unknown): v is GuestLang {
   return typeof v === 'string' && (SUPPORTED_LANGS as readonly string[]).includes(v);
@@ -19,6 +19,8 @@ const LANG_NAME: Record<GuestLang, string> = {
   ja: '日本語',
   'zh-CN': '中文(简体)',
   ru: 'Русский',
+  fr: 'Français',
+  es: 'Español',
 };
 
 export function langDisplayName(lang: GuestLang): string {
@@ -142,12 +144,87 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
     guestSelfLabel: 'Я',
     staffLabel: 'Персонал',
   },
+  fr: {
+    title: 'Chat de la chambre',
+    selectPrompt: 'Veuillez sélectionner votre langue',
+    selectPromptEn: 'Please select your language',
+    placeholder: 'Saisissez un message',
+    send: 'Envoyer',
+    sending: 'Envoi…',
+    changeLanguage: 'Changer de langue',
+    errorSend: 'Échec de l’envoi. Veuillez réessayer.',
+    errorLanguageSave: 'Échec de l’enregistrement de la langue. Veuillez réessayer.',
+    guestSelfLabel: 'Moi',
+    staffLabel: 'Réception',
+  },
+  es: {
+    title: 'Chat de la habitación',
+    selectPrompt: 'Seleccione su idioma',
+    selectPromptEn: 'Please select your language',
+    placeholder: 'Escriba un mensaje',
+    send: 'Enviar',
+    sending: 'Enviando…',
+    changeLanguage: 'Cambiar idioma',
+    errorSend: 'Error al enviar. Inténtelo de nuevo.',
+    errorLanguageSave: 'Error al guardar el idioma. Inténtelo de nuevo.',
+    guestSelfLabel: 'Yo',
+    staffLabel: 'Recepción',
+  },
 };
 
 /** UI text for a possibly-unresolved language (selection screen defaults to English). */
 export function uiTextFor(lang: GuestLang | null): GuestUiText {
   return guestUiText[lang ?? 'en'];
 }
+
+// ── guest STATUS screens (ended / occupied) ─────────────────────────────────────────
+// These screens appear BEFORE the guest has (or after they've lost) a chosen language —
+// 'occupied' is shown to a brand-new cookieless device with no language at all — so the UI
+// renders every supported language at once (stacked). Kept as a typed Record<GuestLang> so the
+// type checker enforces a string for EVERY supported language (same validation path as guestUiText).
+export interface GuestStatusText {
+  endedTitle: string; // conversation ended (staff closed it)
+  occupiedTitle: string; // room chat is already in use on another device
+  occupiedHelp: string; // reopen on the first phone, or contact the front desk
+}
+
+export const guestStatusText: Record<GuestLang, GuestStatusText> = {
+  ko: {
+    endedTitle: '대화가 종료되었습니다',
+    occupiedTitle: '이 객실 채팅은 다른 기기에서 사용 중입니다',
+    occupiedHelp: '처음 사용한 휴대폰에서 다시 열거나 프런트 데스크에 문의해 주세요',
+  },
+  en: {
+    endedTitle: 'This conversation has ended',
+    occupiedTitle: 'This room chat is in use on another device',
+    occupiedHelp: 'Please reopen it on the first phone, or contact the front desk',
+  },
+  ja: {
+    endedTitle: 'この会話は終了しました',
+    occupiedTitle: 'この客室チャットは他の端末で使用中です',
+    occupiedHelp: '最初に使用した端末で開き直すか、フロントにお問い合わせください',
+  },
+  'zh-CN': {
+    endedTitle: '对话已结束',
+    occupiedTitle: '此客房聊天正在其他设备上使用',
+    occupiedHelp: '请在最初使用的手机上重新打开，或联系前台',
+  },
+  ru: {
+    endedTitle: 'Разговор завершён',
+    occupiedTitle: 'Этот чат номера используется на другом устройстве',
+    occupiedHelp: 'Откройте его на первом телефоне или обратитесь на стойку регистрации',
+  },
+  fr: {
+    endedTitle: 'Cette conversation est terminée',
+    occupiedTitle: 'Ce chat de chambre est utilisé sur un autre appareil',
+    occupiedHelp: 'Veuillez le rouvrir sur le premier téléphone ou contacter la réception',
+  },
+  es: {
+    endedTitle: 'Esta conversación ha finalizado',
+    occupiedTitle: 'Este chat de la habitación está en uso en otro dispositivo',
+    occupiedHelp: 'Vuelva a abrirlo en el primer teléfono o contacte con recepción',
+  },
+};
 
 // ── staff room-language badge decision (Phase 1H.7 language-on-session fix) ────────────────
 // The staff UI must NEVER confuse "no active guest" with "guest present, no language yet".

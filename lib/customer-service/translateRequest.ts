@@ -4,7 +4,7 @@
 
 export const MAX_TRANSLATE_TEXT_LEN = 2000;
 
-export const TRANSLATE_LANG_CODES = ['ko', 'zh-CN', 'ja', 'en', 'ru'] as const;
+export const TRANSLATE_LANG_CODES = ['ko', 'zh-CN', 'ja', 'en', 'ru', 'fr', 'es'] as const;
 export type TranslateLang = (typeof TRANSLATE_LANG_CODES)[number];
 
 export function isTranslateLang(v: unknown): v is TranslateLang {

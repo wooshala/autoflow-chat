@@ -4,12 +4,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { detectGuestLangHeuristic, resolveOriginalLang, SUPPORTED_LANGS, isGuestLang } from '../languages.ts';
+import {
+  detectGuestLangHeuristic,
+  resolveOriginalLang,
+  SUPPORTED_LANGS,
+  isGuestLang,
+  langDisplayName,
+  uiTextFor,
+} from '../languages.ts';
 
-test('supported set = 5 langs', () => {
-  assert.deepEqual([...SUPPORTED_LANGS], ['ko', 'en', 'ja', 'zh-CN', 'ru']);
+test('supported set = 7 langs (incl. fr/es)', () => {
+  assert.deepEqual([...SUPPORTED_LANGS], ['ko', 'en', 'ja', 'zh-CN', 'ru', 'fr', 'es']);
   assert.equal(isGuestLang('zh-CN'), true);
-  assert.equal(isGuestLang('fr'), false);
+  assert.equal(isGuestLang('fr'), true);
+  assert.equal(isGuestLang('es'), true);
+  assert.equal(isGuestLang('de'), false);
+});
+
+test('fr/es have display names and guest UI strings (Phase 2B)', () => {
+  assert.equal(langDisplayName('fr'), 'Français');
+  assert.equal(langDisplayName('es'), 'Español');
+  assert.equal(uiTextFor('fr').send, 'Envoyer');
+  assert.equal(uiTextFor('es').send, 'Enviar');
+  assert.equal(uiTextFor('fr').selectPrompt, 'Veuillez sélectionner votre langue');
+  assert.equal(uiTextFor('es').selectPrompt, 'Seleccione su idioma');
 });
 
 test('heuristic: kana → ja (even with kanji present)', () => {
