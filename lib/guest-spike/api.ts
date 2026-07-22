@@ -50,6 +50,39 @@ export async function closeGuestSession(channelKey: string): Promise<void> {
   await fetch(sessionEndpoint(channelKey), { method: 'DELETE', headers: staffSessionAuthHeaders() });
 }
 
+// Phase 2C — staff room move: notify the current guest + close the session (server does both).
+export type RoomMoveResult =
+  | { ok: true }
+  | { ok: false; kind: 'validation'; code: string } //   400 EMPTY/UNKNOWN_ROOM/SAME_ROOM/BAD_JSON
+  | { ok: false; kind: 'no_session' } //                 409 NO_ACTIVE_SESSION / SESSION_CHANGED
+  | { ok: false; kind: 'message_failed' } //             notice NOT sent → safe to retry the move
+  | { ok: false; kind: 'close_failed' } //               notice sent, close failed → retry CLOSE only
+  | { ok: false; kind: 'error' }; //                     unknown / ambiguous (e.g. network) — verify, don't auto-retry
+
+export async function roomMove(
+  channelKey: string,
+  newRoomNo: string,
+  expectedSessionId: string | null,
+): Promise<RoomMoveResult> {
+  let r: Response;
+  try {
+    r = await fetch(`${sessionEndpoint(channelKey)}/room-move`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...staffSessionAuthHeaders() },
+      body: JSON.stringify({ new_room_no: newRoomNo, expected_session_id: expectedSessionId }),
+    });
+  } catch {
+    return { ok: false, kind: 'error' }; // ambiguous: request may or may not have run — never auto-retry
+  }
+  const j = await r.json().catch(() => null);
+  if (r.ok && j?.ok) return { ok: true };
+  if (r.status === 400) return { ok: false, kind: 'validation', code: String(j?.error ?? 'INVALID') };
+  if (r.status === 409) return { ok: false, kind: 'no_session' };
+  if (j?.error_code === 'SESSION_CLOSE_FAILED') return { ok: false, kind: 'close_failed' };
+  if (j?.error_code === 'MESSAGE_SEND_FAILED') return { ok: false, kind: 'message_failed' };
+  return { ok: false, kind: 'error' };
+}
+
 /** Phase 1H.7 — staff responses carry the active-session state so the UI distinguishes
  *  "guest present, no language" (open) from "no active guest" (none). null on guest reads /
  *  errors / pre-auth (field absent). */
