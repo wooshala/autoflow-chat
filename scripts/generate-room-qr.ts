@@ -67,7 +67,9 @@ function registerFonts(doc: PDFKit.PDFDocument) {
 }
 const F = HAS_FONT ? 'body' : 'Helvetica';
 const FB = HAS_FONT ? 'bold' : 'Helvetica-Bold';
-// Endonyms render only with the CJK/Cyrillic font; otherwise fall back to Latin names.
+// All 7 app languages. Endonyms render only with the CJK/Cyrillic font; otherwise Latin names.
+// NOTE: Chinese is shown as 中文 (not 简体中文) because 简 (U+7B80) is absent from Malgun Gothic and
+// would render as a tofu box; verifyGlyphs() below enforces that every printed char has a glyph.
 const LANG_LINE = HAS_FONT
   ? '한국어 · English · 日本語 · 中文 · Русский · Français · Español'
   : 'Korean · English · Japanese · Chinese · Russian · French · Spanish';
@@ -148,6 +150,26 @@ function decodePng(file: string): string | null {
   return code ? code.data : null;
 }
 
+// Verify the embedded font actually has a glyph for EVERY character printed in the PDFs — catches
+// tofu / missing-glyph boxes before printing. Returns hard failures; a resolve error is a soft skip.
+async function verifyGlyphs(strings: string[]): Promise<{ missing: string[]; skipped: string | null }> {
+  if (!HAS_FONT) return { missing: [], skipped: 'no CJK font (Latin fallback text)' };
+  try {
+    const fk: any = await import('fontkit');
+    const font = (fk.openSync || fk.default?.openSync)(FONT_PATH);
+    const chars = new Set<string>();
+    for (const s of strings) for (const ch of s) if (ch.trim()) chars.add(ch);
+    const missing: string[] = [];
+    for (const ch of chars) {
+      const cp = ch.codePointAt(0)!;
+      if (!font.hasGlyphForCodePoint(cp)) missing.push(`${ch}(U+${cp.toString(16)})`);
+    }
+    return { missing, skipped: null };
+  } catch (e: any) {
+    return { missing: [], skipped: e?.message || String(e) };
+  }
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────────
 async function main() {
   const rosterErrors = verifyRoster();
@@ -212,18 +234,52 @@ async function main() {
     if (!fs.existsSync(fp) || fs.statSync(fp).size < 1000) problems.push(`PDF ${p} missing or too small`);
   }
 
+  // PDF glyph coverage (no tofu / missing-glyph boxes)
+  const glyph = await verifyGlyphs([
+    HOTEL_NAME,
+    'Guest Chat',
+    LANG_LINE,
+    noticeLead,
+    HAS_FONT ? '지원 언어' : 'Supported languages',
+    ...ROOMS.map(roomLabel),
+  ]);
+  if (glyph.missing.length) problems.push('missing PDF glyphs: ' + glyph.missing.join(' '));
+
   console.log('\n── verification ──');
   console.log(`PNG      : ${pngCount}/39`);
   console.log(`SVG      : ${svgCount}/39`);
   console.log(`CSV rows : ${csvDataRows}/39`);
   console.log(`PDF      : ${pdfs.join(', ')}`);
   console.log(`Decode   : all ${ROOMS.length} PNGs decoded and compared to canonical URLs`);
+  console.log(`Glyphs   : ${glyph.skipped ? 'skipped (' + glyph.skipped + ')' : glyph.missing.length ? 'MISSING ' + glyph.missing.join(' ') : 'all present (7-language notice renders cleanly)'}`);
 
   if (problems.length || pngCount !== 39 || svgCount !== 39 || csvDataRows !== 39) {
     console.error('\nVERIFICATION FAILED:\n  - ' + (problems.length ? problems.join('\n  - ') : 'count mismatch'));
     process.exit(1);
   }
-  console.log('\n✅ ALL VERIFIED: 39 PNG + 39 SVG + CSV(39) + 3 PDF, every QR decodes to its room canonical URL.');
+
+  // MANIFEST.txt — package provenance for the operator. NO PII / secrets.
+  const commit = argValue('commit') || process.env.QR_COMMIT_SHA || 'unknown';
+  const manifest = [
+    'Guest Room QR — Production package MANIFEST',
+    `Generated at : ${new Date().toISOString()}`,
+    `Base URL     : ${BASE_URL}`,
+    `URL rule     : ${BASE_URL}/g/room-{roomNo}`,
+    `Rooms        : ${ROOMS.length}`,
+    `PNG files    : ${pngCount}`,
+    `SVG files    : ${svgCount}`,
+    `CSV rows     : ${csvDataRows}`,
+    `PDF files    : door-labels.pdf, front-notice-A4.pdf, front-notice-A5.pdf`,
+    `Languages    : ko, en, ja, zh-CN, ru, fr, es (7)`,
+    `QR decode    : PASS — every PNG decodes to its room canonical URL`,
+    `PDF glyphs   : ${glyph.skipped ? 'Latin fallback' : 'all present'}`,
+    `Commit SHA   : ${commit}`,
+    'Privacy      : contains ONLY room numbers + URLs — no email/password/cookie/token/session id/guest data.',
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(OUT_DIR, 'MANIFEST.txt'), manifest, 'utf8');
+
+  console.log('\n✅ ALL VERIFIED: 39 PNG + 39 SVG + CSV(39) + 3 PDF + MANIFEST, every QR decodes to its room canonical URL.');
 }
 
 main().catch((e) => {

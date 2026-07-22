@@ -12,7 +12,7 @@ import { useParams } from 'next/navigation';
 import { GuestChatPanel } from '@/components/guest-spike/GuestChatPanel';
 import { fetchGuestSession, setGuestLanguage } from '@/lib/guest-spike/api';
 import { decideGuestEntryPhase } from '@/lib/guest-spike/sessionPolicy';
-import { isGuestLang, langDisplayName, SUPPORTED_LANGS, uiTextFor, type GuestLang } from '@/lib/guest-spike/languages';
+import { guestStatusText, isGuestLang, langDisplayName, SUPPORTED_LANGS, uiTextFor, type GuestLang } from '@/lib/guest-spike/languages';
 
 const STAFF_LANG = 'ko';
 const lsKey = (channelKey: string) => `guest-chat-language:${channelKey}`;
@@ -88,27 +88,29 @@ export default function GuestChatPage() {
     );
   }
 
+  // 'closed' / 'occupied' appear before the guest has (or after they lost) a chosen language, so
+  // every supported language is shown at once — a fr/es guest must understand these too.
   if (phase === 'closed') {
     return (
-      <main style={{ display: 'flex', flexDirection: 'column', height: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#f2f4f7', fontFamily: 'system-ui, sans-serif', padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: 32 }}>💬</div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: '#111' }}>대화가 종료되었습니다.</div>
-        <div style={{ fontSize: 13, color: '#6b7280' }}>This conversation has ended. / この会話は終了しました。</div>
+      <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#f2f4f7', fontFamily: 'system-ui, sans-serif', padding: 24, textAlign: 'center', overflowY: 'auto' }}>
+        <div style={{ fontSize: 32, marginBottom: 4 }}>💬</div>
+        {SUPPORTED_LANGS.map((l) => (
+          <div key={l} style={{ fontSize: 15, fontWeight: 600, color: '#111' }}>{guestStatusText[l].endedTitle}</div>
+        ))}
       </main>
     );
   }
 
   if (phase === 'occupied') {
     return (
-      <main style={{ display: 'flex', flexDirection: 'column', height: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#f2f4f7', fontFamily: 'system-ui, sans-serif', padding: 24, textAlign: 'center' }}>
+      <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#f2f4f7', fontFamily: 'system-ui, sans-serif', padding: 24, textAlign: 'center', overflowY: 'auto' }}>
         <div style={{ fontSize: 32 }}>🔒</div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#111', lineHeight: 1.5 }}>
-          이 객실 채팅은 이미 다른 기기에서 사용 중입니다.
-        </div>
-        <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
-          처음 접속한 휴대폰에서 다시 열거나, 프런트 데스크에 문의해 주세요.<br />
-          This room chat is already in use on another device. Please reopen it on the first phone, or contact the front desk.
-        </div>
+        {SUPPORTED_LANGS.map((l) => (
+          <div key={l}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#111', lineHeight: 1.4 }}>{guestStatusText[l].occupiedTitle}</div>
+            <div style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.4 }}>{guestStatusText[l].occupiedHelp}</div>
+          </div>
+        ))}
       </main>
     );
   }
