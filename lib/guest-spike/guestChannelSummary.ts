@@ -14,6 +14,11 @@ export type GuestChannelSummary = {
   latest_message_at: string | null;
   latest_sender_type: string | null;
   latest_guest_message_at: string | null;
+  /** Phase 2D — latest GUEST message id + short staff-facing preview (Korean translation preferred,
+   *  else original). Lets the EXISTING summary poll drive a Windows notification. Only the latest
+   *  guest message's preview is exposed (not history). */
+  latest_guest_message_id: string | null;
+  latest_guest_message_preview: string | null;
 };
 
 /** guest_chat_sessions row (status='open' only), minimal columns. */
@@ -24,12 +29,24 @@ export interface OpenSessionRow {
   language_source: string | null;
 }
 
-/** guest_chat_messages row, minimal columns (NO body — summary never returns message text). */
+/** guest_chat_messages row. Phase 2D adds the latest GUEST message's text for the notification body;
+ *  staff-message text is never surfaced. */
 export interface SummaryMessageRow {
   id: string;
   session_id: string;
   sender: string; // 'guest' | 'staff'
   created_at: string; // ISO 8601 (lexicographically ordered)
+  original_text?: string | null;
+  translated_json?: Record<string, string> | null;
+}
+
+const PREVIEW_MAX = 60;
+
+/** Staff-facing preview of a guest message: Korean translation if present, else the original. */
+function guestPreview(m: SummaryMessageRow): string {
+  const ko = m.translated_json?.ko;
+  const text = ((ko && ko.trim()) || (m.original_text ?? '').trim()).replace(/\s+/g, ' ');
+  return text.length > PREVIEW_MAX ? `${text.slice(0, PREVIEW_MAX)}…` : text;
 }
 
 export function buildChannelSummaries(
@@ -60,6 +77,8 @@ export function buildChannelSummaries(
       latest_message_at: latest?.created_at ?? null,
       latest_sender_type: latest?.sender ?? null,
       latest_guest_message_at: latestGuest?.created_at ?? null,
+      latest_guest_message_id: latestGuest?.id ?? null,
+      latest_guest_message_preview: latestGuest ? guestPreview(latestGuest) : null,
     };
   });
 }

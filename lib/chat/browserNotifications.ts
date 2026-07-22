@@ -39,6 +39,8 @@ export async function showBrowserNotification(params: {
   silent?: boolean;
   messageId?: string;
   source?: string;
+  /** Phase 2D — optional click handler (e.g. select the room). Runs after window.focus(). */
+  onClick?: () => void;
 }): Promise<boolean> {
   const ctx = notifyContext();
 
@@ -149,6 +151,11 @@ export async function showBrowserNotification(params: {
       try {
         window.focus();
         n.close();
+      } catch {
+        /* ignore */
+      }
+      try {
+        params.onClick?.();
       } catch {
         /* ignore */
       }

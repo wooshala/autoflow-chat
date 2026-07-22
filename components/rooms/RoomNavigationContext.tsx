@@ -10,12 +10,16 @@
 // separately from the shared Room definition (Q2=A). It lives in provider local state
 // only: no DB writes, no localStorage, no cross-refresh persistence.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type { MockMessage } from '@/lib/customer-service/mock/customerConsoleMock';
 import type { RoomChannelLanguages, RoomChannelSessionStatus } from '@/lib/guest-spike/useChannelLanguages';
 import { useGuestChannelSummaries } from '@/lib/guest-spike/useGuestChannelSummaries';
 import { lookupChannelKey } from '@/lib/guest-spike/channels';
+import { canShowBrowserNotification, showBrowserNotification } from '@/lib/chat/browserNotifications';
+import { playNotificationTone } from '@/lib/chat/playNotificationTone';
+import { normalizeNotifyBody } from '@/lib/chat/normalizeNotifyBody';
+import { GUEST_NOTIFY_TITLE, shouldNotifyGuestMessage } from '@/lib/guest-spike/guestNotify';
 import { isGuestChannelUnread } from '@/lib/guest-spike/guestChannelUnread';
 import {
   mergeLastViewed,
@@ -207,6 +211,55 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     setSelectedRoomId(id);
     setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, unread: 0, lastActiveAt: now } : r)));
   }, []);
+
+  // Phase 2D — Windows notification for a NEW guest message, driven off the SAME summary poll
+  // (no new poll / realtime / DB). Reuses the staff notification primitives verbatim
+  // (playNotificationTone + showBrowserNotification + normalizeNotifyBody). This provider mounts
+  // only in room-navigation mode, i.e. exactly where guest chat is worked, so no extra gating is
+  // needed. Known limit (accepted): the summary carries only the latest guest message per channel,
+  // so a burst inside one 5s interval notifies only the last one.
+  const notifySeenRef = useRef<Map<string, string>>(new Map()); // roomId → last handled guest msg id
+  const notifySeededRef = useRef(false);
+  useEffect(() => {
+    // Seed a baseline on the first summary so pre-existing messages never notify (behavior 2).
+    if (!notifySeededRef.current) {
+      for (const r of rooms) {
+        const ck = lookupChannelKey(r.id);
+        const id = ck ? summaryByChannel[ck]?.latest_guest_message_id ?? null : null;
+        if (id) notifySeenRef.current.set(r.id, id);
+      }
+      notifySeededRef.current = true;
+      return;
+    }
+    const focused =
+      typeof document === 'undefined' || typeof document.hasFocus !== 'function' ? false : document.hasFocus();
+    const isBackground = !focused;
+    for (const r of rooms) {
+      const ck = lookupChannelKey(r.id);
+      if (!ck) continue; // channel-mapped customer rooms only
+      const latestId = summaryByChannel[ck]?.latest_guest_message_id ?? null;
+      const seenId = notifySeenRef.current.get(r.id) ?? null;
+      const isNew = Boolean(latestId) && latestId !== seenId;
+      if (latestId) notifySeenRef.current.set(r.id, latestId); // dedup: mark handled (behavior 3)
+      // Viewing THIS room with the window focused → the staff sees it live, no notification.
+      const isViewing = selectedRoomId === r.id && focused;
+      if (!shouldNotifyGuestMessage({ latestId, isNew, isViewing, seeded: true })) continue;
+
+      const roomNo = ck.replace(/^room-/, '') || null;
+      const preview = summaryByChannel[ck]?.latest_guest_message_preview || '새 메시지가 도착했습니다';
+      void playNotificationTone('info', { allowHidden: isBackground });
+      if (isBackground && canShowBrowserNotification()) {
+        void showBrowserNotification({
+          title: GUEST_NOTIFY_TITLE,
+          body: normalizeNotifyBody(roomNo, preview),
+          silent: true, // AutoFlow plays its own tone above — same policy as staff notifications
+          messageId: latestId ?? undefined,
+          source: 'guest_message_os',
+          onClick: () => selectRoom(r.id), // click → open the room (behavior 5)
+        });
+      }
+    }
+  }, [summaryByChannel, rooms, selectedRoomId, selectRoom]);
 
   const toggleFavorite = useCallback((id: string) => {
     setFavorites((prev) => {
