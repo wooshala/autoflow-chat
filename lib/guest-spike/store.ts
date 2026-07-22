@@ -194,7 +194,9 @@ export async function listOpenChannelSummaryData(): Promise<{
   if (ids.length === 0) return { sessions: rows, messages: [] };
   const { data: messages, error: mErr } = await db()
     .from(TABLE)
-    .select('id, session_id, sender, created_at')
+    // Phase 2D — include text so the summary carries the latest GUEST message preview for the staff
+    // Windows notification (buildChannelSummaries exposes only the latest guest message).
+    .select('id, session_id, sender, created_at, original_text, translated_json')
     .in('session_id', ids);
   if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
   return { sessions: rows, messages: (messages ?? []) as SummaryMessageRow[] };
