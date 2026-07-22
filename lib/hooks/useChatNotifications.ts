@@ -604,6 +604,15 @@ export function useChatNotifications({
         });
       }
       if (willPlaySound) {
+        // DIAGNOSTIC (log-only) — symmetric with the guest call site for Staff vs Guest comparison.
+        console.log('[SOUND_CALLSITE]', {
+          source: 'staff',
+          tone,
+          allowHidden: isBackgroundLike,
+          visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+          hasFocus:
+            typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : null
+        });
         console.log('[CHAT_SOUND_PLAY]', {
           messageId: id,
           soundEnabled: channels.playInAppSound,
@@ -613,6 +622,7 @@ export function useChatNotifications({
           soundUnlocked
         });
         void playNotificationTone(tone, { allowHidden: isBackgroundLike }).then((ok) => {
+          console.log('[SOUND_RESULT]', { source: 'staff', ok });
           if (DEBUG_VERBOSE) log.info('[CHAT_SOUND_RESULT]', { id, ok, tone });
           if (ok) {
             console.log('[CHAT_SOUND_PLAY_OK]', {
