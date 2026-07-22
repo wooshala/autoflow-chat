@@ -247,7 +247,19 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
 
       const roomNo = ck.replace(/^room-/, '') || null;
       const preview = summaryByChannel[ck]?.latest_guest_message_preview || '새 메시지가 도착했습니다';
-      void playNotificationTone('info', { allowHidden: isBackground });
+      // DIAGNOSTIC (log-only) — mirror the staff call-site logs so Staff vs Guest in-app playback
+      // can be compared side by side. Does not change the fire-and-forget behavior.
+      console.log('[SOUND_CALLSITE]', {
+        source: 'guest',
+        tone: 'info',
+        allowHidden: isBackground,
+        visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+        hasFocus:
+          typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : null,
+      });
+      void playNotificationTone('info', { allowHidden: isBackground }).then((ok) => {
+        console.log('[SOUND_RESULT]', { source: 'guest', ok });
+      });
       if (isBackground && canShowBrowserNotification()) {
         void showBrowserNotification({
           title: GUEST_NOTIFY_TITLE,
