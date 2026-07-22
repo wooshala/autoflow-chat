@@ -16,6 +16,15 @@ import QRCode from 'qrcode';
 import PDFDocument from 'pdfkit';
 import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
+import { createRequire } from 'node:module';
+
+// jszip is CommonJS; load via createRequire so the constructor survives ESM interop. Chosen over
+// archiver because its entry names are ALWAYS '/'-separated regardless of the host OS.
+const require = createRequire(import.meta.url);
+const JSZip = require('jszip') as new () => {
+  file(name: string, data: Buffer): void;
+  generateAsync(opts: { type: 'nodebuffer'; compression?: string; compressionOptions?: { level: number } }): Promise<Buffer>;
+};
 
 // ── SSOT: the ONLY thing to change to add/remove rooms ─────────────────────────────
 const ROOMS: string[] = [
@@ -37,6 +46,7 @@ const BASE_URL = (argValue('base-url') || process.env.QR_BASE_URL || 'https://au
   .trim()
   .replace(/\/+$/, '');
 const OUT_DIR = path.resolve(argValue('out') || process.env.QR_OUT_DIR || 'qr-output');
+const ZIP_PATH = path.resolve(argValue('zip') || process.env.QR_ZIP || 'guest-room-qr-production.zip');
 const HOTEL_NAME = process.env.QR_HOTEL_NAME || 'HOTEL LABEL';
 const FONT_PATH = process.env.QR_FONT_PATH || 'C:/Windows/Fonts/malgun.ttf';
 const FONT_BOLD_PATH = process.env.QR_FONT_BOLD_PATH || 'C:/Windows/Fonts/malgunbd.ttf';
@@ -141,6 +151,28 @@ async function buildFrontNotices(qrByRoom: Map<string, Buffer>, file: string, si
     doc.font(F).fontSize(size === 'A4' ? 12 : 10).fillColor('#111').text(LANG_LINE, 50, y, { width: w - 100, align: 'center' });
   }
   await finishDoc(doc, file);
+}
+
+// ── package as ZIP — entry names are ALWAYS '/'-separated (cross-platform: opens cleanly on
+// Windows, macOS, Linux). Directory structure is preserved with png/… svg/… at the ZIP root.
+async function buildZip(srcDir: string, zipPath: string): Promise<number> {
+  const zip = new JSZip();
+  let count = 0;
+  const addDir = (dir: string, prefix: string) => {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const full = path.join(dir, name);
+      const rel = prefix ? `${prefix}/${name}` : name; // build with '/' explicitly
+      if (fs.statSync(full).isDirectory()) addDir(full, rel);
+      else {
+        zip.file(rel, fs.readFileSync(full));
+        count += 1;
+      }
+    }
+  };
+  addDir(srcDir, '');
+  const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 9 } });
+  fs.writeFileSync(zipPath, buf);
+  return count;
 }
 
 // ── decode verification ─────────────────────────────────────────────────────────────
@@ -279,7 +311,12 @@ async function main() {
   ].join('\n');
   fs.writeFileSync(path.join(OUT_DIR, 'MANIFEST.txt'), manifest, 'utf8');
 
-  console.log('\n✅ ALL VERIFIED: 39 PNG + 39 SVG + CSV(39) + 3 PDF + MANIFEST, every QR decodes to its room canonical URL.');
+  // package everything into one ZIP for the operator (forward-slash entry paths)
+  if (fs.existsSync(ZIP_PATH)) fs.unlinkSync(ZIP_PATH);
+  const zipEntries = await buildZip(OUT_DIR, ZIP_PATH);
+  console.log(`ZIP      : ${path.basename(ZIP_PATH)} (${zipEntries} entries, forward-slash paths)`);
+
+  console.log('\n✅ ALL VERIFIED: 39 PNG + 39 SVG + CSV(39) + 3 PDF + MANIFEST + ZIP, every QR decodes to its room canonical URL.');
 }
 
 main().catch((e) => {
