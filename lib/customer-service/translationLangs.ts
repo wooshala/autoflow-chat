@@ -2,9 +2,9 @@
 // NO 'openai' import here, so client components can use it without bundling server code.
 // The real OpenAI adapter lives in translation.ts (server-only).
 
-export type CustomerLang = 'ko' | 'zh-CN' | 'ja' | 'en' | 'ru';
+export type CustomerLang = 'ko' | 'zh-CN' | 'ja' | 'en' | 'ru' | 'fr' | 'es';
 
-export const CUSTOMER_LANGS: readonly CustomerLang[] = ['ko', 'zh-CN', 'ja', 'en', 'ru'];
+export const CUSTOMER_LANGS: readonly CustomerLang[] = ['ko', 'zh-CN', 'ja', 'en', 'ru', 'fr', 'es'];
 
 /** English names for the translation prompt (server). */
 export const LANG_LABEL: Record<CustomerLang, string> = {
@@ -13,6 +13,8 @@ export const LANG_LABEL: Record<CustomerLang, string> = {
   ja: 'Japanese',
   en: 'English',
   ru: 'Russian',
+  fr: 'French',
+  es: 'Spanish',
 };
 
 /** Display name for badges. Language ≠ nationality — always show the language. */
@@ -22,6 +24,8 @@ export const LANG_DISPLAY: Record<CustomerLang, string> = {
   ja: '日本語',
   en: 'English',
   ru: 'Русский',
+  fr: 'Français',
+  es: 'Español',
 };
 
 export function isCustomerLang(v: unknown): v is CustomerLang {

@@ -4,10 +4,10 @@
 // Language NAMES only — never flags (language ≠ nationality). GuestLang is structurally
 // identical to CustomerLang (same 5 literals), so it is assignable across the codebase.
 
-export type GuestLang = 'ko' | 'en' | 'ja' | 'zh-CN' | 'ru';
+export type GuestLang = 'ko' | 'en' | 'ja' | 'zh-CN' | 'ru' | 'fr' | 'es';
 
 /** Ordered for the selection screen. */
-export const SUPPORTED_LANGS: readonly GuestLang[] = ['ko', 'en', 'ja', 'zh-CN', 'ru'];
+export const SUPPORTED_LANGS: readonly GuestLang[] = ['ko', 'en', 'ja', 'zh-CN', 'ru', 'fr', 'es'];
 
 export function isGuestLang(v: unknown): v is GuestLang {
   return typeof v === 'string' && (SUPPORTED_LANGS as readonly string[]).includes(v);
@@ -19,6 +19,8 @@ const LANG_NAME: Record<GuestLang, string> = {
   ja: '日本語',
   'zh-CN': '中文(简体)',
   ru: 'Русский',
+  fr: 'Français',
+  es: 'Español',
 };
 
 export function langDisplayName(lang: GuestLang): string {
@@ -141,6 +143,32 @@ export const guestUiText: Record<GuestLang, GuestUiText> = {
     errorLanguageSave: 'Не удалось сохранить язык. Попробуйте снова.',
     guestSelfLabel: 'Я',
     staffLabel: 'Персонал',
+  },
+  fr: {
+    title: 'Chat de la chambre',
+    selectPrompt: 'Veuillez sélectionner votre langue',
+    selectPromptEn: 'Please select your language',
+    placeholder: 'Saisissez un message',
+    send: 'Envoyer',
+    sending: 'Envoi…',
+    changeLanguage: 'Changer de langue',
+    errorSend: 'Échec de l’envoi. Veuillez réessayer.',
+    errorLanguageSave: 'Échec de l’enregistrement de la langue. Veuillez réessayer.',
+    guestSelfLabel: 'Moi',
+    staffLabel: 'Réception',
+  },
+  es: {
+    title: 'Chat de la habitación',
+    selectPrompt: 'Seleccione su idioma',
+    selectPromptEn: 'Please select your language',
+    placeholder: 'Escriba un mensaje',
+    send: 'Enviar',
+    sending: 'Enviando…',
+    changeLanguage: 'Cambiar idioma',
+    errorSend: 'Error al enviar. Inténtelo de nuevo.',
+    errorLanguageSave: 'Error al guardar el idioma. Inténtelo de nuevo.',
+    guestSelfLabel: 'Yo',
+    staffLabel: 'Recepción',
   },
 };
 

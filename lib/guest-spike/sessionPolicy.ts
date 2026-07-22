@@ -30,7 +30,7 @@ export function decideSessionOutcome(input: {
 // whose OWN open session already has a language goes straight to chatting.
 export type GuestEntryPhase = 'closed' | 'occupied' | 'selecting' | 'chatting';
 
-const SUPPORTED = new Set(['ko', 'en', 'ja', 'zh-CN', 'ru']);
+const SUPPORTED = new Set(['ko', 'en', 'ja', 'zh-CN', 'ru', 'fr', 'es']);
 
 export function decideGuestEntryPhase(session: {
   status: 'open' | 'closed' | 'occupied';

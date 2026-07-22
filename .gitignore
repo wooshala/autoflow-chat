@@ -24,3 +24,7 @@ node_modules/
 .tauri/
 *.key
 !*.key.pub
+
+# Phase 2B — regenerable QR artifacts (reproduce: npx tsx scripts/generate-room-qr.ts)
+qr-output/
+qr-test-*/
