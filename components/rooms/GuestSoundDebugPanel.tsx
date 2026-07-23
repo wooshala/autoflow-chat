@@ -1,7 +1,7 @@
 'use client';
 
 // TEMPORARY bottom-right overlay listing the most recent QR guest notification decisions.
-// - Always mounted; the Ctrl+Shift+D keydown listener is always registered (works in the
+// - Always mounted; the Ctrl+Alt+F12 keydown listener is always registered (works in the
 //   address-bar-less operational EXE, no Rust rebuild).
 // - UI renders ONLY when enabled (?sounddebug=1 OR sessionStorage.sounddebug==='1') → null otherwise.
 // - Observation only: container is pointer-events:none, has NO focusable/interactive elements, so it
@@ -41,11 +41,12 @@ export function GuestSoundDebugPanel() {
   // Re-render on any store change: record()/updateResult() add rows, toggle() flips enabled.
   useEffect(() => subscribeGuestSoundDebug(() => forceRender((n) => n + 1)), []);
 
-  // Always-on Ctrl+Shift+D toggle — registered even while the panel UI is hidden (OFF).
+  // Always-on Ctrl+Alt+F12 toggle — registered even while the panel UI is hidden (OFF).
+  // (Was Ctrl+Shift+D, which collided with the operator PC's global AlCapture hotkey.)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.shiftKey && e.code === 'KeyD')) return;
+      if (!(e.ctrlKey && e.altKey && e.code === 'F12')) return;
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName;
       // Do not hijack typing in text fields / selects / rich editors.
@@ -86,7 +87,7 @@ export function GuestSoundDebugPanel() {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
         <strong style={{ color: '#7CFF9B' }}>Guest Sound Debug ON</strong>
-        <span style={{ color: '#8FA3B8' }}>Ctrl+Shift+D: OFF · {entries.length}/30</span>
+        <span style={{ color: '#8FA3B8' }}>Ctrl+Alt+F12: OFF · {entries.length}/30</span>
       </div>
       {entries.length === 0 ? (
         <div style={{ color: '#8FA3B8' }}>대기 중 — 게스트 메시지 수신 시 판정이 기록됩니다.</div>
