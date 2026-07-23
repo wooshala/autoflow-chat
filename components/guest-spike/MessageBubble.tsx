@@ -15,8 +15,8 @@ export function MessageBubble({
   align: 'left' | 'right';
   label: string;
   own: boolean;
-  /** Pre-formatted HH:mm (display-only). Not text/language logic, so the "frozen" renderer
-   *  contract (no string/language selection here) is preserved. */
+  /** Pre-formatted MM/DD HH:mm (display-only, same as the staff ops chat). Not text/language
+   *  logic, so the "frozen" renderer contract (no string/language selection here) is preserved. */
   time?: string;
 }) {
   return (
