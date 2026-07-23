@@ -1224,6 +1224,19 @@ export default function ChatPage() {
             {opsUxToast}
           </div>
         ) : null}
+        {/* Restore the notification-sound picker in the ops-console layout: reuse the SAME operator
+            ChatNotifyDiagBar (localStorage autoflow_notify_sound + 테스트 재생) as the standard layout.
+            Revealed by the existing 설정 button (showAdminPanel), shown together with the staff/
+            quick-phrase admin below — the 설정 button's behavior is unchanged. */}
+        {showAdminPanel ? (
+          <section
+            aria-label="알림음 설정"
+            className="shrink-0 border-t border-gray-700 bg-gray-800 px-3 py-3"
+          >
+            <div className="mb-1 font-bold text-white">알림음</div>
+            <ChatNotifyDiagBar variant="operator" onRequestPermission={handleNotificationClick} />
+          </section>
+        ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
         {roomNavigationEnabled ? (
           <RoomNavigationProvider>{layoutBody}</RoomNavigationProvider>
