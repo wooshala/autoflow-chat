@@ -9,11 +9,15 @@ export function MessageBubble({
   align,
   label,
   own,
+  time,
 }: {
   vm: MessageViewModel;
   align: 'left' | 'right';
   label: string;
   own: boolean;
+  /** Pre-formatted HH:mm (display-only). Not text/language logic, so the "frozen" renderer
+   *  contract (no string/language selection here) is preserved. */
+  time?: string;
 }) {
   return (
     <div style={{ alignSelf: align === 'right' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
@@ -33,7 +37,10 @@ export function MessageBubble({
           <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 3, lineHeight: 1.35 }}>{vm.originalText}</div>
         )}
       </div>
-      <div style={{ fontSize: 10, color: '#9ca3af', textAlign: align, marginTop: 2 }}>{label}</div>
+      <div style={{ fontSize: 10, color: '#9ca3af', textAlign: align, marginTop: 2 }}>
+        {label}
+        {time ? <span style={{ marginLeft: 6 }}>{time}</span> : null}
+      </div>
     </div>
   );
 }
