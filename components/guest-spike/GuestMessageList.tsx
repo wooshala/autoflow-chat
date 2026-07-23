@@ -10,7 +10,7 @@ import { useEffect, useRef } from 'react';
 
 import { buildMessageViewModel } from '@/lib/guest-spike/messageViewModel';
 import type { GuestSpikeMsg } from '@/lib/guest-spike/api';
-import { fmtTime } from '@/components/customer-service/CustomerRoomTimeline';
+import { formatKSTShort } from '@/lib/formatKST';
 import { MessageBubble } from './MessageBubble';
 
 export function GuestMessageList({
@@ -52,7 +52,7 @@ export function GuestMessageList({
             align={own ? 'right' : 'left'}
             own={own}
             label={own ? ownLabel : otherLabel}
-            time={fmtTime(m.created_at)} // same HH:mm formatter as the mock CustomerRoomTimeline
+            time={formatKSTShort(m.created_at)} // same MM/DD HH:mm formatter as the staff ops chat
           />
         );
       })}
