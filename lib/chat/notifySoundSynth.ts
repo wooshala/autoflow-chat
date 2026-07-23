@@ -12,19 +12,6 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-// DIAGNOSTIC (log-only) — stable per-object id so Staff vs Guest logs reveal whether they share the
-// SAME AudioContext instance. Same object → same id; a new context → a new id. No behavior change.
-let synthCtxSeq = 0;
-const synthCtxIds = new WeakMap<AudioContext, number>();
-function synthCtxId(ctx: AudioContext): number {
-  let id = synthCtxIds.get(ctx);
-  if (id == null) {
-    id = (synthCtxSeq += 1);
-    synthCtxIds.set(ctx, id);
-  }
-  return id;
-}
-
 function tone(
   ctx: AudioContext,
   frequency: number,
@@ -51,35 +38,13 @@ export async function playNotifySynthProfile(
   profile: NotifySynthProfile,
   volume: number
 ): Promise<void> {
-  // DIAGNOSTIC — localize why a logged synth tone produces no audible output. AudioContext
-  // playback fails SILENTLY when the context is suspended (osc.start(t0) with a frozen currentTime),
-  // and the caller's catch swallows the reason. These logs record state / resume / start / errors.
-  const ctxId = synthCtxId(ctx);
-  const stateBeforePlay = ctx.state;
-  console.log('[NOTIFY_SYNTH_STATE]', {
-    phase: 'before_play',
-    ctxId,
-    profile,
-    state: stateBeforePlay,
-    currentTime: ctx.currentTime,
-    sampleRate: ctx.sampleRate,
-    destinationChannels: ctx.destination.maxChannelCount,
-  });
   if (ctx.state === 'suspended') {
-    try {
-      await ctx.resume();
-      console.log('[NOTIFY_SYNTH_RESUME]', { ctxId, stateBefore: stateBeforePlay, stateAfter: ctx.state });
-    } catch (err: unknown) {
-      const e = err instanceof Error ? { name: err.name, message: err.message } : { name: 'unknown', message: String(err) };
-      console.log('[NOTIFY_SYNTH_RESUME_FAILED]', { ctxId, stateBefore: stateBeforePlay, stateAfter: ctx.state, ...e });
-      throw err; // preserve original behavior: a resume() rejection propagated out (→ caller ok=false)
-    }
+    await ctx.resume();
   }
   const t0 = ctx.currentTime;
   const v = Math.min(0.5, Math.max(0.2, volume));
 
-  try {
-    switch (profile) {
+  switch (profile) {
     case 'soft-chime':
       tone(ctx, 523.25, t0, 0.22, v * 0.9);
       tone(ctx, 659.25, t0 + 0.14, 0.28, v * 0.75);
@@ -123,12 +88,5 @@ export async function playNotifySynthProfile(
       break;
     default:
       await sleep(0);
-    }
-    // Oscillators are scheduled at t0 = ctx.currentTime; audible ONLY if the context is 'running'.
-    console.log('[NOTIFY_SYNTH_STARTED]', { ctxId, profile, state: ctx.state, t0, v });
-  } catch (err: unknown) {
-    const e = err instanceof Error ? { name: err.name, message: err.message } : { name: 'unknown', message: String(err) };
-    console.log('[NOTIFY_SYNTH_PLAY_FAILED]', { ctxId, profile, state: ctx.state, ...e });
-    throw err; // preserve existing behavior: the caller's catch maps this to ok=false
   }
 }
