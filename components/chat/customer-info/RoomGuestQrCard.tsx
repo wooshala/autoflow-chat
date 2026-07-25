@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 
 import { guestChannelUrl, resolveGuestChannelKey } from '@/lib/guest-spike/guestRoomUrl';
+import { openGuestChatNoticePrint } from '@/lib/guest-spike/openGuestChatNoticePrint';
 
 /** Display size in the panel (CSS). */
 const QR_DISPLAY_PX = 160;
@@ -51,6 +52,7 @@ export function RoomGuestQrCard({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrError, setQrError] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const [printState, setPrintState] = useState<'idle' | 'ok' | 'fail'>('idle');
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +95,22 @@ export function RoomGuestQrCard({
     }
   }, [url]);
 
+  const onPrint = useCallback(async () => {
+    if (!url) {
+      setPrintState('fail');
+      window.setTimeout(() => setPrintState('idle'), 2500);
+      return;
+    }
+    const result = await openGuestChatNoticePrint({ roomNo: roomLabel, guestUrl: url });
+    if (result === 'ok') {
+      setPrintState('ok');
+      window.setTimeout(() => setPrintState('idle'), 2000);
+    } else {
+      setPrintState('fail');
+      window.setTimeout(() => setPrintState('idle'), 2500);
+    }
+  }, [url, roomLabel]);
+
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-3" aria-label={`${roomLabel}호 Guest QR`}>
       <h3 className="mb-2 text-xs font-bold text-gray-700">객실 QR 코드</h3>
@@ -130,14 +148,24 @@ export function RoomGuestQrCard({
         ) : (
           <p className="text-center text-[11px] text-gray-500">유효하지 않은 객실 링크</p>
         )}
-        <button
-          type="button"
-          onClick={() => void onCopy()}
-          disabled={!url}
-          className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          링크 복사
-        </button>
+        <div className="flex w-full gap-2">
+          <button
+            type="button"
+            onClick={() => void onCopy()}
+            disabled={!url}
+            className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            링크 복사
+          </button>
+          <button
+            type="button"
+            onClick={() => void onPrint()}
+            disabled={!url}
+            className="flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-900 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            QR 출력
+          </button>
+        </div>
         {copyState === 'ok' && (
           <p className="text-center text-[11px] font-medium text-green-600" role="status">
             링크가 복사되었습니다.
@@ -146,6 +174,16 @@ export function RoomGuestQrCard({
         {copyState === 'fail' && (
           <p className="text-center text-[11px] font-medium text-red-600" role="status">
             복사에 실패했습니다.
+          </p>
+        )}
+        {printState === 'ok' && (
+          <p className="text-center text-[11px] font-medium text-green-600" role="status">
+            인쇄 창을 열었습니다.
+          </p>
+        )}
+        {printState === 'fail' && (
+          <p className="text-center text-[11px] font-medium text-red-600" role="status">
+            인쇄 창을 열 수 없습니다. 브라우저의 팝업 허용 설정을 확인해 주세요.
           </p>
         )}
       </div>

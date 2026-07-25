@@ -26,6 +26,8 @@ test('RoomGuestQrCard uses shared guest URL SoT + local qrcode (no external QR H
   assert.match(card, /navigator\.clipboard\.writeText/);
   assert.match(card, /링크가 복사되었습니다/);
   assert.match(card, /객실 QR 코드/);
+  assert.match(card, /QR 출력/);
+  assert.match(card, /openGuestChatNoticePrint/);
   assert.doesNotMatch(card, /api\.qrserver\.com/);
   assert.doesNotMatch(card, /guestQrImageUrl/);
 });
