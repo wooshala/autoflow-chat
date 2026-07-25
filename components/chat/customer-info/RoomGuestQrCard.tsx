@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 
-import { guestChannelUrl } from '@/lib/guest-spike/guestRoomUrl';
+import { guestChannelUrl, resolveGuestChannelKey } from '@/lib/guest-spike/guestRoomUrl';
 
 /** Display size in the panel (CSS). */
 const QR_DISPLAY_PX = 160;
@@ -28,13 +28,25 @@ export function RoomGuestQrCard({
   /** Display label digits (e.g. "201"). Falls back to digits parsed from channelKey. */
   roomNo?: string | null;
 }) {
+  const resolvedKey = useMemo(
+    () => resolveGuestChannelKey(channelKey) ?? resolveGuestChannelKey(roomNo),
+    [channelKey, roomNo],
+  );
+
   const roomLabel = useMemo(() => {
     if (roomNo && String(roomNo).trim()) return String(roomNo).replace(/[^\d]/g, '') || String(roomNo);
-    const m = /^room-(\d+)/.exec(channelKey);
+    const m = resolvedKey ? /^room-(\d+)/.exec(resolvedKey) : null;
     return m?.[1] ?? channelKey;
-  }, [channelKey, roomNo]);
+  }, [channelKey, roomNo, resolvedKey]);
 
-  const url = useMemo(() => guestChannelUrl(channelKey), [channelKey]);
+  const url = useMemo(() => {
+    if (!resolvedKey) return null;
+    try {
+      return guestChannelUrl(resolvedKey);
+    } catch {
+      return null;
+    }
+  }, [resolvedKey]);
 
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrError, setQrError] = useState(false);
@@ -44,6 +56,13 @@ export function RoomGuestQrCard({
     let cancelled = false;
     setQrDataUrl(null);
     setQrError(false);
+
+    if (!url) {
+      setQrError(true);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     QRCode.toDataURL(url, QR_OPTS)
       .then((dataUrl) => {
@@ -59,6 +78,11 @@ export function RoomGuestQrCard({
   }, [url]);
 
   const onCopy = useCallback(async () => {
+    if (!url) {
+      setCopyState('fail');
+      window.setTimeout(() => setCopyState('idle'), 2000);
+      return;
+    }
     try {
       await navigator.clipboard.writeText(url);
       setCopyState('ok');
@@ -77,7 +101,7 @@ export function RoomGuestQrCard({
           className="flex h-[160px] w-[160px] max-w-full items-center justify-center rounded-md border border-gray-100 bg-white p-1"
           style={{ width: QR_DISPLAY_PX, height: QR_DISPLAY_PX }}
         >
-          {qrError ? (
+          {qrError || !url ? (
             <p className="px-2 text-center text-[11px] font-medium text-red-600">QR을 만들지 못했습니다.</p>
           ) : qrDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- data: URL from local qrcode
@@ -93,19 +117,24 @@ export function RoomGuestQrCard({
             <div className="h-8 w-8 animate-pulse rounded bg-gray-200" aria-hidden />
           )}
         </div>
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={url}
-          className="max-w-full truncate text-center text-[11px] font-medium text-blue-600 hover:underline"
-        >
-          {url}
-        </a>
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={url}
+            className="max-w-full truncate text-center text-[11px] font-medium text-blue-600 hover:underline"
+          >
+            {url}
+          </a>
+        ) : (
+          <p className="text-center text-[11px] text-gray-500">유효하지 않은 객실 링크</p>
+        )}
         <button
           type="button"
           onClick={() => void onCopy()}
-          className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-100"
+          disabled={!url}
+          className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           링크 복사
         </button>

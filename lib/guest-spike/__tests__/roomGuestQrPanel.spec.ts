@@ -20,6 +20,7 @@ test('CustomerInformationPanel mounts RoomGuestQrCard for the selected room', ()
 
 test('RoomGuestQrCard uses shared guest URL SoT + local qrcode (no external QR HTTP)', () => {
   assert.match(card, /guestChannelUrl/);
+  assert.match(card, /resolveGuestChannelKey/);
   assert.match(card, /from 'qrcode'/);
   assert.match(card, /QRCode\.toDataURL/);
   assert.match(card, /navigator\.clipboard\.writeText/);

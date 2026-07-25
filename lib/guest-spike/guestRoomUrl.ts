@@ -2,6 +2,8 @@
 // Precedence: explicit baseUrl → NEXT_PUBLIC_QR_BASE_URL → QR_BASE_URL → production default.
 // Path rule: /g/room-{roomNo} (channel_key = room-{roomNo}). Never put session/token in the URL.
 
+import { lookupChannelKey } from './channels';
+
 export const GUEST_QR_DEFAULT_BASE_URL = 'https://autoflow-mvp.vercel.app';
 
 export function resolveGuestQrBaseUrl(input?: {
@@ -24,12 +26,40 @@ export function guestRoomChannelKey(roomNo: string): string {
   return `room-${digits || roomNo}`;
 }
 
+/**
+ * Normalize any staff/guest room identifier to a guest channel_key (`room-NNN`).
+ * Reuses `lookupChannelKey` for `cust-*`. Rejects empty / undefined / double-prefix junk.
+ */
+export function resolveGuestChannelKey(input: string | null | undefined): string | null {
+  if (input == null) return null;
+  const raw = String(input).trim();
+  if (!raw || raw === 'undefined' || raw === 'null') return null;
+
+  // Room Navigation id → guest channel (SoT in channels.ts)
+  const fromCust = lookupChannelKey(raw);
+  if (fromCust) return fromCust;
+
+  // Canonical guest channel (incl. optional QA suffix like room-308-live)
+  if (/^room-\d{3,4}(?:-[a-z0-9]+)?$/i.test(raw)) return raw;
+
+  // Bare room number / "201호" — never prepend room- onto an already-prefixed key
+  if (/^room-/i.test(raw)) return null; // e.g. room-room-201
+  const digits = raw.replace(/[^\d]/g, '');
+  if (/^\d{3,4}$/.test(digits)) return `room-${digits}`;
+
+  return null;
+}
+
 export function guestChannelPath(channelKey: string): string {
   return `/g/${channelKey}`;
 }
 
 export function guestChannelUrl(channelKey: string, baseUrl?: string): string {
-  return `${resolveGuestQrBaseUrl({ baseUrl })}${guestChannelPath(channelKey)}`;
+  const key = resolveGuestChannelKey(channelKey);
+  if (!key) {
+    throw new Error(`Invalid guest channel key: ${String(channelKey)}`);
+  }
+  return `${resolveGuestQrBaseUrl({ baseUrl })}${guestChannelPath(key)}`;
 }
 
 export function guestRoomUrl(roomNo: string, baseUrl?: string): string {

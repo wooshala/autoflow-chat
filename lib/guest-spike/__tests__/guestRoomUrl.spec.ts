@@ -7,6 +7,7 @@ import {
   guestChannelUrl,
   guestRoomChannelKey,
   guestRoomUrl,
+  resolveGuestChannelKey,
   resolveGuestQrBaseUrl,
 } from '../guestRoomUrl.ts';
 
@@ -32,8 +33,24 @@ test('room channel key and URL match print pipeline (/g/room-{n})', () => {
   assert.equal(guestRoomUrl('201'), 'https://autoflow-mvp.vercel.app/g/room-201');
   assert.equal(guestChannelUrl('room-305'), 'https://autoflow-mvp.vercel.app/g/room-305');
   assert.equal(guestChannelUrl('room-201'), 'https://autoflow-mvp.vercel.app/g/room-201');
-  // no double room- prefix when channelKey is already canonical
   assert.doesNotMatch(guestChannelUrl('room-201'), /room-room-/);
+});
+
+test('resolveGuestChannelKey maps cust-* via lookupChannelKey; rejects junk', () => {
+  assert.equal(resolveGuestChannelKey('room-201'), 'room-201');
+  assert.equal(resolveGuestChannelKey('room-305'), 'room-305');
+  assert.equal(resolveGuestChannelKey('cust-201'), 'room-201');
+  assert.equal(resolveGuestChannelKey('cust-305'), 'room-305');
+  assert.equal(resolveGuestChannelKey('201'), 'room-201');
+  assert.equal(resolveGuestChannelKey(''), null);
+  assert.equal(resolveGuestChannelKey(undefined), null);
+  assert.equal(resolveGuestChannelKey('undefined'), null);
+  assert.equal(resolveGuestChannelKey('room-room-201'), null);
+  assert.equal(guestChannelUrl('cust-201'), 'https://autoflow-mvp.vercel.app/g/room-201');
+  assert.throws(() => guestChannelUrl(''), /Invalid guest channel key/);
+  assert.throws(() => guestChannelUrl('undefined'), /Invalid guest channel key/);
+  assert.doesNotMatch(guestChannelUrl('cust-201'), /\/g\/cust-/);
+  assert.doesNotMatch(guestChannelUrl('cust-201'), /undefined/);
 });
 
 test('guestRoomUrl.ts has no third-party QR HTTP service', async () => {
