@@ -1,7 +1,7 @@
 'use client';
 
-// A4 Guest Chat notice — Phase 2 Layout A (Service-first Digital Concierge).
-// Content SoT: guestChatNoticeConfig + guestChatNoticeCopy + guestChatNoticeServices.
+// A4 Guest Chat notice — Phase 2 Layout A + dual room Wi-Fi QR (2.4G / 5G).
+// Content SoT: guestChatNoticeConfig + guestChatNoticeCopy + guestChatNoticeServices + roomWifiCredentials.
 
 import {
   GUEST_CHAT_EMERGENCY_PHONE,
@@ -13,6 +13,7 @@ import {
   GUEST_NOTICE_SERVICE_ICON,
   GUEST_NOTICE_SERVICE_IDS,
 } from '@/lib/guest-spike/guestChatNoticeServices';
+import { roomWifiFor } from '@/lib/guest-spike/roomWifiCredentials.generated';
 import { langDisplayName } from '@/lib/guest-spike/languages';
 
 /** Slim language strip (4 primary languages on printed sheet). */
@@ -44,9 +45,10 @@ export function GuestChatNoticeSheet({
   const ko = guestChatNoticeCopy.ko;
   const en = guestChatNoticeCopy.en;
   const qrMm = GUEST_CHAT_NOTICE_QR_MM;
+  const wifi = roomWifiFor(room);
 
   return (
-    <main className="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="service-first">
+    <main className="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="service-first-wifi">
       {/* ① Header */}
       <header className="gn-header">
         <div className="gn-hotel">{hotel}</div>
@@ -59,35 +61,67 @@ export function GuestChatNoticeSheet({
         <p className="gn-value-en">{en.valueLine}</p>
       </header>
 
-      {/* ② Hero QR */}
-      <section className="gn-hero" aria-label="QR">
-        <div className="gn-hero-side gn-hero-left">
-          <div className="gn-hero-icon" aria-hidden>
-            📱
-          </div>
-          <p className="gn-hero-ko">{ko.scanLead}</p>
-          <p className="gn-hero-en">{en.scanLead}</p>
-        </div>
-
-        <div className="gn-hero-center">
+      {/* ② Guest Chat QR + Wi-Fi QR pair */}
+      <section className="gn-qr-row" aria-label="QR">
+        <div className="gn-chat-block">
+          <div className="gn-block-caption">{ko.chatQrCaption}</div>
           <div
             className="gn-qr"
             style={{ width: `${qrMm}mm`, height: `${qrMm}mm` }}
             dangerouslySetInnerHTML={{ __html: qrSvg }}
           />
           <div className="gn-url">{guestUrl}</div>
+          <p className="gn-block-hint">{ko.scanLead}</p>
+          <p className="gn-block-hint-en">{en.scanLead}</p>
         </div>
 
-        <div className="gn-hero-side gn-hero-right">
-          <div className="gn-hero-icon" aria-hidden>
-            💬
+        <div className="gn-wifi-panel">
+          <div className="gn-wifi-panel-head">
+            <span className="gn-wifi-panel-title">{ko.wifiPanelTitle}</span>
+            <span className="gn-wifi-panel-hint">{ko.wifiScanHint}</span>
           </div>
-          <p className="gn-hero-ko">{ko.scanSupport}</p>
-          <p className="gn-hero-en">{en.scanSupport}</p>
+          {wifi ? (
+            <>
+              <div className="gn-wifi-qrs">
+                <div className="gn-wifi-qr-col">
+                  <div className="gn-wifi-band">{ko.wifi5gLabel}</div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className="gn-wifi-qr-img"
+                    src={wifi.qr5gPath}
+                    alt={`${ko.wifi5gLabel} ${wifi.ssid5g}`}
+                    width={240}
+                    height={240}
+                    style={{ width: `${qrMm}mm`, height: `${qrMm}mm` }}
+                  />
+                  <div className="gn-wifi-ssid">{wifi.ssid5g}</div>
+                </div>
+                <div className="gn-wifi-qr-col">
+                  <div className="gn-wifi-band">{ko.wifi24Label}</div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className="gn-wifi-qr-img"
+                    src={wifi.qr24Path}
+                    alt={`${ko.wifi24Label} ${wifi.ssid24}`}
+                    width={240}
+                    height={240}
+                    style={{ width: `${qrMm}mm`, height: `${qrMm}mm` }}
+                  />
+                  <div className="gn-wifi-ssid">{wifi.ssid24}</div>
+                </div>
+              </div>
+              <div className="gn-wifi-password">
+                <span className="gn-wifi-password-label">{ko.wifiPasswordLabel}</span>
+                <span className="gn-wifi-password-value">{wifi.password}</span>
+              </div>
+            </>
+          ) : (
+            <p className="gn-wifi-missing">{ko.wifiNightstand}</p>
+          )}
         </div>
       </section>
 
-      {/* ③ Service grid — Digital Concierge menu */}
+      {/* ③ Service grid */}
       <section className="gn-services" aria-label="Services">
         <h2 className="gn-services-title">{ko.servicesTitle}</h2>
         <ul className="gn-service-grid">
@@ -161,16 +195,8 @@ export function GuestChatNoticeSheet({
         </div>
       </section>
 
-      {/* ⑥ Utility */}
-      <section className="gn-bottom">
-        <div className="gn-bottom-box gn-wifi">
-          <div className="gn-bottom-head">
-            <span aria-hidden>📶</span>
-            <span>Wi-Fi</span>
-          </div>
-          <p className="gn-bottom-body">{ko.wifiNightstand}</p>
-          <p className="gn-bottom-en">{en.wifiNightstand}</p>
-        </div>
+      {/* ⑥ Emergency */}
+      <section className="gn-bottom gn-bottom-single">
         <div className="gn-bottom-box gn-emergency">
           <div className="gn-bottom-head gn-emergency-head">
             <span aria-hidden>📞</span>

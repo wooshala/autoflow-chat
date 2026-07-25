@@ -1,7 +1,7 @@
 // Guest Chat A4 notice SoT + HTML. Run: npx tsx --test lib/guest-spike/__tests__/guestChatNotice.spec.ts
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -15,6 +15,7 @@ import {
   noticeCopyFor,
 } from '../guestChatNoticeCopy.ts';
 import { buildGuestChatNoticeHtml } from '../guestChatNoticePrintHtml.ts';
+import { ROOM_WIFI_BY_ROOM, roomWifiFor } from '../roomWifiCredentials.generated.ts';
 import { SUPPORTED_LANGS } from '../languages.ts';
 import { guestRoomUrl } from '../guestRoomUrl.ts';
 
@@ -43,10 +44,12 @@ test('notice copy exists for every supported guest language', () => {
     assert.ok(c.frontDeskLabel.length > 0, lang);
     assert.ok(c.wifiNightstand.length > 0, lang);
     assert.match(c.wifiNightstand, /Wi-?Fi|Wi‑Fi|WIFI|wifi|와이파이/i);
-    // Must not embed concrete Wi-Fi credentials
+    // Copy SoT must not embed concrete Wi-Fi credential values
     assert.doesNotMatch(c.wifiNightstand, /\bSSID\s*[:=]/);
     assert.doesNotMatch(c.wifiNightstand, /Password\s*[:=]/i);
     assert.doesNotMatch(c.wifiNightstand, /비밀번호\s*[:=]/);
+    assert.ok(c.wifiPanelTitle.length > 0, lang);
+    assert.ok(c.wifiPasswordLabel.length > 0, lang);
     // Soft after-checkout CTA — no “always available after checkout” guarantee
     assert.doesNotMatch(c.afterCheckout, /항상|always available|체크아웃 후에도 항상/i);
     assert.doesNotMatch(c.privacyBody, /자동 종료|automatically (end|close)|퇴실 후.*종료/i);
@@ -58,10 +61,25 @@ test('notice copy exists for every supported guest language', () => {
   }
 });
 
-test('Korean Wi-Fi copy points to in-room sticker without credentials', () => {
-  assert.match(guestChatNoticeCopy.ko.wifiNightstand, /Wi-Fi/);
-  assert.match(guestChatNoticeCopy.ko.wifiNightstand, /스티커/);
-  assert.doesNotMatch(guestChatNoticeCopy.ko.wifiNightstand, /SSID|비밀번호\s*[:=]/);
+test('Korean Wi-Fi copy refers to on-sheet QR panel (credentials live in roomWifi SoT)', () => {
+  assert.match(guestChatNoticeCopy.ko.wifiPanelTitle, /Wi-Fi/);
+  assert.match(guestChatNoticeCopy.ko.wifiScanHint, /QR|비밀번호/);
+  assert.match(guestChatNoticeCopy.ko.wifiPasswordLabel, /비밀번호/);
+  // Copy strings themselves must not embed a concrete password value
+  assert.doesNotMatch(guestChatNoticeCopy.ko.wifiNightstand, /A52D33A1/);
+});
+
+test('room Wi-Fi credentials cover all roster rooms with dual QR paths', () => {
+  assert.equal(Object.keys(ROOM_WIFI_BY_ROOM).length, 39);
+  const w201 = roomWifiFor('201');
+  assert.ok(w201);
+  assert.match(w201!.ssid24, /U\+Net/);
+  assert.match(w201!.ssid5g, /_5G$/);
+  assert.ok(w201!.password.length >= 6);
+  assert.match(w201!.qr24Path, /\/wifi-qr\/201\/24g\.jpg/);
+  assert.match(w201!.qr5gPath, /\/wifi-qr\/201\/5g\.jpg/);
+  assert.ok(existsSync(join(process.cwd(), 'public', 'wifi-qr', '201', '24g.jpg')));
+  assert.ok(existsSync(join(process.cwd(), 'public', 'wifi-qr', '201', '5g.jpg')));
 });
 
 test('language line uses SoT display names', () => {
@@ -86,7 +104,10 @@ test('A4 HTML includes room, URL, 40mm QR, wifi, emergency — no chat UI chrome
     assert.match(html, /호텔 레이블/);
     assert.match(html, new RegExp(`room-${room}`));
     assert.match(html, /010-4657-6680/);
-    assert.match(html, /Wi-Fi 안내 스티커/);
+    assert.match(html, /gn-wifi-panel/);
+    assert.match(html, new RegExp(`/wifi-qr/${room}/5g\\.jpg`));
+    assert.match(html, new RegExp(`/wifi-qr/${room}/24g\\.jpg`));
+    assert.match(html, /gn-wifi-password-value/);
     assert.match(html, /gn-service-grid/);
     assert.match(html, /자동 번역/);
     assert.match(html, /Front Desk/);
@@ -94,7 +115,6 @@ test('A4 HTML includes room, URL, 40mm QR, wifi, emergency — no chat UI chrome
     assert.match(html, /height:\s*40mm/);
     assert.match(html, /@media print/);
     assert.doesNotMatch(html, /010-1234-5678/);
-    assert.doesNotMatch(html, /Password\s*:/i);
     assert.doesNotMatch(html, /링크 복사|QR 출력|고객 정보 입력|미리보기/);
     assert.match(html, /toolbar/);
     assert.match(html, /@media print[\s\S]*\.toolbar[\s\S]*display:\s*none/);
@@ -123,10 +143,11 @@ test('RoomGuestQrCard uses same-document print (no window.open / popup prompt)',
   assert.match(sheet, /GUEST_CHAT_EMERGENCY_PHONE/);
   assert.match(sheet, /guestChatNoticeCopy/);
   assert.match(sheet, /GUEST_NOTICE_SERVICE_IDS/);
-  assert.match(sheet, /service-first/);
+  assert.match(sheet, /roomWifiFor/);
+  assert.match(sheet, /gn-wifi-panel/);
   assert.match(css, /body\.printing-guest-notice/);
   assert.match(css, /\.guest-notice-print-root/);
-  assert.match(css, /\.gn-service-grid/);
+  assert.match(css, /\.gn-wifi-panel/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_QR_MM/);
 });
 
