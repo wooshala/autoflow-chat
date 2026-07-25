@@ -29,7 +29,19 @@ export interface GuestChatNoticeCopy {
   serviceLabels: GuestNoticeServiceLabels;
   /** Auto-translate callout. */
   translateBadge: string;
-  /** Wi-Fi: nightstand sticker — never print real SSID/password values. */
+  /** Guest Chat QR caption. */
+  chatQrCaption: string;
+  /** Wi-Fi panel title. */
+  wifiPanelTitle: string;
+  /** Wi-Fi scan hint under panel title. */
+  wifiScanHint: string;
+  /** 5GHz band label. */
+  wifi5gLabel: string;
+  /** 2.4GHz band label. */
+  wifi24Label: string;
+  /** Password field label (value comes from room credentials). */
+  wifiPasswordLabel: string;
+  /** Short Wi-Fi fallback / footer note (no credential values). */
   wifiNightstand: string;
   /** Trust: availability. */
   hoursTitle: string;
@@ -104,7 +116,13 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
       '택시·관광',
     ),
     translateBadge: '자동 번역 지원',
-    wifiNightstand: '객실 내 Wi-Fi 안내 스티커를 참고하세요.',
+    chatQrCaption: 'Guest Chat',
+    wifiPanelTitle: '객실 Wi-Fi',
+    wifiScanHint: 'QR을 스캔하면 Wi-Fi에 연결됩니다. 노트북은 비밀번호를 입력하세요.',
+    wifi5gLabel: '5G Wi-Fi',
+    wifi24Label: '2.4G Wi-Fi',
+    wifiPasswordLabel: '비밀번호',
+    wifiNightstand: 'Wi-Fi QR과 비밀번호는 위 안내를 이용해 주세요.',
     hoursTitle: '언제든 문의',
     hoursBody: '문의는 언제든지 가능합니다.',
     staffWatchBody: '직원이 실시간으로 확인합니다.',
@@ -139,7 +157,13 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
       'Taxi / local',
     ),
     translateBadge: 'Auto-translate supported',
-    wifiNightstand: 'See the in-room Wi-Fi info sticker.',
+    chatQrCaption: 'Guest Chat',
+    wifiPanelTitle: 'Room Wi-Fi',
+    wifiScanHint: 'Scan a QR to connect. Laptops: enter the password below.',
+    wifi5gLabel: '5G Wi-Fi',
+    wifi24Label: '2.4G Wi-Fi',
+    wifiPasswordLabel: 'Password',
+    wifiNightstand: 'Use the Wi-Fi QR codes and password above.',
     hoursTitle: 'Anytime',
     hoursBody: 'You can message us any time.',
     staffWatchBody: 'Staff check messages in real time.',
@@ -174,7 +198,13 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
       'タクシー・観光',
     ),
     translateBadge: '自動翻訳対応',
-    wifiNightstand: '客室内のWi-Fi案内ステッカーをご確認ください。',
+    chatQrCaption: 'Guest Chat',
+    wifiPanelTitle: '客室Wi-Fi',
+    wifiScanHint: 'QRを読み取るとWi-Fiに接続できます。PCは下のパスワードを入力してください。',
+    wifi5gLabel: '5G Wi-Fi',
+    wifi24Label: '2.4G Wi-Fi',
+    wifiPasswordLabel: 'パスワード',
+    wifiNightstand: '上のWi-Fi QRとパスワードをご利用ください。',
     hoursTitle: 'いつでも',
     hoursBody: 'いつでもお問い合わせいただけます。',
     staffWatchBody: 'スタッフがリアルタイムで確認します。',
@@ -209,7 +239,13 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
       '出租车/观光',
     ),
     translateBadge: '支持自动翻译',
-    wifiNightstand: '请查看客房内的 Wi-Fi 提示贴纸。',
+    chatQrCaption: 'Guest Chat',
+    wifiPanelTitle: '客房 Wi-Fi',
+    wifiScanHint: '扫描二维码即可连接 Wi-Fi。笔记本电脑请输入下方密码。',
+    wifi5gLabel: '5G Wi-Fi',
+    wifi24Label: '2.4G Wi-Fi',
+    wifiPasswordLabel: '密码',
+    wifiNightstand: '请使用上方的 Wi-Fi 二维码与密码。',
     hoursTitle: '随时咨询',
     hoursBody: '随时都可以联系我们。',
     staffWatchBody: '工作人员会实时查看。',
@@ -244,7 +280,13 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
       'Такси / город',
     ),
     translateBadge: 'Автоперевод',
-    wifiNightstand: 'См. наклейку с Wi-Fi в номере.',
+    chatQrCaption: 'Guest Chat',
+    wifiPanelTitle: 'Wi-Fi номера',
+    wifiScanHint: 'Сканируйте QR для подключения. Для ноутбука введите пароль ниже.',
+    wifi5gLabel: '5G Wi-Fi',
+    wifi24Label: '2.4G Wi-Fi',
+    wifiPasswordLabel: 'Пароль',
+    wifiNightstand: 'Используйте QR Wi-Fi и пароль выше.',
     hoursTitle: 'В любое время',
     hoursBody: 'Пишите нам в любое время.',
     staffWatchBody: 'Персонал видит сообщения сразу.',
@@ -279,7 +321,13 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
       'Taxi / visite',
     ),
     translateBadge: 'Traduction auto',
-    wifiNightstand: 'Voir l’autocollant Wi-Fi dans la chambre.',
+    chatQrCaption: 'Guest Chat',
+    wifiPanelTitle: 'Wi-Fi chambre',
+    wifiScanHint: 'Scannez un QR pour vous connecter. PC : saisissez le mot de passe ci-dessous.',
+    wifi5gLabel: '5G Wi-Fi',
+    wifi24Label: '2.4G Wi-Fi',
+    wifiPasswordLabel: 'Mot de passe',
+    wifiNightstand: 'Utilisez les QR Wi-Fi et le mot de passe ci-dessus.',
     hoursTitle: 'À tout moment',
     hoursBody: 'Vous pouvez nous écrire à tout moment.',
     staffWatchBody: 'Le personnel lit vos messages en temps réel.',
@@ -314,7 +362,13 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
       'Taxi / turismo',
     ),
     translateBadge: 'Traducción automática',
-    wifiNightstand: 'Consulte la pegatina Wi-Fi de la habitación.',
+    chatQrCaption: 'Guest Chat',
+    wifiPanelTitle: 'Wi-Fi habitación',
+    wifiScanHint: 'Escanee un QR para conectarse. Portátil: introduzca la contraseña abajo.',
+    wifi5gLabel: '5G Wi-Fi',
+    wifi24Label: '2.4G Wi-Fi',
+    wifiPasswordLabel: 'Contraseña',
+    wifiNightstand: 'Use los QR Wi-Fi y la contraseña de arriba.',
     hoursTitle: 'En cualquier momento',
     hoursBody: 'Puede escribirnos a cualquier hora.',
     staffWatchBody: 'El personal ve los mensajes en tiempo real.',
