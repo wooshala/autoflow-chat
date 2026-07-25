@@ -5,11 +5,12 @@
 
 import { createHash } from 'node:crypto';
 
-// 30 days — long enough that a guest is NEVER locked out of their OWN chat by cookie
-// expiry during a stay (incl. multi-night). Access revocation is DB-driven (status='closed'),
-// NOT cookie expiry: a closed session's cookie only ever points at a closed session, so an
-// ex-guest can never reach the next guest's chat. NEVER use a session (browser-close) cookie —
-// mobile in-app browsers / memory pressure drop those far too easily.
+// 30 days — long enough that a guest is NEVER locked out of their OWN open chat by cookie
+// expiry during a stay (incl. multi-night). Access while chatting is DB-driven (status='open').
+// After staff ends the session (status='closed'), the next GET may create a NEW session and
+// Set-Cookie overwrites this cookie with the new id — QR remains reusable on the same browser.
+// NEVER use a session (browser-close) cookie — mobile in-app browsers / memory pressure drop
+// those far too easily.
 export const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 export function channelCookieName(channelKey: string): string {
