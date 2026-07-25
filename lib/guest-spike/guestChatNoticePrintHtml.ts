@@ -1,6 +1,6 @@
 // Builds a self-contained A4 Guest Chat notice HTML document (batch PDF / unit tests).
 // Staff UI print uses React GuestChatNoticeSheet + same-document window.print() instead.
-// Content SoT remains guestChatNoticeConfig + guestChatNoticeCopy (do not diverge).
+// Layout: Phase 2 Service-first (Digital Concierge). Content SoT must not diverge.
 
 import {
   GUEST_CHAT_EMERGENCY_PHONE,
@@ -9,26 +9,27 @@ import {
   GUEST_CHAT_NOTICE_QR_MM,
 } from './guestChatNoticeConfig';
 import { guestChatNoticeCopy } from './guestChatNoticeCopy';
+import {
+  GUEST_NOTICE_SERVICE_ICON,
+  GUEST_NOTICE_SERVICE_IDS,
+} from './guestChatNoticeServices';
 import { SUPPORTED_LANGS, langDisplayName, type GuestLang } from './languages';
 
 export type GuestChatNoticePrintInput = {
   roomNo: string;
   guestUrl: string;
-  /** SVG markup from QRCode.toString(..., { type: 'svg' }). */
   qrSvg: string;
   hotelName?: string;
 };
 
-const NOTICE_CARD_LANGS = ['ko', 'en', 'zh-CN', 'ja'] as const;
+const NOTICE_STRIP_LANGS = ['ko', 'en', 'zh-CN', 'ja'] as const;
 
-const LANG_FLAG: Record<(typeof NOTICE_CARD_LANGS)[number], string> = {
+const LANG_FLAG: Record<(typeof NOTICE_STRIP_LANGS)[number], string> = {
   ko: '🇰🇷',
   en: '🇺🇸',
   'zh-CN': '🇨🇳',
   ja: '🇯🇵',
 };
-
-const TOPIC_ICONS = ['🧴', '💧', '🧹', '🛎️', '💬'] as const;
 
 function esc(s: string): string {
   return String(s)
@@ -47,16 +48,14 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
   const margin = GUEST_CHAT_NOTICE_MARGIN_MM;
   const qrMm = GUEST_CHAT_NOTICE_QR_MM;
 
-  const langCards = NOTICE_CARD_LANGS.map((lang) => {
+  const services = GUEST_NOTICE_SERVICE_IDS.map(
+    (id) =>
+      `<li class="gn-service-item"><span class="gn-service-icon">${GUEST_NOTICE_SERVICE_ICON[id]}</span><span class="gn-service-label">${esc(ko.serviceLabels[id])}</span></li>`,
+  ).join('');
+
+  const langPills = NOTICE_STRIP_LANGS.map((lang) => {
     const c = guestChatNoticeCopy[lang];
-    const icons = TOPIC_ICONS.map((icon) => `<li><span class="gn-topic-icon">${icon}</span></li>`).join('');
-    return `<article class="gn-lang-card">
-      <div class="gn-lang-head"><span class="gn-lang-flag">${LANG_FLAG[lang]}</span><span class="gn-lang-name">${esc(langDisplayName(lang))}</span></div>
-      <p class="gn-lang-intro">${esc(c.helpIntro)}</p>
-      <p class="gn-lang-topics-text">${esc(c.helpTopics)}</p>
-      <div class="gn-lang-divider"></div>
-      <ul class="gn-lang-topics">${icons}</ul>
-    </article>`;
+    return `<div class="gn-lang-pill"><span class="gn-lang-flag">${LANG_FLAG[lang]}</span><span class="gn-lang-name">${esc(langDisplayName(lang))}</span><span class="gn-lang-hint">${esc(c.helpIntro)}</span></div>`;
   }).join('');
 
   return `<!DOCTYPE html>
@@ -73,9 +72,7 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       color: #111827; background: #fff;
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
-    .toolbar {
-      display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 8px;
-    }
+    .toolbar { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
     .toolbar button {
       font: inherit; font-weight: 700; padding: 8px 14px; border-radius: 8px;
       border: 1px solid #cbd5e1; background: #f8fafc; cursor: pointer;
@@ -86,21 +83,22 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       --gn-ink: #111827; --gn-muted: #4b5563; --gn-box: #f3f4f6;
       --gn-info: #eef2ff; --gn-url: #dbeafe; --gn-danger: #b91c1c; --gn-card-border: #e5e7eb;
       box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0 auto;
-      padding: 11mm 13mm 9mm; display: flex; flex-direction: column; gap: 4mm;
+      padding: 9mm 12mm 8mm; display: flex; flex-direction: column; gap: 3.2mm;
       color: var(--gn-ink); background: #fff;
     }
     .gn-header { text-align: center; }
-    .gn-hotel { font-size: 15pt; font-weight: 700; letter-spacing: 0.06em; color: var(--gn-gold); margin-bottom: 2.2mm; }
+    .gn-hotel { font-size: 13pt; font-weight: 700; letter-spacing: 0.06em; color: var(--gn-gold); margin-bottom: 1.8mm; }
     .gn-rule { height: 0; border: 0; border-top: 0.35mm solid var(--gn-gold-line); width: 100%; }
-    .gn-room { margin-top: 2.2mm; font-size: 32pt; font-weight: 800; line-height: 1.02; }
-    .gn-room-en { margin-top: 0.6mm; margin-bottom: 2.2mm; font-size: 11pt; font-weight: 700; color: var(--gn-gold); }
-    .gn-title { margin: 2.5mm 0 0; font-size: 16pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-title-lead { margin: 1.4mm auto 0; max-width: 145mm; font-size: 9pt; font-weight: 600; color: var(--gn-muted); line-height: 1.35; }
-    .gn-hero { display: grid; grid-template-columns: 1fr auto 1fr; gap: 3.5mm; align-items: center; }
-    .gn-hero-side { text-align: center; padding: 0 1mm; }
-    .gn-hero-icon { font-size: 18pt; margin-bottom: 1.8mm; }
-    .gn-hero-ko { margin: 0; font-size: 8.5pt; font-weight: 700; line-height: 1.35; }
-    .gn-hero-en { margin: 1.2mm 0 0; font-size: 7pt; color: var(--gn-muted); line-height: 1.3; }
+    .gn-room { margin-top: 1.8mm; font-size: 28pt; font-weight: 800; line-height: 1.02; }
+    .gn-room-en { margin-top: 0.4mm; margin-bottom: 1.8mm; font-size: 10pt; font-weight: 700; color: var(--gn-gold); }
+    .gn-title { margin: 2mm 0 0; font-size: 14pt; font-weight: 800; color: var(--gn-navy); }
+    .gn-value { margin: 1.4mm auto 0; max-width: 160mm; font-size: 10pt; font-weight: 700; line-height: 1.3; }
+    .gn-value-en { margin: 0.6mm auto 0; max-width: 160mm; font-size: 7.5pt; color: var(--gn-muted); }
+    .gn-hero { display: grid; grid-template-columns: 1fr auto 1fr; gap: 3mm; align-items: center; }
+    .gn-hero-side { text-align: center; }
+    .gn-hero-icon { font-size: 16pt; margin-bottom: 1.4mm; }
+    .gn-hero-ko { margin: 0; font-size: 8pt; font-weight: 700; line-height: 1.35; }
+    .gn-hero-en { margin: 1mm 0 0; font-size: 6.5pt; color: var(--gn-muted); }
     .gn-hero-center { display: flex; flex-direction: column; align-items: center; }
     .gn-qr {
       width: ${qrMm}mm; height: ${qrMm}mm; padding: 2mm; box-sizing: border-box;
@@ -109,37 +107,38 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     }
     .gn-qr svg { width: 100%; height: 100%; display: block; }
     .gn-url {
-      margin-top: 2mm; max-width: 68mm; padding: 1.3mm 3mm; border-radius: 999px;
-      background: var(--gn-url); color: var(--gn-navy); font-size: 6.2pt; font-weight: 600;
+      margin-top: 1.6mm; max-width: 68mm; padding: 1.1mm 2.8mm; border-radius: 999px;
+      background: var(--gn-url); color: var(--gn-navy); font-size: 5.8pt; font-weight: 600;
       font-family: ui-monospace, Consolas, monospace; word-break: break-all; text-align: center;
     }
-    .gn-cta { margin: 2.2mm 0 0; max-width: 72mm; text-align: center; font-size: 8.2pt; font-weight: 700; color: var(--gn-navy); line-height: 1.35; }
-    .gn-langs { display: grid; grid-template-columns: repeat(4, 1fr); border: 0.35mm solid var(--gn-card-border); border-radius: 2.2mm; overflow: hidden; }
-    .gn-lang-card { padding: 2.4mm 2.2mm; border-right: 0.3mm solid var(--gn-card-border); }
-    .gn-lang-card:last-child { border-right: 0; }
-    .gn-lang-head { display: flex; align-items: center; justify-content: center; gap: 1.2mm; margin-bottom: 1.4mm; }
-    .gn-lang-name { font-size: 8.2pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-lang-intro { margin: 0; font-size: 6.4pt; font-weight: 600; text-align: center; line-height: 1.35; }
-    .gn-lang-topics-text { margin: 1mm 0 0; font-size: 5.6pt; color: var(--gn-muted); text-align: center; line-height: 1.3; }
-    .gn-lang-divider { border: 0; border-top: 0.25mm solid #e5e7eb; margin: 1.6mm 0 1.4mm; }
-    .gn-lang-topics { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 1mm; }
-    .gn-topic-icon { font-size: 10pt; }
-    .gn-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; }
-    .gn-info-card { background: var(--gn-info); border-radius: 2mm; padding: 2.8mm 2.2mm; text-align: center; border: 0.25mm solid #e0e7ff; }
-    .gn-info-icon { font-size: 13pt; margin-bottom: 1.2mm; }
-    .gn-info-title { font-size: 8.5pt; font-weight: 800; color: var(--gn-navy); margin-bottom: 1mm; }
-    .gn-info-body { font-size: 6.8pt; font-weight: 600; line-height: 1.35; }
-    .gn-info-en { margin-top: 0.8mm; font-size: 5.8pt; color: var(--gn-muted); line-height: 1.3; }
-    .gn-bottom { display: grid; grid-template-columns: 1.4fr 1fr; gap: 2.5mm; }
-    .gn-bottom-box { border: 0.35mm solid #d1d5db; border-radius: 2mm; padding: 2.6mm 3mm; background: var(--gn-box); }
-    .gn-bottom-head { display: flex; align-items: center; gap: 1.5mm; font-size: 9pt; font-weight: 800; margin-bottom: 1.5mm; }
-    .gn-bottom-body { margin: 0; font-size: 7pt; color: var(--gn-muted); line-height: 1.4; }
+    .gn-services { border: 0.35mm solid var(--gn-card-border); border-radius: 2mm; padding: 2.4mm 2.5mm; }
+    .gn-services-title { margin: 0 0 2mm; text-align: center; font-size: 9pt; font-weight: 800; color: var(--gn-navy); }
+    .gn-service-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.6mm 1.2mm; }
+    .gn-service-item { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.8mm; }
+    .gn-service-icon { font-size: 13pt; }
+    .gn-service-label { font-size: 6pt; font-weight: 700; }
+    .gn-lang-strip { border: 0.3mm solid var(--gn-card-border); border-radius: 2mm; padding: 2mm 2.2mm; background: var(--gn-box); }
+    .gn-lang-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5mm; }
+    .gn-lang-pill { background: #fff; border-radius: 1.5mm; padding: 1.6mm 1.2mm; text-align: center; border: 0.2mm solid #e5e7eb; }
+    .gn-lang-flag { font-size: 9pt; display: block; margin-bottom: 0.6mm; }
+    .gn-lang-name { display: block; font-size: 7.5pt; font-weight: 800; color: var(--gn-navy); }
+    .gn-lang-hint { display: block; margin-top: 0.8mm; font-size: 5.5pt; color: var(--gn-muted); line-height: 1.25; }
+    .gn-translate { margin-top: 1.6mm; display: flex; justify-content: center; align-items: baseline; gap: 2mm; flex-wrap: wrap; }
+    .gn-translate-badge { font-size: 8pt; font-weight: 800; color: var(--gn-navy); background: var(--gn-info); border: 0.25mm solid #c7d2fe; border-radius: 999px; padding: 0.8mm 3mm; }
+    .gn-translate-en { font-size: 6.5pt; color: var(--gn-muted); font-weight: 600; }
+    .gn-trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; }
+    .gn-trust-chip { display: flex; gap: 1.4mm; background: var(--gn-info); border-radius: 1.8mm; padding: 2mm 1.8mm; border: 0.2mm solid #e0e7ff; }
+    .gn-trust-icon { font-size: 10pt; }
+    .gn-trust-ko { font-size: 6.5pt; font-weight: 700; line-height: 1.3; }
+    .gn-trust-en { margin-top: 0.5mm; font-size: 5.4pt; color: var(--gn-muted); }
+    .gn-bottom { display: grid; grid-template-columns: 1.2fr 1fr; gap: 2.2mm; }
+    .gn-bottom-box { border: 0.35mm solid #d1d5db; border-radius: 2mm; padding: 2.2mm 2.8mm; background: var(--gn-box); }
+    .gn-bottom-head { display: flex; align-items: center; gap: 1.4mm; font-size: 8.5pt; font-weight: 800; margin-bottom: 1.2mm; }
+    .gn-bottom-body { margin: 0; font-size: 7.5pt; font-weight: 600; line-height: 1.35; }
+    .gn-bottom-en { margin: 0.6mm 0 0; font-size: 6pt; color: var(--gn-muted); }
     .gn-emergency-head { color: var(--gn-danger); }
-    .gn-emergency-phone { margin: 0.5mm 0 0; font-size: 15pt; font-weight: 800; color: var(--gn-danger); }
-    .gn-footer {
-      margin-top: auto; padding-top: 1.5mm; border-top: 0.25mm solid #e5e7eb;
-      text-align: center; font-size: 6.5pt; color: #6b7280; display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5mm;
-    }
+    .gn-emergency-phone { margin: 0.4mm 0 0; font-size: 13pt; font-weight: 800; color: var(--gn-danger); }
+    .gn-footer { margin-top: auto; padding-top: 1.2mm; border-top: 0.25mm solid #e5e7eb; text-align: center; font-size: 6pt; color: #6b7280; display: flex; flex-wrap: wrap; justify-content: center; gap: 1.4mm; }
     .gn-footer-sep { color: #d1d5db; }
     @media print {
       .toolbar, .no-print { display: none !important; }
@@ -157,7 +156,7 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     <button type="button" onclick="window.close()">닫기</button>
     <button type="button" class="primary" onclick="window.print()">인쇄</button>
   </div>
-  <main class="guest-notice-sheet" data-guest-notice-sheet="1">
+  <main class="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="service-first">
     <header class="gn-header">
       <div class="gn-hotel">${esc(hotel)}</div>
       <div class="gn-rule"></div>
@@ -165,7 +164,8 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       <div class="gn-room-en">Room ${esc(room)}</div>
       <div class="gn-rule"></div>
       <h1 class="gn-title">${esc(ko.roomChatSubtitle)}</h1>
-      <p class="gn-title-lead">${esc(ko.helpIntro)}</p>
+      <p class="gn-value">${esc(ko.valueLine)}</p>
+      <p class="gn-value-en">${esc(en.valueLine)}</p>
     </header>
     <section class="gn-hero">
       <div class="gn-hero-side">
@@ -176,7 +176,6 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       <div class="gn-hero-center">
         <div class="gn-qr" style="width:${qrMm}mm;height:${qrMm}mm">${input.qrSvg}</div>
         <div class="gn-url">${esc(input.guestUrl)}</div>
-        <p class="gn-cta">${esc(ko.helpTopics)}</p>
       </div>
       <div class="gn-hero-side">
         <div class="gn-hero-icon">💬</div>
@@ -184,34 +183,31 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
         <p class="gn-hero-en">${esc(en.scanSupport)}</p>
       </div>
     </section>
-    <section class="gn-langs">${langCards}</section>
-    <section class="gn-info">
-      <div class="gn-info-card">
-        <div class="gn-info-icon">🕐</div>
-        <div class="gn-info-title">${esc(ko.hoursTitle)}</div>
-        <div class="gn-info-body">${esc(ko.hoursBody)}</div>
-        <div class="gn-info-en">${esc(en.hoursBody)}</div>
+    <section class="gn-services">
+      <h2 class="gn-services-title">${esc(ko.servicesTitle)}</h2>
+      <ul class="gn-service-grid">${services}</ul>
+    </section>
+    <section class="gn-lang-strip">
+      <div class="gn-lang-row">${langPills}</div>
+      <div class="gn-translate">
+        <span class="gn-translate-badge">${esc(ko.translateBadge)}</span>
+        <span class="gn-translate-en">${esc(en.translateBadge)}</span>
       </div>
-      <div class="gn-info-card">
-        <div class="gn-info-icon">💬</div>
-        <div class="gn-info-title">${esc(ko.replyTitle)}</div>
-        <div class="gn-info-body">${esc(ko.replyBody)}</div>
-        <div class="gn-info-en">${esc(en.replyBody)}</div>
-      </div>
-      <div class="gn-info-card">
-        <div class="gn-info-icon">🔒</div>
-        <div class="gn-info-title">${esc(ko.privacyTitle)}</div>
-        <div class="gn-info-body">${esc(ko.privacyBody)}</div>
-        <div class="gn-info-en">${esc(en.privacyBody)}</div>
-      </div>
+    </section>
+    <section class="gn-trust">
+      <div class="gn-trust-chip"><span class="gn-trust-icon">👁</span><div><div class="gn-trust-ko">${esc(ko.staffWatchBody)}</div><div class="gn-trust-en">${esc(en.staffWatchBody)}</div></div></div>
+      <div class="gn-trust-chip"><span class="gn-trust-icon">⚡</span><div><div class="gn-trust-ko">${esc(ko.replyBody)}</div><div class="gn-trust-en">${esc(en.replyBody)}</div></div></div>
+      <div class="gn-trust-chip"><span class="gn-trust-icon">🕐</span><div><div class="gn-trust-ko">${esc(ko.hoursBody)}</div><div class="gn-trust-en">${esc(en.hoursBody)}</div></div></div>
+      <div class="gn-trust-chip"><span class="gn-trust-icon">🔒</span><div><div class="gn-trust-ko">${esc(ko.privacyBody)}</div><div class="gn-trust-en">${esc(en.privacyBody)}</div></div></div>
     </section>
     <section class="gn-bottom">
       <div class="gn-bottom-box">
         <div class="gn-bottom-head"><span>📶</span><span>Wi-Fi</span></div>
         <p class="gn-bottom-body">${esc(ko.wifiNightstand)}</p>
+        <p class="gn-bottom-en">${esc(en.wifiNightstand)}</p>
       </div>
       <div class="gn-bottom-box">
-        <div class="gn-bottom-head gn-emergency-head"><span>📞</span><span>${esc(ko.emergencyLabel)} (${esc(en.emergencyLabel)})</span></div>
+        <div class="gn-bottom-head gn-emergency-head"><span>📞</span><span>${esc(ko.frontDeskLabel)} / ${esc(ko.emergencyLabel)}</span></div>
         <p class="gn-emergency-phone">${esc(GUEST_CHAT_EMERGENCY_PHONE)}</p>
       </div>
     </section>
@@ -225,7 +221,6 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
 </html>`;
 }
 
-/** Ensure TypeScript still sees every language used on the notice. */
 export function assertNoticeCopyComplete(): GuestLang[] {
   return [...SUPPORTED_LANGS];
 }

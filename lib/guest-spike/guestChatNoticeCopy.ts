@@ -3,158 +3,340 @@
 
 import { SUPPORTED_LANGS, langDisplayName, type GuestLang } from './languages';
 import { GUEST_CHAT_EMERGENCY_PHONE } from './guestChatNoticeConfig';
+import {
+  GUEST_NOTICE_SERVICE_IDS,
+  type GuestNoticeServiceId,
+} from './guestChatNoticeServices';
+
+export type GuestNoticeServiceLabels = Record<GuestNoticeServiceId, string>;
 
 export interface GuestChatNoticeCopy {
-  /** Subtitle under the room number. */
+  /** Title under the room number. */
   roomChatSubtitle: string;
-  /** Line above the QR. */
+  /** One-line reason to scan (phone-free / request services). */
+  valueLine: string;
+  /** Line beside QR (scan instruction). */
   scanLead: string;
-  /** Short value prop under scanLead. */
+  /** Short value prop beside QR. */
   scanSupport: string;
-  /** Intro for amenity / help examples. */
+  /** Short intro used in language strip. */
   helpIntro: string;
-  /** Example request topics (towel, water, cleaning, facility, other). */
+  /** Compact topic line (legacy / PDF helpers). */
   helpTopics: string;
-  /** Wi-Fi: nightstand phone-table sticker — never print real SSID/password values. */
+  /** Service grid section title. */
+  servicesTitle: string;
+  /** Short labels for Digital Concierge service grid. */
+  serviceLabels: GuestNoticeServiceLabels;
+  /** Auto-translate callout. */
+  translateBadge: string;
+  /** Wi-Fi: nightstand sticker — never print real SSID/password values. */
   wifiNightstand: string;
-  /** Footer: 24h availability title. */
+  /** Trust: availability. */
   hoursTitle: string;
   hoursBody: string;
-  /** Footer: response expectation. */
+  /** Trust: staff watching / realtime confirm. */
+  staffWatchBody: string;
+  /** Trust: response expectation. */
   replyTitle: string;
   replyBody: string;
-  /** Footer: privacy (must not overclaim — chat/customer fields may be stored). */
+  /** Privacy (must not overclaim). */
   privacyTitle: string;
   privacyBody: string;
+  /** Front desk channel label (pairs with emergency). */
+  frontDeskLabel: string;
   /** Emergency contact label (phone number comes from config). */
   emergencyLabel: string;
-  /** Soft CTA for extra inquiries (lost items) — does not guarantee post-checkout availability. */
+  /** Soft CTA for extra inquiries — does not guarantee post-checkout availability. */
   afterCheckout: string;
+}
+
+function labels(
+  towel: string,
+  water: string,
+  clean: string,
+  amenity: string,
+  parking: string,
+  delivery: string,
+  repair: string,
+  lost: string,
+  staff: string,
+  other: string,
+  extend: string,
+  taxi: string,
+): GuestNoticeServiceLabels {
+  return {
+    towel,
+    water,
+    clean,
+    amenity,
+    parking,
+    delivery,
+    repair,
+    lost,
+    staff,
+    other,
+    extend,
+    taxi,
+  };
 }
 
 export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
   ko: {
-    roomChatSubtitle: '객실 전용 채팅 (Guest Chat)',
+    roomChatSubtitle: '객실 디지털 컨시어지 (Guest Chat)',
+    valueLine: '객실에서 전화 없이 직원과 바로 대화하세요.',
     scanLead: '휴대폰 카메라로 QR을 스캔하세요.',
-    scanSupport: '직원과 실시간으로 대화할 수 있습니다.',
-    helpIntro: '직원에게 실시간으로 문의할 수 있습니다.',
-    helpTopics: '수건 · 생수 · 청소 · 시설 문의 · 기타 요청 등을 언제든지 보내 주세요.',
-    wifiNightstand:
-      'Wi-Fi ID와 비밀번호는 전화기가 놓여 있는 협탁의 Wi-Fi QR 스티커에서 확인할 수 있습니다. QR을 스캔하거나 적혀 있는 ID와 비밀번호를 입력해 주세요.',
-    hoursTitle: '24시간 문의',
-    hoursBody: '24시간 언제든지 문의 가능합니다.',
-    replyTitle: '응답',
-    replyBody: '직원이 가능한 한 빠르게 답변드립니다.',
+    scanSupport: '필요한 서비스를 실시간으로 요청하세요.',
+    helpIntro: '내 언어로 직원과 대화할 수 있습니다.',
+    helpTopics: '수건 · 생수 · 청소 · 시설 · 분실물 등 객실 문의를 보내 주세요.',
+    servicesTitle: '이런 요청이 가능합니다',
+    serviceLabels: labels(
+      '추가 수건',
+      '생수',
+      '객실 청소',
+      '어메니티',
+      '주차',
+      '배달',
+      '시설 고장',
+      '분실물',
+      '직원 호출',
+      '기타',
+      '연장·연박',
+      '택시·관광',
+    ),
+    translateBadge: '자동 번역 지원',
+    wifiNightstand: '객실 내 Wi-Fi 안내 스티커를 참고하세요.',
+    hoursTitle: '언제든 문의',
+    hoursBody: '문의는 언제든지 가능합니다.',
+    staffWatchBody: '직원이 실시간으로 확인합니다.',
+    replyTitle: '빠른 응답',
+    replyBody: '가능한 한 빠르게 답변드립니다.',
     privacyTitle: '개인정보',
-    privacyBody: '대화 내용은 문의 응대와 서비스 제공을 위해 사용됩니다.',
-    emergencyLabel: '긴급 연락',
+    privacyBody: '대화 내용은 서비스 제공을 위해서만 사용됩니다.',
+    frontDeskLabel: 'Front Desk',
+    emergencyLabel: 'Emergency',
     afterCheckout: '분실물 등 추가 문의가 필요하면 QR을 스캔해 주세요.',
   },
   en: {
-    roomChatSubtitle: 'In-room Guest Chat',
+    roomChatSubtitle: 'In-room Digital Concierge (Guest Chat)',
+    valueLine: 'Chat with staff from your room — no phone call needed.',
     scanLead: 'Scan the QR code with your phone camera.',
-    scanSupport: 'Chat with hotel staff in real time.',
-    helpIntro: 'You can message staff anytime.',
-    helpTopics: 'Towels, bottled water, cleaning, facility issues, and other requests are welcome.',
-    wifiNightstand:
-      'Wi-Fi ID and password are on the Wi-Fi QR sticker on the nightstand where the phone is placed. Scan the sticker or enter the ID and password printed there.',
-    hoursTitle: '24-hour support',
-    hoursBody: 'You can contact us any time, day or night.',
-    replyTitle: 'Replies',
-    replyBody: 'Staff will reply as quickly as possible.',
+    scanSupport: 'Request what you need in real time.',
+    helpIntro: 'Chat with staff in your language.',
+    helpTopics: 'Towels, water, cleaning, facilities, lost items, and more.',
+    servicesTitle: 'You can request',
+    serviceLabels: labels(
+      'Extra towels',
+      'Water',
+      'Cleaning',
+      'Amenities',
+      'Parking',
+      'Delivery',
+      'Repair',
+      'Lost items',
+      'Call staff',
+      'Other',
+      'Stay extension',
+      'Taxi / local',
+    ),
+    translateBadge: 'Auto-translate supported',
+    wifiNightstand: 'See the in-room Wi-Fi info sticker.',
+    hoursTitle: 'Anytime',
+    hoursBody: 'You can message us any time.',
+    staffWatchBody: 'Staff check messages in real time.',
+    replyTitle: 'Quick reply',
+    replyBody: 'We reply as quickly as possible.',
     privacyTitle: 'Privacy',
-    privacyBody: 'Chat messages are used to respond to your requests and provide hotel services.',
+    privacyBody: 'Chat is used only to provide hotel services.',
+    frontDeskLabel: 'Front Desk',
     emergencyLabel: 'Emergency',
-    afterCheckout: 'If you need further help such as lost items, please scan the QR code.',
+    afterCheckout: 'For further help such as lost items, please scan the QR code.',
   },
   ja: {
-    roomChatSubtitle: '客室専用チャット（Guest Chat）',
+    roomChatSubtitle: '客室デジタルコンシェルジュ（Guest Chat）',
+    valueLine: '客室から電話なしでスタッフとすぐに話せます。',
     scanLead: 'スマートフォンのカメラでQRを読み取ってください。',
-    scanSupport: 'スタッフとリアルタイムで会話できます。',
-    helpIntro: 'スタッフへいつでもご連絡いただけます。',
-    helpTopics: 'タオル・飲料水・清掃・設備の不具合・その他のご要望をお送りください。',
-    wifiNightstand:
-      'Wi-FiのIDとパスワードは、電話機が置いてあるサイドテーブル上のWi-Fi QRステッカーでご確認いただけます。ステッカーを読み取るか、記載のIDとパスワードを入力してください。',
-    hoursTitle: '24時間対応',
-    hoursBody: '昼夜を問わずお問い合わせいただけます。',
-    replyTitle: '返信',
-    replyBody: 'スタッフができるだけ早くご返信します。',
+    scanSupport: '必要なサービスをリアルタイムでご依頼ください。',
+    helpIntro: 'ご自身の言語でスタッフと会話できます。',
+    helpTopics: 'タオル・水・清掃・設備・忘れ物などご連絡ください。',
+    servicesTitle: 'ご依頼できること',
+    serviceLabels: labels(
+      '追加タオル',
+      '飲料水',
+      '清掃',
+      'アメニティ',
+      '駐車',
+      'デリバリー',
+      '設備故障',
+      '忘れ物',
+      'スタッフ呼出',
+      'その他',
+      '延長・連泊',
+      'タクシー・観光',
+    ),
+    translateBadge: '自動翻訳対応',
+    wifiNightstand: '客室内のWi-Fi案内ステッカーをご確認ください。',
+    hoursTitle: 'いつでも',
+    hoursBody: 'いつでもお問い合わせいただけます。',
+    staffWatchBody: 'スタッフがリアルタイムで確認します。',
+    replyTitle: '迅速な返信',
+    replyBody: 'できるだけ早くご返信します。',
     privacyTitle: '個人情報',
-    privacyBody: 'チャット内容はお問い合わせ対応およびサービス提供のために使用します。',
-    emergencyLabel: '緊急連絡',
-    afterCheckout: '忘れ物など追加のご連絡がある場合は、QRを読み取ってください。',
+    privacyBody: 'チャット内容はサービス提供のためのみ使用します。',
+    frontDeskLabel: 'Front Desk',
+    emergencyLabel: 'Emergency',
+    afterCheckout: '忘れ物など追加のご連絡はQRを読み取ってください。',
   },
   'zh-CN': {
-    roomChatSubtitle: '客房专用聊天（Guest Chat）',
+    roomChatSubtitle: '客房数字礼宾（Guest Chat）',
+    valueLine: '无需打电话，在客房即可与工作人员即时沟通。',
     scanLead: '请用手机相机扫描二维码。',
-    scanSupport: '可与工作人员实时沟通。',
-    helpIntro: '可随时向工作人员咨询。',
-    helpTopics: '毛巾、饮用水、清洁、设施问题及其他需求，欢迎随时发送。',
-    wifiNightstand:
-      'Wi-Fi 账号与密码可在放置电话的床头柜上的 Wi-Fi 二维码贴纸中查看。请扫描贴纸，或输入贴纸上的账号与密码。',
-    hoursTitle: '24小时咨询',
-    hoursBody: '全天均可联系我们。',
-    replyTitle: '回复',
-    replyBody: '工作人员将尽快回复。',
+    scanSupport: '实时提交您需要的服务。',
+    helpIntro: '可用您的语言与工作人员对话。',
+    helpTopics: '毛巾、饮用水、清洁、设施、失物等欢迎咨询。',
+    servicesTitle: '可请求的服务',
+    serviceLabels: labels(
+      '加毛巾',
+      '饮用水',
+      '客房清洁',
+      '洗漱用品',
+      '停车',
+      '外卖',
+      '设施故障',
+      '失物',
+      '呼叫员工',
+      '其他',
+      '延住/连住',
+      '出租车/观光',
+    ),
+    translateBadge: '支持自动翻译',
+    wifiNightstand: '请查看客房内的 Wi-Fi 提示贴纸。',
+    hoursTitle: '随时咨询',
+    hoursBody: '随时都可以联系我们。',
+    staffWatchBody: '工作人员会实时查看。',
+    replyTitle: '快速回复',
+    replyBody: '我们会尽快回复。',
     privacyTitle: '隐私',
-    privacyBody: '聊天内容用于回应您的请求并提供酒店服务。',
-    emergencyLabel: '紧急联系',
-    afterCheckout: '如需失物等其他咨询，请扫描二维码。',
+    privacyBody: '聊天内容仅用于提供酒店服务。',
+    frontDeskLabel: 'Front Desk',
+    emergencyLabel: 'Emergency',
+    afterCheckout: '如需失物等其他帮助，请扫描二维码。',
   },
   ru: {
-    roomChatSubtitle: 'Чат номера (Guest Chat)',
+    roomChatSubtitle: 'Цифровой консьерж номера (Guest Chat)',
+    valueLine: 'Общайтесь с персоналом из номера — без звонка.',
     scanLead: 'Отсканируйте QR-код камерой телефона.',
-    scanSupport: 'Общайтесь с персоналом в реальном времени.',
-    helpIntro: 'Вы можете писать персоналу в любое время.',
-    helpTopics: 'Полотенца, вода, уборка, неисправности и другие запросы — приветствуются.',
-    wifiNightstand:
-      'ID и пароль Wi-Fi указаны на QR-наклейке Wi-Fi на тумбочке, где лежит телефон. Отсканируйте наклейку или введите ID и пароль с неё.',
-    hoursTitle: 'Круглосуточно',
-    hoursBody: 'Связаться с нами можно в любое время.',
-    replyTitle: 'Ответ',
-    replyBody: 'Персонал ответит как можно скорее.',
+    scanSupport: 'Запрашивайте услуги в реальном времени.',
+    helpIntro: 'Общайтесь с персоналом на своём языке.',
+    helpTopics: 'Полотенца, вода, уборка, неисправности, забытые вещи и другое.',
+    servicesTitle: 'Можно запросить',
+    serviceLabels: labels(
+      'Полотенца',
+      'Вода',
+      'Уборка',
+      'Принадлежности',
+      'Парковка',
+      'Доставка',
+      'Ремонт',
+      'Забытые вещи',
+      'Вызов персонала',
+      'Другое',
+      'Продление',
+      'Такси / город',
+    ),
+    translateBadge: 'Автоперевод',
+    wifiNightstand: 'См. наклейку с Wi-Fi в номере.',
+    hoursTitle: 'В любое время',
+    hoursBody: 'Пишите нам в любое время.',
+    staffWatchBody: 'Персонал видит сообщения сразу.',
+    replyTitle: 'Быстрый ответ',
+    replyBody: 'Ответим как можно скорее.',
     privacyTitle: 'Конфиденциальность',
-    privacyBody: 'Сообщения чата используются для ответа на ваши запросы и оказания услуг отеля.',
-    emergencyLabel: 'Экстренная связь',
-    afterCheckout: 'Если нужны дополнительные вопросы (например, забытые вещи), отсканируйте QR-код.',
+    privacyBody: 'Чат используется только для оказания услуг отеля.',
+    frontDeskLabel: 'Front Desk',
+    emergencyLabel: 'Emergency',
+    afterCheckout: 'Для доп. помощи (забытые вещи и т.п.) отсканируйте QR.',
   },
   fr: {
-    roomChatSubtitle: 'Chat de chambre (Guest Chat)',
-    scanLead: 'Scannez le QR avec l’appareil photo de votre téléphone.',
-    scanSupport: 'Discutez en temps réel avec le personnel.',
-    helpIntro: 'Vous pouvez contacter le personnel à tout moment.',
-    helpTopics: 'Serviettes, eau, ménage, équipements et autres demandes sont les bienvenues.',
-    wifiNightstand:
-      'L’identifiant et le mot de passe Wi-Fi figurent sur l’autocollant QR Wi-Fi de la table de chevet où se trouve le téléphone. Scannez l’autocollant ou saisissez l’identifiant et le mot de passe indiqués.',
-    hoursTitle: 'Assistance 24 h/24',
-    hoursBody: 'Vous pouvez nous contacter à toute heure.',
-    replyTitle: 'Réponse',
-    replyBody: 'Le personnel répondra aussi vite que possible.',
+    roomChatSubtitle: 'Conciergerie digitale (Guest Chat)',
+    valueLine: 'Parlez au personnel depuis la chambre — sans téléphone.',
+    scanLead: 'Scannez le QR avec l’appareil photo du téléphone.',
+    scanSupport: 'Demandez vos services en temps réel.',
+    helpIntro: 'Discutez avec le personnel dans votre langue.',
+    helpTopics: 'Serviettes, eau, ménage, équipements, objets trouvés, etc.',
+    servicesTitle: 'Vous pouvez demander',
+    serviceLabels: labels(
+      'Serviettes',
+      'Eau',
+      'Ménage',
+      'Articles',
+      'Parking',
+      'Livraison',
+      'Réparation',
+      'Objets trouvés',
+      'Appeler le staff',
+      'Autre',
+      'Prolongation',
+      'Taxi / visite',
+    ),
+    translateBadge: 'Traduction auto',
+    wifiNightstand: 'Voir l’autocollant Wi-Fi dans la chambre.',
+    hoursTitle: 'À tout moment',
+    hoursBody: 'Vous pouvez nous écrire à tout moment.',
+    staffWatchBody: 'Le personnel lit vos messages en temps réel.',
+    replyTitle: 'Réponse rapide',
+    replyBody: 'Nous répondons aussi vite que possible.',
     privacyTitle: 'Confidentialité',
-    privacyBody:
-      'Les messages du chat sont utilisés pour répondre à vos demandes et fournir les services de l’hôtel.',
-    emergencyLabel: 'Urgence',
-    afterCheckout: 'Pour toute demande complémentaire (objets trouvés, etc.), veuillez scanner le QR.',
+    privacyBody: 'Le chat sert uniquement à fournir les services de l’hôtel.',
+    frontDeskLabel: 'Front Desk',
+    emergencyLabel: 'Emergency',
+    afterCheckout: 'Pour une aide complémentaire (objets trouvés, etc.), scannez le QR.',
   },
   es: {
-    roomChatSubtitle: 'Chat de la habitación (Guest Chat)',
+    roomChatSubtitle: 'Conserjería digital (Guest Chat)',
+    valueLine: 'Hable con el personal desde la habitación — sin llamar.',
     scanLead: 'Escanee el QR con la cámara del teléfono.',
-    scanSupport: 'Hable en tiempo real con el personal.',
-    helpIntro: 'Puede escribir al personal en cualquier momento.',
-    helpTopics: 'Toallas, agua, limpieza, instalaciones y otras solicitudes son bienvenidas.',
-    wifiNightstand:
-      'El ID y la contraseña del Wi-Fi están en la pegatina QR de Wi-Fi de la mesita donde está el teléfono. Escanee la pegatina o introduzca el ID y la contraseña indicados.',
-    hoursTitle: 'Atención 24 h',
-    hoursBody: 'Puede contactarnos a cualquier hora.',
-    replyTitle: 'Respuesta',
-    replyBody: 'El personal responderá lo antes posible.',
+    scanSupport: 'Solicite servicios en tiempo real.',
+    helpIntro: 'Chatee con el personal en su idioma.',
+    helpTopics: 'Toallas, agua, limpieza, instalaciones, objetos perdidos y más.',
+    servicesTitle: 'Puede solicitar',
+    serviceLabels: labels(
+      'Toallas',
+      'Agua',
+      'Limpieza',
+      'Amenidades',
+      'Parking',
+      'Delivery',
+      'Reparación',
+      'Objetos perdidos',
+      'Llamar staff',
+      'Otros',
+      'Extensión',
+      'Taxi / turismo',
+    ),
+    translateBadge: 'Traducción automática',
+    wifiNightstand: 'Consulte la pegatina Wi-Fi de la habitación.',
+    hoursTitle: 'En cualquier momento',
+    hoursBody: 'Puede escribirnos a cualquier hora.',
+    staffWatchBody: 'El personal ve los mensajes en tiempo real.',
+    replyTitle: 'Respuesta rápida',
+    replyBody: 'Responderemos lo antes posible.',
     privacyTitle: 'Privacidad',
-    privacyBody:
-      'Los mensajes del chat se usan para responder a sus solicitudes y prestar servicios del hotel.',
-    emergencyLabel: 'Emergencia',
-    afterCheckout: 'Si necesita más ayuda (objetos perdidos, etc.), escanee el código QR.',
+    privacyBody: 'El chat se usa solo para prestar servicios del hotel.',
+    frontDeskLabel: 'Front Desk',
+    emergencyLabel: 'Emergency',
+    afterCheckout: 'Para más ayuda (objetos perdidos, etc.), escanee el QR.',
   },
 };
+
+/** Ensure every language defines labels for every service id. */
+export function assertServiceLabelsComplete(lang: GuestLang): void {
+  const labelsMap = guestChatNoticeCopy[lang].serviceLabels;
+  for (const id of GUEST_NOTICE_SERVICE_IDS) {
+    if (!labelsMap[id]?.trim()) {
+      throw new Error(`missing service label ${id} for ${lang}`);
+    }
+  }
+}
 
 /** Language names for the notice, in SUPPORTED_LANGS order (SoT: langDisplayName). */
 export function guestChatNoticeLanguageLine(): string {
