@@ -24,8 +24,9 @@ export async function openGuestChatNoticePrint(input: {
   guestUrl: string;
   hotelName?: string;
 }): Promise<'ok' | 'popup-blocked' | 'qr-failed'> {
-  // Open blank window first (same tick as the click), then fill content.
-  const popup = window.open('about:blank', '_blank', 'noopener,noreferrer,width=900,height=1200');
+  // Do NOT use `noopener` here — it makes window.open() return null in Chromium,
+  // so we cannot write the A4 document into the popup.
+  const popup = window.open('about:blank', 'guestChatNoticePrint', 'width=900,height=1200');
   if (!popup) return 'popup-blocked';
 
   try {
