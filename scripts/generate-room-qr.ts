@@ -18,6 +18,8 @@ import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
 import { createRequire } from 'node:module';
 
+import { guestRoomUrl, resolveGuestQrBaseUrl } from '../lib/guest-spike/guestRoomUrl';
+
 // jszip is CommonJS; load via createRequire so the constructor survives ESM interop. Chosen over
 // archiver because its entry names are ALWAYS '/'-separated regardless of the host OS.
 const require = createRequire(import.meta.url);
@@ -42,9 +44,8 @@ function argValue(name: string): string | null {
   const p = process.argv.find((a) => a.startsWith(`--${name}=`));
   return p ? p.slice(name.length + 3) : null;
 }
-const BASE_URL = (argValue('base-url') || process.env.QR_BASE_URL || 'https://autoflow-mvp.vercel.app')
-  .trim()
-  .replace(/\/+$/, '');
+// Base URL SoT: lib/guest-spike/guestRoomUrl.ts (CLI --base-url > QR_BASE_URL > production default).
+const BASE_URL = resolveGuestQrBaseUrl({ baseUrl: argValue('base-url') });
 const OUT_DIR = path.resolve(argValue('out') || process.env.QR_OUT_DIR || 'qr-output');
 const ZIP_PATH = path.resolve(argValue('zip') || process.env.QR_ZIP || 'guest-room-qr-production.zip');
 const HOTEL_NAME = process.env.QR_HOTEL_NAME || 'HOTEL LABEL';
@@ -52,7 +53,7 @@ const FONT_PATH = process.env.QR_FONT_PATH || 'C:/Windows/Fonts/malgun.ttf';
 const FONT_BOLD_PATH = process.env.QR_FONT_BOLD_PATH || 'C:/Windows/Fonts/malgunbd.ttf';
 const HAS_FONT = fs.existsSync(FONT_PATH);
 
-const roomUrl = (room: string) => `${BASE_URL}/g/room-${room}`;
+const roomUrl = (room: string) => guestRoomUrl(room, BASE_URL);
 const QR_OPTS = { errorCorrectionLevel: 'Q' as const, margin: 4, color: { dark: '#000000ff', light: '#ffffffff' } };
 
 // ── roster self-verification ────────────────────────────────────────────────────────
