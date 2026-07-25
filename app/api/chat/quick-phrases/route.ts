@@ -2,6 +2,8 @@ import { jsonErr, jsonOk } from '@/lib/api/envelope';
 import { listQuickPhrases } from '@/lib/services/quickPhrases';
 import { getSiteId } from '@/lib/site';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const phrases = await listQuickPhrases(getSiteId());
