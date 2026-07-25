@@ -19,6 +19,13 @@ import jsQR from 'jsqr';
 import { createRequire } from 'node:module';
 
 import { guestRoomUrl, resolveGuestQrBaseUrl } from '../lib/guest-spike/guestRoomUrl';
+import {
+  GUEST_CHAT_EMERGENCY_PHONE,
+  GUEST_CHAT_HOTEL_NAME,
+  GUEST_CHAT_HOTEL_NAME_LATIN,
+  GUEST_CHAT_NOTICE_QR_MM,
+} from '../lib/guest-spike/guestChatNoticeConfig';
+import { guestChatNoticeCopy } from '../lib/guest-spike/guestChatNoticeCopy';
 
 // jszip is CommonJS; load via createRequire so the constructor survives ESM interop. Chosen over
 // archiver because its entry names are ALWAYS '/'-separated regardless of the host OS.
@@ -48,10 +55,10 @@ function argValue(name: string): string | null {
 const BASE_URL = resolveGuestQrBaseUrl({ baseUrl: argValue('base-url') });
 const OUT_DIR = path.resolve(argValue('out') || process.env.QR_OUT_DIR || 'qr-output');
 const ZIP_PATH = path.resolve(argValue('zip') || process.env.QR_ZIP || 'guest-room-qr-production.zip');
-const HOTEL_NAME = process.env.QR_HOTEL_NAME || 'HOTEL LABEL';
 const FONT_PATH = process.env.QR_FONT_PATH || 'C:/Windows/Fonts/malgun.ttf';
 const FONT_BOLD_PATH = process.env.QR_FONT_BOLD_PATH || 'C:/Windows/Fonts/malgunbd.ttf';
 const HAS_FONT = fs.existsSync(FONT_PATH);
+const HOTEL_NAME = process.env.QR_HOTEL_NAME || (HAS_FONT ? GUEST_CHAT_HOTEL_NAME : GUEST_CHAT_HOTEL_NAME_LATIN);
 
 const roomUrl = (room: string) => guestRoomUrl(room, BASE_URL);
 const QR_OPTS = { errorCorrectionLevel: 'Q' as const, margin: 4, color: { dark: '#000000ff', light: '#ffffffff' } };
@@ -78,16 +85,13 @@ function registerFonts(doc: PDFKit.PDFDocument) {
 }
 const F = HAS_FONT ? 'body' : 'Helvetica';
 const FB = HAS_FONT ? 'bold' : 'Helvetica-Bold';
-// All 7 app languages. Endonyms render only with the CJK/Cyrillic font; otherwise Latin names.
-// NOTE: Chinese is shown as 中文 (not 简体中文) because 简 (U+7B80) is absent from Malgun Gothic and
-// would render as a tofu box; verifyGlyphs() below enforces that every printed char has a glyph.
+// PDF glyph-safe language line (Malgun lacks some CJK simplification glyphs used in UI endonyms).
 const LANG_LINE = HAS_FONT
   ? '한국어 · English · 日本語 · 中文 · Русский · Français · Español'
   : 'Korean · English · Japanese · Chinese · Russian · French · Spanish';
 const roomLabel = (room: string) => (HAS_FONT ? `${room}호` : `Room ${room}`);
-const noticeLead = HAS_FONT
-  ? '문의 · 비품 요청 · 시설 문의 · 직원 호출은 아래 QR을 스캔해 주세요.'
-  : 'Scan the QR below to chat with the front desk (requests, amenities, maintenance).';
+const koNotice = guestChatNoticeCopy.ko;
+const enNotice = guestChatNoticeCopy.en;
 
 function finishDoc(doc: PDFKit.PDFDocument, file: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -129,27 +133,95 @@ async function buildDoorLabels(qrByRoom: Map<string, Buffer>, file: string) {
 }
 
 async function buildFrontNotices(qrByRoom: Map<string, Buffer>, file: string, size: 'A4' | 'A5') {
-  const doc = new PDFDocument({ size, margin: size === 'A4' ? 50 : 36, autoFirstPage: false });
+  // A4 staff notices: ~14mm margins; QR ≈ 4cm. Copy SoT: guestChatNoticeCopy (ko/en on PDF for glyph safety).
+  const margin = size === 'A4' ? 40 : 28; // ~14mm / ~10mm
+  const doc = new PDFDocument({ size, margin, autoFirstPage: false });
   registerFonts(doc);
-  const qrSize = size === 'A4' ? 240 : 170;
+  const qrSize = size === 'A4' ? Math.round((GUEST_CHAT_NOTICE_QR_MM / 25.4) * 72) : 120; // 40mm → pt
   for (const room of ROOMS) {
     doc.addPage();
     const w = doc.page.width;
+    const contentW = w - margin * 2;
     const cx = w / 2;
-    let y = size === 'A4' ? 60 : 44;
-    doc.font(FB).fontSize(size === 'A4' ? 26 : 20).fillColor('#111').text(HOTEL_NAME, 0, y, { align: 'center' });
+    let y = margin;
+
+    doc.font(FB).fontSize(size === 'A4' ? 22 : 16).fillColor('#111').text(HOTEL_NAME, margin, y, {
+      width: contentW,
+      align: 'center',
+    });
+    y += size === 'A4' ? 28 : 22;
+    doc.font(FB).fontSize(size === 'A4' ? 28 : 20).fillColor('#111').text(roomLabel(room), margin, y, {
+      width: contentW,
+      align: 'center',
+    });
     y += size === 'A4' ? 34 : 26;
-    doc.font(FB).fontSize(size === 'A4' ? 18 : 14).fillColor('#2563eb').text('Guest Chat', 0, y, { align: 'center' });
-    y += size === 'A4' ? 30 : 24;
-    doc.font(FB).fontSize(size === 'A4' ? 40 : 30).fillColor('#111').text(roomLabel(room), 0, y, { align: 'center' });
-    y += size === 'A4' ? 56 : 42;
+    doc
+      .font(FB)
+      .fontSize(size === 'A4' ? 12 : 10)
+      .fillColor('#1e3a8a')
+      .text(HAS_FONT ? koNotice.roomChatSubtitle : enNotice.roomChatSubtitle, margin, y, {
+        width: contentW,
+        align: 'center',
+      });
+    y += size === 'A4' ? 22 : 18;
+
+    const lead = HAS_FONT ? koNotice.scanLead : enNotice.scanLead;
+    const support = HAS_FONT ? koNotice.scanSupport : enNotice.scanSupport;
+    doc.font(FB).fontSize(size === 'A4' ? 11 : 9).fillColor('#111').text(lead, margin, y, {
+      width: contentW,
+      align: 'center',
+    });
+    y += size === 'A4' ? 16 : 14;
+    doc.font(F).fontSize(size === 'A4' ? 9 : 8).fillColor('#333').text(support, margin, y, {
+      width: contentW,
+      align: 'center',
+    });
+    y += size === 'A4' ? 18 : 14;
+
     doc.image(qrByRoom.get(room)!, cx - qrSize / 2, y, { width: qrSize });
-    y += qrSize + (size === 'A4' ? 28 : 20);
-    doc.font(F).fontSize(size === 'A4' ? 13 : 11).fillColor('#333').text(noticeLead, 50, y, { width: w - 100, align: 'center' });
-    y += size === 'A4' ? 46 : 40;
-    doc.font(FB).fontSize(size === 'A4' ? 11 : 9).fillColor('#666').text(HAS_FONT ? '지원 언어' : 'Supported languages', 0, y, { align: 'center' });
-    y += size === 'A4' ? 18 : 15;
-    doc.font(F).fontSize(size === 'A4' ? 12 : 10).fillColor('#111').text(LANG_LINE, 50, y, { width: w - 100, align: 'center' });
+    y += qrSize + (size === 'A4' ? 10 : 8);
+    doc
+      .font(F)
+      .fontSize(7)
+      .fillColor('#334155')
+      .text(roomUrl(room), margin, y, { width: contentW, align: 'center' });
+    y += size === 'A4' ? 16 : 12;
+
+    doc.font(FB).fontSize(8).fillColor('#444').text(LANG_LINE, margin, y, { width: contentW, align: 'center' });
+    y += size === 'A4' ? 16 : 12;
+
+    const help = HAS_FONT
+      ? `${koNotice.helpIntro} ${koNotice.helpTopics}`
+      : `${enNotice.helpIntro} ${enNotice.helpTopics}`;
+    doc.font(F).fontSize(8).fillColor('#111').text(help, margin, y, { width: contentW, align: 'center' });
+    y += size === 'A4' ? 28 : 22;
+
+    const wifi = HAS_FONT ? koNotice.wifiNightstand : enNotice.wifiNightstand;
+    doc.font(F).fontSize(8).fillColor('#111').text(wifi, margin, y, { width: contentW, align: 'center' });
+    y += size === 'A4' ? 32 : 24;
+
+    const footer = HAS_FONT
+      ? `${koNotice.hoursTitle}: ${koNotice.hoursBody}\n${koNotice.replyTitle}: ${koNotice.replyBody}\n${koNotice.privacyTitle}: ${koNotice.privacyBody}`
+      : `${enNotice.hoursTitle}: ${enNotice.hoursBody}\n${enNotice.replyTitle}: ${enNotice.replyBody}\n${enNotice.privacyTitle}: ${enNotice.privacyBody}`;
+    doc.font(F).fontSize(7.5).fillColor('#333').text(footer, margin, y, { width: contentW, align: 'center' });
+    y += size === 'A4' ? 40 : 34;
+
+    const emergency = HAS_FONT
+      ? `${koNotice.emergencyLabel}  ${GUEST_CHAT_EMERGENCY_PHONE}`
+      : `${enNotice.emergencyLabel}  ${GUEST_CHAT_EMERGENCY_PHONE}`;
+    doc.font(FB).fontSize(size === 'A4' ? 12 : 10).fillColor('#111').text(emergency, margin, y, {
+      width: contentW,
+      align: 'center',
+    });
+    y += size === 'A4' ? 18 : 14;
+    doc
+      .font(F)
+      .fontSize(7.5)
+      .fillColor('#475569')
+      .text(HAS_FONT ? koNotice.afterCheckout : enNotice.afterCheckout, margin, y, {
+        width: contentW,
+        align: 'center',
+      });
   }
   await finishDoc(doc, file);
 }
@@ -270,10 +342,22 @@ async function main() {
   // PDF glyph coverage (no tofu / missing-glyph boxes)
   const glyph = await verifyGlyphs([
     HOTEL_NAME,
-    'Guest Chat',
     LANG_LINE,
-    noticeLead,
-    HAS_FONT ? '지원 언어' : 'Supported languages',
+    koNotice.roomChatSubtitle,
+    koNotice.scanLead,
+    koNotice.scanSupport,
+    koNotice.helpIntro,
+    koNotice.helpTopics,
+    koNotice.wifiNightstand,
+    koNotice.hoursTitle,
+    koNotice.hoursBody,
+    koNotice.replyTitle,
+    koNotice.replyBody,
+    koNotice.privacyTitle,
+    koNotice.privacyBody,
+    koNotice.emergencyLabel,
+    koNotice.afterCheckout,
+    GUEST_CHAT_EMERGENCY_PHONE,
     ...ROOMS.map(roomLabel),
   ]);
   if (glyph.missing.length) problems.push('missing PDF glyphs: ' + glyph.missing.join(' '));
