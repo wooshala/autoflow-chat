@@ -8,9 +8,14 @@
 import type { GuestSpikeMsg } from './types';
 import type { GuestChannelSummary } from './guestChannelSummary';
 import { staffSessionAuthHeaders } from '@/lib/auth/staffAccountSession';
+import {
+  CLOSE_SESSION_FAILED_USER_MESSAGE,
+  parseCloseSessionHttpResult,
+} from './closeSessionResponse';
 
 export type { GuestSpikeMsg };
 export type { GuestChannelSummary };
+export { CLOSE_SESSION_FAILED_USER_MESSAGE };
 
 const endpoint = (channelKey: string) => `/api/guest/${encodeURIComponent(channelKey)}/messages`;
 const sessionEndpoint = (channelKey: string) => `/api/guest/${encodeURIComponent(channelKey)}/session`;
@@ -45,9 +50,23 @@ export async function fetchGuestSession(channelKey: string): Promise<GuestSessio
   }
 }
 
-/** Staff "대화 종료" — close the channel's active session (requires a staff session). */
-export async function closeGuestSession(channelKey: string): Promise<void> {
-  await fetch(sessionEndpoint(channelKey), { method: 'DELETE', headers: staffSessionAuthHeaders() });
+/** Staff "대화 종료" — close the channel's active session (requires a staff session).
+ *  Throws on non-2xx so the UI never treats a failed DELETE as success. */
+export async function closeGuestSession(
+  channelKey: string,
+): Promise<{ closed: boolean; closed_count: number; closed_session_ids: string[] }> {
+  const res = await fetch(sessionEndpoint(channelKey), { method: 'DELETE', headers: staffSessionAuthHeaders() });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    try {
+      await res.text();
+    } catch {
+      /* ignore */
+    }
+  }
+  return parseCloseSessionHttpResult(res.status, body);
 }
 
 /** Phase 1H.7 — staff responses carry the active-session state so the UI distinguishes

@@ -202,14 +202,25 @@ export async function listOpenChannelSummaryData(): Promise<{
   return { sessions: rows, messages: (messages ?? []) as SummaryMessageRow[] };
 }
 
-/** Close the channel's active session (staff "대화 종료"). Idempotent. */
-export async function closeActiveSession(channelKey: string): Promise<void> {
-  const { error } = await db()
+export type CloseActiveSessionResult = {
+  closed_count: number;
+  closed_session_ids: string[];
+};
+
+/** Close the channel's active session (staff "대화 종료"). Idempotent when already idle. */
+export async function closeActiveSession(channelKey: string): Promise<CloseActiveSessionResult> {
+  const { data, error } = await db()
     .from(SESSIONS)
     .update({ status: 'closed', closed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('channel_key', channelKey)
-    .eq('status', 'open');
+    .eq('status', 'open')
+    .select('id');
   if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  const rows = (data as { id: string }[] | null) ?? [];
+  return {
+    closed_count: rows.length,
+    closed_session_ids: rows.map((r) => String(r.id)),
+  };
 }
 
 // ── channel preferred language (Phase 1H.5; guest-selected, NOT room-number hardcoded) ──

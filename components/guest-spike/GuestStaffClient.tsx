@@ -10,28 +10,43 @@ import { GuestChatPanel } from './GuestChatPanel';
 import { StaffAuthModal } from './StaffAuthModal';
 import { useStaffSession } from './useStaffSession';
 import { closeGuestSession } from '@/lib/guest-spike/api';
+import { CLOSE_SESSION_FAILED_USER_MESSAGE } from '@/lib/guest-spike/closeSessionResponse';
 import { isGuestLang, langDisplayName, type GuestLang } from '@/lib/guest-spike/languages';
 
 export function GuestStaffClient({ channelKey }: { channelKey: string }) {
   const { hasSession, refresh } = useStaffSession();
   const [loginOpen, setLoginOpen] = useState(false);
   const [preferred, setPreferred] = useState<GuestLang | null>(null);
+  const [endError, setEndError] = useState<string | null>(null);
   const onChannelMeta = useCallback((m: { preferred_language: string | null }) => {
     setPreferred(isGuestLang(m.preferred_language) ? m.preferred_language : null);
   }, []);
   const endSession = useCallback(async () => {
     if (!window.confirm('현재 고객과의 대화를 종료합니다. 계속할까요?')) return;
-    await closeGuestSession(channelKey);
+    setEndError(null);
+    try {
+      await closeGuestSession(channelKey);
+      setPreferred(null);
+    } catch {
+      setEndError(CLOSE_SESSION_FAILED_USER_MESSAGE);
+    }
   }, [channelKey]);
 
   return (
     <main style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#B2C7D9', fontFamily: 'system-ui, sans-serif' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', background: '#1f2937', color: '#fff', fontWeight: 700 }}>
-        <span>[직원·Golden Reference] {channelKey} · {preferred ? langDisplayName(preferred) : '언어 미선택'}</span>
-        {hasSession && (
-          <button type="button" onClick={() => void endSession()} style={{ marginLeft: 'auto', borderRadius: 6, border: '1px solid #ef4444', background: '#7f1d1d', color: '#fecaca', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
-            대화 종료
-          </button>
+      <header style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', background: '#1f2937', color: '#fff', fontWeight: 700 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>[직원·Golden Reference] {channelKey} · {preferred ? langDisplayName(preferred) : '언어 미선택'}</span>
+          {hasSession && (
+            <button type="button" onClick={() => void endSession()} style={{ marginLeft: 'auto', borderRadius: 6, border: '1px solid #ef4444', background: '#7f1d1d', color: '#fecaca', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+              대화 종료
+            </button>
+          )}
+        </div>
+        {endError && (
+          <div role="alert" style={{ whiteSpace: 'pre-line', fontSize: 12, fontWeight: 600, color: '#fecaca', textAlign: 'right' }}>
+            {endError}
+          </div>
         )}
       </header>
       {hasSession ? (

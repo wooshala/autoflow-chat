@@ -2,12 +2,16 @@
 // The route computes the inputs (cookie session + whether an active session exists) and
 // this function decides the outcome. NO PIN: the FIRST browser claims the room; a second
 // cookieless browser is 'occupied' (never auto-joins the current guest's session).
+//
+// Closed-cookie re-entry: a cookie that points at a CLOSED session is NOT ownership of the
+// room. If the channel is idle → create a new session (Set-Cookie overwrites the stale id).
+// If another guest already holds an OPEN session → occupied (never join that session).
 
 export type SessionOutcome =
   | { kind: 'reconnect' } // valid cookie for THIS channel, session open → same session
-  | { kind: 'closed' } //     valid cookie for THIS channel, session closed → ended screen
-  | { kind: 'occupied' } //   no valid channel cookie, but an active session exists → blocked
-  | { kind: 'create' }; //    no valid channel cookie, no active session → new session + claim
+  | { kind: 'closed' } //     retained for exhaustiveness; claim path no longer returns this
+  | { kind: 'occupied' } //   no open-session ownership here, but an active session exists → blocked
+  | { kind: 'create' }; //    channel idle → new session + claim (cookie Set-Cookie)
 
 export function decideSessionOutcome(input: {
   /** The session named by THIS channel's cookie, or null (missing / other channel / not found). */
@@ -15,11 +19,12 @@ export function decideSessionOutcome(input: {
   hasActiveSession: boolean;
 }): SessionOutcome {
   const cs = input.cookieSession;
-  if (cs && cs.channelMatches) {
-    return cs.status === 'open' ? { kind: 'reconnect' } : { kind: 'closed' };
+  // Only an OPEN session cookie for THIS channel is ownership → reconnect.
+  if (cs && cs.channelMatches && cs.status === 'open') {
+    return { kind: 'reconnect' };
   }
-  // No valid cookie for this channel (missing / different channel / unknown id):
-  // NEVER auto-join an existing open session — that would let anyone with the room URL read it.
+  // Missing / wrong-channel / unknown / CLOSED cookie: never auto-join an existing open session.
+  // Closed cookie + idle channel → create (QR must be reusable after staff end).
   return input.hasActiveSession ? { kind: 'occupied' } : { kind: 'create' };
 }
 

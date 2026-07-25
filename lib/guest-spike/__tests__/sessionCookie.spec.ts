@@ -1,6 +1,6 @@
 // Phase 1H.7 — guest session cookie contract. 30-day Max-Age so a guest is NEVER locked out of
-// their OWN chat by cookie expiry mid-stay; access revocation is DB-driven (status='closed'),
-// not cookie expiry. Runs under `node --test` (sessionCookie only imports node:crypto).
+// their OWN open chat by cookie expiry mid-stay. After staff closes the session, a later GET
+// may create a new session and overwrite the cookie (QR reusable). Runs under `node --test`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

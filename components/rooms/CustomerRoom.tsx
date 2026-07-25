@@ -19,6 +19,7 @@ import { GuestChatPanel } from '@/components/guest-spike/GuestChatPanel';
 import { StaffAuthModal } from '@/components/guest-spike/StaffAuthModal';
 import { useStaffSession } from '@/components/guest-spike/useStaffSession';
 import { lookupChannelKey } from '@/lib/guest-spike/channels';
+import { CLOSE_SESSION_FAILED_USER_MESSAGE } from '@/lib/guest-spike/closeSessionResponse';
 import { closeGuestSession } from '@/lib/guest-spike/api';
 import { isGuestLang, type GuestLang } from '@/lib/guest-spike/languages';
 import type { Room } from '@/lib/rooms/roomTypes';
@@ -31,6 +32,7 @@ export function CustomerRoom({ room }: { room: Room }) {
   // validates the Bearer token). Only the customer-chat area is gated, not the rest of /chat.
   const { hasSession, refresh } = useStaffSession();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
   // Phase 1H.5 — the open room reads its language from its OWN message poll (no extra meta
   // poll) and reports it to the context so the list/header stay in sync.
   const [preferred, setPreferred] = useState<GuestLang | null>(null);
@@ -52,8 +54,14 @@ export function CustomerRoom({ room }: { room: Room }) {
 
   const endSession = useCallback(async () => {
     if (!channelKey) return;
-    if (!window.confirm('현재 고객과의 대화를 종료합니다. 고객은 더 이상 접근할 수 없습니다. 계속할까요?')) return;
-    await closeGuestSession(channelKey);
+    if (!window.confirm('현재 고객과의 대화를 종료합니다. 계속할까요?')) return;
+    setEndError(null);
+    try {
+      await closeGuestSession(channelKey);
+      setPreferred(null);
+    } catch {
+      setEndError(CLOSE_SESSION_FAILED_USER_MESSAGE);
+    }
   }, [channelKey]);
 
   return (
@@ -62,7 +70,7 @@ export function CustomerRoom({ room }: { room: Room }) {
       {channelKey ? (
         hasSession ? (
           <>
-            <div className="flex shrink-0 items-center justify-end border-b border-gray-300/40 bg-[#B2C7D9] px-3 py-1">
+            <div className="flex shrink-0 flex-col items-end gap-1 border-b border-gray-300/40 bg-[#B2C7D9] px-3 py-1">
               <button
                 type="button"
                 onClick={() => void endSession()}
@@ -70,6 +78,11 @@ export function CustomerRoom({ room }: { room: Room }) {
               >
                 대화 종료
               </button>
+              {endError && (
+                <div className="max-w-full whitespace-pre-line text-right text-xs font-semibold text-red-700" role="alert">
+                  {endError}
+                </div>
+              )}
             </div>
             <GuestChatPanel
               channelKey={channelKey}

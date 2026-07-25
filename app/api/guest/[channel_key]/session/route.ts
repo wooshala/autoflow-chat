@@ -2,11 +2,13 @@
 // claims a new session (its id stored in a per-channel HttpOnly cookie). A second cookieless
 // browser is 'occupied' — it NEVER receives the current guest's session cookie.
 //   GET    → { ok:true, status:'open' }                         (reconnect or fresh claim; sets cookie)
-//            { ok:true, status:'closed' }                       (this browser's session was ended)
 //            { ok:true, status:'occupied', code:'SESSION_ALREADY_CLAIMED' }  (in use by another browser)
+//            After staff end: a CLOSED session cookie on an idle channel → create + Set-Cookie overwrite
+//            (QR reusable). A CLOSED cookie while another guest holds OPEN → occupied (no join).
 //   DELETE → staff-only ("대화 종료"): close the active session. Requires a valid staff session.
+//            { ok:true, closed:true|false, closed_count, channel_key, closed_session_ids }
 //
-// occupied/closed are normal operating states → HTTP 200. Only real faults use 4xx/5xx.
+// occupied is a normal operating state → HTTP 200. Only real faults use 4xx/5xx.
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -83,8 +85,15 @@ export async function DELETE(req: NextRequest, { params }: { params: { channel_k
   const staff = await requireStaff(req);
   if (!staff) return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 });
   try {
-    await closeActiveSession(params.channel_key);
-    return NextResponse.json({ ok: true });
+    const channelKey = params.channel_key;
+    const result = await closeActiveSession(channelKey);
+    return NextResponse.json({
+      ok: true,
+      closed: result.closed_count > 0,
+      closed_count: result.closed_count,
+      channel_key: channelKey,
+      closed_session_ids: result.closed_session_ids,
+    });
   } catch (e) {
     return dbError(e);
   }

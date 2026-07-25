@@ -3,23 +3,57 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { decideSessionOutcome } from '../sessionPolicy.ts';
 
-test('valid cookie, this channel, open → reconnect', () => {
-  assert.deepEqual(decideSessionOutcome({ cookieSession: { channelMatches: true, status: 'open' }, hasActiveSession: true }), { kind: 'reconnect' });
+test('open cookie + same channel → reconnect (active irrelevant)', () => {
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: true, status: 'open' }, hasActiveSession: true }),
+    { kind: 'reconnect' },
+  );
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: true, status: 'open' }, hasActiveSession: false }),
+    { kind: 'reconnect' },
+  );
 });
-test('valid cookie, this channel, closed → closed (no new session)', () => {
-  assert.deepEqual(decideSessionOutcome({ cookieSession: { channelMatches: true, status: 'closed' }, hasActiveSession: false }), { kind: 'closed' });
-  // even if a new active exists elsewhere, the closed-cookie holder stays closed
-  assert.deepEqual(decideSessionOutcome({ cookieSession: { channelMatches: true, status: 'closed' }, hasActiveSession: true }), { kind: 'closed' });
+
+test('closed cookie + no active session → create (QR re-entry)', () => {
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: true, status: 'closed' }, hasActiveSession: false }),
+    { kind: 'create' },
+  );
 });
-test('no cookie, no active → create + claim', () => {
+
+test('closed cookie + active session → occupied (never join the other guest)', () => {
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: true, status: 'closed' }, hasActiveSession: true }),
+    { kind: 'occupied' },
+  );
+});
+
+test('no cookie + no active → create', () => {
   assert.deepEqual(decideSessionOutcome({ cookieSession: null, hasActiveSession: false }), { kind: 'create' });
 });
-test('no cookie, active exists → occupied (NEVER auto-join)', () => {
+
+test('no cookie + active → occupied (NEVER auto-join)', () => {
   assert.deepEqual(decideSessionOutcome({ cookieSession: null, hasActiveSession: true }), { kind: 'occupied' });
 });
-test('cookie for a DIFFERENT channel → treated as no cookie; active exists → occupied', () => {
-  assert.deepEqual(decideSessionOutcome({ cookieSession: { channelMatches: false, status: 'open' }, hasActiveSession: true }), { kind: 'occupied' });
+
+test('invalid/other-channel cookie + no active → create', () => {
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: false, status: 'open' }, hasActiveSession: false }),
+    { kind: 'create' },
+  );
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: false, status: 'closed' }, hasActiveSession: false }),
+    { kind: 'create' },
+  );
 });
-test('cookie for a different channel, no active here → create', () => {
-  assert.deepEqual(decideSessionOutcome({ cookieSession: { channelMatches: false, status: 'open' }, hasActiveSession: false }), { kind: 'create' });
+
+test('invalid/other-channel cookie + active → occupied', () => {
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: false, status: 'open' }, hasActiveSession: true }),
+    { kind: 'occupied' },
+  );
+  assert.deepEqual(
+    decideSessionOutcome({ cookieSession: { channelMatches: false, status: 'closed' }, hasActiveSession: true }),
+    { kind: 'occupied' },
+  );
 });
