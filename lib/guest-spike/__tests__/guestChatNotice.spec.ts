@@ -36,6 +36,11 @@ test('notice copy exists for every supported guest language', () => {
   for (const lang of SUPPORTED_LANGS) {
     const c = noticeCopyFor(lang);
     assert.ok(c.scanLead.length > 0, lang);
+    assert.ok(c.valueLine.length > 0, lang);
+    assert.ok(c.servicesTitle.length > 0, lang);
+    assert.ok(c.translateBadge.length > 0, lang);
+    assert.ok(c.staffWatchBody.length > 0, lang);
+    assert.ok(c.frontDeskLabel.length > 0, lang);
     assert.ok(c.wifiNightstand.length > 0, lang);
     assert.match(c.wifiNightstand, /Wi-?Fi|Wi‑Fi|WIFI|wifi|와이파이/i);
     // Must not embed concrete Wi-Fi credentials
@@ -44,14 +49,19 @@ test('notice copy exists for every supported guest language', () => {
     assert.doesNotMatch(c.wifiNightstand, /비밀번호\s*[:=]/);
     // Soft after-checkout CTA — no “always available after checkout” guarantee
     assert.doesNotMatch(c.afterCheckout, /항상|always available|체크아웃 후에도 항상/i);
+    assert.doesNotMatch(c.privacyBody, /자동 종료|automatically (end|close)|퇴실 후.*종료/i);
     assert.match(c.privacyBody, /서비스|services|サービス|服务|услуг|services de|servicios/i);
     assert.doesNotMatch(c.privacyBody, /수집하지 않습니다|완전히 안전|do not collect|completely safe/i);
+    for (const id of Object.keys(c.serviceLabels)) {
+      assert.ok(c.serviceLabels[id as keyof typeof c.serviceLabels].length > 0, `${lang}:${id}`);
+    }
   }
 });
 
-test('Korean Wi-Fi copy mentions phone nightstand sticker', () => {
-  assert.match(guestChatNoticeCopy.ko.wifiNightstand, /전화기가 놓여 있는 협탁/);
-  assert.match(guestChatNoticeCopy.ko.wifiNightstand, /Wi-Fi QR 스티커/);
+test('Korean Wi-Fi copy points to in-room sticker without credentials', () => {
+  assert.match(guestChatNoticeCopy.ko.wifiNightstand, /Wi-Fi/);
+  assert.match(guestChatNoticeCopy.ko.wifiNightstand, /스티커/);
+  assert.doesNotMatch(guestChatNoticeCopy.ko.wifiNightstand, /SSID|비밀번호\s*[:=]/);
 });
 
 test('language line uses SoT display names', () => {
@@ -76,7 +86,10 @@ test('A4 HTML includes room, URL, 40mm QR, wifi, emergency — no chat UI chrome
     assert.match(html, /호텔 레이블/);
     assert.match(html, new RegExp(`room-${room}`));
     assert.match(html, /010-4657-6680/);
-    assert.match(html, /전화기가 놓여 있는 협탁/);
+    assert.match(html, /Wi-Fi 안내 스티커/);
+    assert.match(html, /gn-service-grid/);
+    assert.match(html, /자동 번역/);
+    assert.match(html, /Front Desk/);
     assert.match(html, /width:\s*40mm/);
     assert.match(html, /height:\s*40mm/);
     assert.match(html, /@media print/);
@@ -109,8 +122,11 @@ test('RoomGuestQrCard uses same-document print (no window.open / popup prompt)',
   assert.doesNotMatch(qrHelper, /openGuestChatNoticePrint/);
   assert.match(sheet, /GUEST_CHAT_EMERGENCY_PHONE/);
   assert.match(sheet, /guestChatNoticeCopy/);
+  assert.match(sheet, /GUEST_NOTICE_SERVICE_IDS/);
+  assert.match(sheet, /service-first/);
   assert.match(css, /body\.printing-guest-notice/);
   assert.match(css, /\.guest-notice-print-root/);
+  assert.match(css, /\.gn-service-grid/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_QR_MM/);
 });
 
