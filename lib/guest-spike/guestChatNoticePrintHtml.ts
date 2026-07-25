@@ -1,5 +1,6 @@
-// Builds a self-contained A4 Guest Chat notice HTML document for window.print().
-// Pure string builder (no React) so it works in a popup without bundling a second React tree.
+// Builds a self-contained A4 Guest Chat notice HTML document (batch PDF / unit tests).
+// Staff UI print uses React GuestChatNoticeSheet + same-document window.print() instead.
+// Content SoT remains guestChatNoticeConfig + guestChatNoticeCopy (do not diverge).
 
 import {
   GUEST_CHAT_EMERGENCY_PHONE,

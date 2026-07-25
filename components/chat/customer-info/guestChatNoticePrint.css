@@ -1,0 +1,205 @@
+/* Guest Chat A4 notice — same-document print (no window.open). */
+
+.guest-notice-print-root {
+  display: none;
+}
+
+.guest-notice-sheet {
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 14mm;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #111;
+  font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.guest-notice-hotel {
+  text-align: center;
+  font-size: 18pt;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.guest-notice-room {
+  text-align: center;
+  font-size: 24pt;
+  font-weight: 800;
+  margin-top: 1mm;
+}
+
+.guest-notice-subtitle {
+  text-align: center;
+  font-size: 11pt;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-top: 1mm;
+}
+
+.guest-notice-lead {
+  text-align: center;
+  margin-top: 3mm;
+}
+
+.guest-notice-scan {
+  font-size: 11pt;
+  font-weight: 700;
+}
+
+.guest-notice-support {
+  font-size: 9pt;
+  color: #333;
+  margin-top: 1mm;
+}
+
+.guest-notice-qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 3mm 0 1.5mm;
+}
+
+.guest-notice-qr {
+  padding: 2mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.guest-notice-qr svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.guest-notice-url {
+  text-align: center;
+  font-size: 7.5pt;
+  color: #334155;
+  word-break: break-all;
+  margin-top: 1.5mm;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.guest-notice-langs {
+  text-align: center;
+  font-size: 8pt;
+  font-weight: 700;
+  color: #444;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 1.8mm 0;
+  margin: 1.5mm 0;
+}
+
+.guest-notice-section-title {
+  font-size: 8pt;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 1.5mm 0 0.8mm;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.guest-notice-ml {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8mm;
+}
+
+.guest-notice-ml.compact .guest-notice-ml-text {
+  font-size: 6.8pt;
+}
+
+.guest-notice-ml-row {
+  display: grid;
+  grid-template-columns: 26mm 1fr;
+  gap: 1.5mm;
+  align-items: start;
+}
+
+.guest-notice-ml-lang {
+  font-size: 6.8pt;
+  font-weight: 800;
+  color: #64748b;
+}
+
+.guest-notice-ml-text {
+  font-size: 7.2pt;
+  line-height: 1.3;
+  color: #111;
+}
+
+.guest-notice-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 2mm;
+  margin-top: 2mm;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 2mm;
+}
+
+.guest-notice-footer h4 {
+  margin: 0 0 0.8mm;
+  font-size: 8pt;
+}
+
+.guest-notice-footer p {
+  margin: 0;
+  font-size: 7pt;
+  color: #333;
+  line-height: 1.3;
+}
+
+.guest-notice-emergency {
+  text-align: center;
+  margin-top: 2mm;
+  font-size: 11pt;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.guest-notice-after {
+  text-align: center;
+  margin-top: 1.5mm;
+  font-size: 7.5pt;
+  color: #475569;
+  line-height: 1.35;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 14mm;
+  }
+
+  body.printing-guest-notice > *:not(.guest-notice-print-root) {
+    display: none !important;
+  }
+
+  body.printing-guest-notice .guest-notice-print-root {
+    display: block !important;
+    position: static;
+    width: auto;
+    min-height: auto;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  body.printing-guest-notice .guest-notice-sheet {
+    width: auto;
+    min-height: auto;
+    padding: 0;
+    box-shadow: none;
+  }
+}

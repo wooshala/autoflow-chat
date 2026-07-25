@@ -88,12 +88,30 @@ test('A4 HTML includes room, URL, 40mm QR, wifi, emergency — no chat UI chrome
   }
 });
 
-test('RoomGuestQrCard wires QR 출력 to openGuestChatNoticePrint', () => {
+test('RoomGuestQrCard uses same-document print (no window.open / popup prompt)', () => {
   const card = readFileSync(join(process.cwd(), 'components/chat/customer-info/RoomGuestQrCard.tsx'), 'utf8');
-  assert.match(card, /openGuestChatNoticePrint/);
+  const qrHelper = readFileSync(join(process.cwd(), 'lib/guest-spike/buildGuestChatNoticeQrSvg.ts'), 'utf8');
+  const sheet = readFileSync(join(process.cwd(), 'components/chat/customer-info/GuestChatNoticeSheet.tsx'), 'utf8');
+  const css = readFileSync(join(process.cwd(), 'components/chat/customer-info/guestChatNoticePrint.css'), 'utf8');
   assert.match(card, /QR 출력/);
   assert.match(card, /링크 복사/);
-  assert.match(card, /팝업 허용/);
+  assert.match(card, /buildGuestChatNoticeQrSvg/);
+  assert.match(card, /window\.print\(/);
+  assert.match(card, /afterprint/);
+  assert.match(card, /printing-guest-notice/);
+  assert.match(card, /guest-notice-print-root/);
+  assert.match(card, /GuestChatNoticeSheet/);
+  assert.match(card, /출력 준비 중/);
+  assert.match(card, /printBusyRef/);
+  assert.doesNotMatch(card, /window\.open\s*\(/);
+  assert.doesNotMatch(card, /팝업 허용/);
+  assert.doesNotMatch(qrHelper, /window\.open\s*\(/);
+  assert.doesNotMatch(qrHelper, /openGuestChatNoticePrint/);
+  assert.match(sheet, /GUEST_CHAT_EMERGENCY_PHONE/);
+  assert.match(sheet, /guestChatNoticeCopy/);
+  assert.match(css, /body\.printing-guest-notice/);
+  assert.match(css, /\.guest-notice-print-root/);
+  assert.match(sheet, /GUEST_CHAT_NOTICE_QR_MM/);
 });
 
 test('batch PDF pipeline uses notice SoT + emergency constant', () => {
