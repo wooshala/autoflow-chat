@@ -8,6 +8,7 @@
 
 import { useState } from 'react';
 
+import { RoomGuestQrCard } from '@/components/chat/customer-info/RoomGuestQrCard';
 import { useCustomerContext, saveCustomerContext } from '@/lib/guest-spike/customerContextApi';
 import { langDisplayName, isGuestLang } from '@/lib/guest-spike/languages';
 import type { GuestCustomerContext } from '@/lib/guest-spike/customerContextTypes';
@@ -151,16 +152,12 @@ function CustomerForm({
   );
 }
 
-function Panel({ ctx }: { ctx: GuestCustomerContext }) {
+function PanelBody({ ctx }: { ctx: GuestCustomerContext }) {
   const s = ctx.session;
   const lang = isGuestLang(s.languageCode) ? langDisplayName(s.languageCode) : null;
   return (
-    <div className="flex flex-col gap-3 p-3">
-      <header>
-        <div className="text-sm font-bold text-gray-800">고객 정보</div>
-        <div className="text-lg font-extrabold text-gray-900">{s.roomNo ? `${s.roomNo}호` : ctx.session.channelKey}</div>
-        <div className="text-xs text-gray-500">{s.status === 'open' ? '현재 고객 세션' : '현재 활성 고객 없음'}</div>
-      </header>
+    <>
+      <div className="text-xs text-gray-500">{s.status === 'open' ? '현재 고객 세션' : '현재 활성 고객 없음'}</div>
 
       <section className="rounded-xl border border-gray-200 bg-white p-3">
         <h3 className="mb-2 text-xs font-bold text-gray-700">세션</h3>
@@ -179,12 +176,13 @@ function Panel({ ctx }: { ctx: GuestCustomerContext }) {
           <p className="text-sm text-gray-600">활성 고객 세션이 없어 고객 정보를 기록할 수 없습니다.</p>
         </section>
       )}
-    </div>
+    </>
   );
 }
 
 export function CustomerInformationPanel({
   channelKey,
+  roomNo = null,
   activeSessionId = null,
   // Right-panel width contract — MUST match ChatOperationPanel (Event Center) so the center chat
   // keeps its width. In the non-resizable layout the caller passes undefined → this fixed default;
@@ -204,23 +202,39 @@ export function CustomerInformationPanel({
   // change, so the previous guest's data is never shown during the transition (loading, then empty).
   const state = useCustomerContext(channelKey, `${activeSessionId ?? 'none'}#${reloadKey}`);
 
+  const roomLabel =
+    (roomNo && String(roomNo).replace(/[^\d]/g, '')) ||
+    (state.status === 'success' && state.context.session.roomNo) ||
+    /^room-(\d+)/.exec(channelKey)?.[1] ||
+    channelKey;
+
   return (
     <aside className={`flex h-full min-h-0 flex-col bg-gray-50 ${widthClassName}`}>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {state.status === 'loading' && <div className="p-4 text-sm text-gray-500">고객 정보를 불러오는 중…</div>}
-        {state.status === 'error' && (
-          <div className="p-4">
-            <p className="text-sm text-gray-700">고객 정보를 불러오지 못했습니다.</p>
-            <button
-              type="button"
-              onClick={() => setReloadKey((k) => k + 1)}
-              className="mt-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              다시 시도
-            </button>
-          </div>
-        )}
-        {state.status === 'success' && <Panel ctx={state.context} />}
+        <div className="flex flex-col gap-3 p-3">
+          <header>
+            <div className="text-sm font-bold text-gray-800">고객 정보</div>
+            <div className="text-lg font-extrabold text-gray-900">{roomLabel}호</div>
+          </header>
+
+          {/* Always visible for the selected room — updates when channelKey changes (no F5). */}
+          <RoomGuestQrCard channelKey={channelKey} roomNo={roomLabel} />
+
+          {state.status === 'loading' && <div className="text-sm text-gray-500">고객 정보를 불러오는 중…</div>}
+          {state.status === 'error' && (
+            <div>
+              <p className="text-sm text-gray-700">고객 정보를 불러오지 못했습니다.</p>
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="mt-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
+          {state.status === 'success' && <PanelBody ctx={state.context} />}
+        </div>
       </div>
     </aside>
   );
