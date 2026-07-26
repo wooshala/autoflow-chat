@@ -19,8 +19,10 @@ export interface GuestChatNoticeCopy {
   scanLead: string;
   /** Short value prop beside QR. */
   scanSupport: string;
-  /** Short intro used in language strip. */
+  /** Short intro used in language strip — QR how-to in that language. */
   helpIntro: string;
+  /** Language-strip section title (how to use room QR). */
+  howToTitle: string;
   /** Compact topic line (legacy / PDF helpers). */
   helpTopics: string;
   /** Service grid section title. */
@@ -98,7 +100,8 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     valueLine: '객실에서 전화 없이 직원과 바로 대화하세요.',
     scanLead: 'QR을 스캔하면 바로 대화를 시작할 수 있습니다.',
     scanSupport: '필요한 서비스를 실시간으로 요청하세요.',
-    helpIntro: '내 언어로 직원과 대화할 수 있습니다.',
+    helpIntro: '휴대폰 카메라로 위 Guest Chat QR을 스캔하세요.',
+    howToTitle: '객실 QR 사용 방법',
     helpTopics: '수건 · 생수 · 청소 · 시설 · 분실물 등 객실 문의를 보내 주세요.',
     servicesTitle: '이런 요청이 가능합니다',
     serviceLabels: labels(
@@ -122,7 +125,7 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     wifi5gLabel: '5GHz',
     wifi24Label: '2.4GHz',
     wifiPasswordLabel: '비밀번호',
-    wifiNightstand: 'Wi-Fi QR과 비밀번호는 위 안내를 이용해 주세요.',
+    wifiNightstand: 'Wi-Fi QR과 비밀번호는 본 안내를 이용해 주세요.',
     hoursTitle: '언제든 문의',
     hoursBody: '문의는 언제든지 가능합니다.',
     staffWatchBody: '직원이 실시간으로 확인합니다.',
@@ -139,7 +142,8 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     valueLine: 'Chat with staff from your room — no phone call needed.',
     scanLead: 'Scan the QR code to start chatting right away.',
     scanSupport: 'Request what you need in real time.',
-    helpIntro: 'Chat with staff in your language.',
+    helpIntro: 'Scan the Guest Chat QR above with your phone camera.',
+    howToTitle: 'How to use the room QR',
     helpTopics: 'Towels, water, cleaning, facilities, lost items, and more.',
     servicesTitle: 'You can request',
     serviceLabels: labels(
@@ -163,7 +167,7 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     wifi5gLabel: '5GHz',
     wifi24Label: '2.4GHz',
     wifiPasswordLabel: 'Password',
-    wifiNightstand: 'Use the Wi-Fi QR codes and password above.',
+    wifiNightstand: 'Use the Wi-Fi QR codes and password on this notice.',
     hoursTitle: 'Anytime',
     hoursBody: 'You can message us any time.',
     staffWatchBody: 'Staff check messages in real time.',
@@ -180,7 +184,8 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     valueLine: '客室から電話なしでスタッフとすぐに話せます。',
     scanLead: 'QRを読み取るとすぐに会話を始められます。',
     scanSupport: '必要なサービスをリアルタイムでご依頼ください。',
-    helpIntro: 'ご自身の言語でスタッフと会話できます。',
+    helpIntro: 'スマートフォンのカメラで上のGuest Chat QRを読み取ってください。',
+    howToTitle: '客室QRの使い方',
     helpTopics: 'タオル・水・清掃・設備・忘れ物などご連絡ください。',
     servicesTitle: 'ご依頼できること',
     serviceLabels: labels(
@@ -204,7 +209,7 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     wifi5gLabel: '5GHz',
     wifi24Label: '2.4GHz',
     wifiPasswordLabel: 'パスワード',
-    wifiNightstand: '上のWi-Fi QRとパスワードをご利用ください。',
+    wifiNightstand: '本案内のWi-Fi QRとパスワードをご利用ください。',
     hoursTitle: 'いつでも',
     hoursBody: 'いつでもお問い合わせいただけます。',
     staffWatchBody: 'スタッフがリアルタイムで確認します。',
@@ -221,7 +226,8 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     valueLine: '无需打电话，在客房即可与工作人员即时沟通。',
     scanLead: '扫描二维码即可立即开始对话。',
     scanSupport: '实时提交您需要的服务。',
-    helpIntro: '可用您的语言与工作人员对话。',
+    helpIntro: '请用手机相机扫描上方 Guest Chat 二维码。',
+    howToTitle: '客房二维码使用方法',
     helpTopics: '毛巾、饮用水、清洁、设施、失物等欢迎咨询。',
     servicesTitle: '可请求的服务',
     serviceLabels: labels(
@@ -245,7 +251,7 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     wifi5gLabel: '5GHz',
     wifi24Label: '2.4GHz',
     wifiPasswordLabel: '密码',
-    wifiNightstand: '请使用上方的 Wi-Fi 二维码与密码。',
+    wifiNightstand: '请使用本页的 Wi-Fi 二维码与密码。',
     hoursTitle: '随时咨询',
     hoursBody: '随时都可以联系我们。',
     staffWatchBody: '工作人员会实时查看。',
@@ -262,7 +268,8 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     valueLine: 'Общайтесь с персоналом из номера — без звонка.',
     scanLead: 'Отсканируйте QR-код, чтобы сразу начать чат.',
     scanSupport: 'Запрашивайте услуги в реальном времени.',
-    helpIntro: 'Общайтесь с персоналом на своём языке.',
+    helpIntro: 'Отсканируйте QR Guest Chat выше камерой телефона.',
+    howToTitle: 'Как пользоваться QR номера',
     helpTopics: 'Полотенца, вода, уборка, неисправности, забытые вещи и другое.',
     servicesTitle: 'Можно запросить',
     serviceLabels: labels(
@@ -286,7 +293,7 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     wifi5gLabel: '5GHz',
     wifi24Label: '2.4GHz',
     wifiPasswordLabel: 'Пароль',
-    wifiNightstand: 'Используйте QR Wi-Fi и пароль выше.',
+    wifiNightstand: 'Используйте QR Wi-Fi и пароль на этом листе.',
     hoursTitle: 'В любое время',
     hoursBody: 'Пишите нам в любое время.',
     staffWatchBody: 'Персонал видит сообщения сразу.',
@@ -303,7 +310,8 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     valueLine: 'Parlez au personnel depuis la chambre — sans téléphone.',
     scanLead: 'Scannez le QR pour démarrer la conversation immédiatement.',
     scanSupport: 'Demandez vos services en temps réel.',
-    helpIntro: 'Discutez avec le personnel dans votre langue.',
+    helpIntro: 'Scannez le QR Guest Chat ci-dessus avec l’appareil photo.',
+    howToTitle: 'Comment utiliser le QR chambre',
     helpTopics: 'Serviettes, eau, ménage, équipements, objets trouvés, etc.',
     servicesTitle: 'Vous pouvez demander',
     serviceLabels: labels(
@@ -327,7 +335,7 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     wifi5gLabel: '5GHz',
     wifi24Label: '2.4GHz',
     wifiPasswordLabel: 'Mot de passe',
-    wifiNightstand: 'Utilisez les QR Wi-Fi et le mot de passe ci-dessus.',
+    wifiNightstand: 'Utilisez les QR Wi-Fi et le mot de passe de cette fiche.',
     hoursTitle: 'À tout moment',
     hoursBody: 'Vous pouvez nous écrire à tout moment.',
     staffWatchBody: 'Le personnel lit vos messages en temps réel.',
@@ -344,7 +352,8 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     valueLine: 'Hable con el personal desde la habitación — sin llamar.',
     scanLead: 'Escanee el QR para empezar a conversar de inmediato.',
     scanSupport: 'Solicite servicios en tiempo real.',
-    helpIntro: 'Chatee con el personal en su idioma.',
+    helpIntro: 'Escanee el QR de Guest Chat de arriba con la cámara.',
+    howToTitle: 'Cómo usar el QR de la habitación',
     helpTopics: 'Toallas, agua, limpieza, instalaciones, objetos perdidos y más.',
     servicesTitle: 'Puede solicitar',
     serviceLabels: labels(
@@ -368,7 +377,7 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     wifi5gLabel: '5GHz',
     wifi24Label: '2.4GHz',
     wifiPasswordLabel: 'Contraseña',
-    wifiNightstand: 'Use los QR Wi-Fi y la contraseña de arriba.',
+    wifiNightstand: 'Use los QR Wi-Fi y la contraseña de este aviso.',
     hoursTitle: 'En cualquier momento',
     hoursBody: 'Puede escribirnos a cualquier hora.',
     staffWatchBody: 'El personal ve los mensajes en tiempo real.',

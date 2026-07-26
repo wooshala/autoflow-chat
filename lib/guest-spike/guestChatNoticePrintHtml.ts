@@ -138,27 +138,27 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       --gn-ink: #111827; --gn-muted: #4b5563; --gn-soft: #f8fafc; --gn-box: #f3f4f6;
       --gn-info: #eef2ff; --gn-danger: #b91c1c; --gn-card-border: #e8e8ee; --gn-icon: #475569;
       box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0 auto;
-      padding: 8mm 11mm 7mm; display: flex; flex-direction: column; gap: 2.8mm;
+      padding: 7mm 10mm 6mm; display: flex; flex-direction: column; gap: 2.2mm;
       color: var(--gn-ink); background: #fff;
     }
     .gn-header { text-align: center; }
-    .gn-hotel { font-size: 12.5pt; font-weight: 700; letter-spacing: 0.08em; color: var(--gn-gold); margin-bottom: 2mm; }
+    .gn-hotel { font-size: 11.5pt; font-weight: 700; letter-spacing: 0.08em; color: var(--gn-gold); margin-bottom: 1.4mm; }
     .gn-rule { height: 0; border: 0; border-top: 0.3mm solid var(--gn-gold-line); width: 100%; opacity: 0.85; }
-    .gn-room { margin-top: 1.8mm; font-size: 26pt; font-weight: 800; line-height: 1.02; }
-    .gn-room-en { margin-top: 0.5mm; margin-bottom: 1.8mm; font-size: 8.5pt; font-weight: 600; letter-spacing: 0.04em; color: var(--gn-gold); }
-    .gn-title { margin: 2mm 0 0; font-size: 12pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-value { margin: 1.2mm auto 0; max-width: 165mm; font-size: 9pt; font-weight: 700; line-height: 1.35; }
-    .gn-value-en { margin: 0.5mm auto 0; max-width: 165mm; font-size: 6.5pt; color: var(--gn-muted); }
-    .gn-concierge { display: flex; flex-direction: column; gap: 2.8mm; padding: 2.5mm 3mm 2.8mm; background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 2.2mm; }
+    .gn-room { margin-top: 1.2mm; font-size: 24pt; font-weight: 800; line-height: 1.02; }
+    .gn-room-en { margin-top: 0.3mm; margin-bottom: 1.2mm; font-size: 8pt; font-weight: 600; letter-spacing: 0.04em; color: var(--gn-gold); }
+    .gn-title { margin: 1.4mm 0 0; font-size: 11.5pt; font-weight: 800; color: var(--gn-navy); }
+    .gn-value { margin: 0.8mm auto 0; max-width: 165mm; font-size: 8.5pt; font-weight: 700; line-height: 1.3; }
+    .gn-value-en { margin: 0.3mm auto 0; max-width: 165mm; font-size: 6pt; color: var(--gn-muted); }
+    .gn-concierge { display: flex; flex-direction: column; padding: 2mm 2.5mm 2.2mm; background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; }
     .gn-chat-hero { display: flex; flex-direction: column; align-items: center; text-align: center; }
-    .gn-chat-hero-label { font-size: 9pt; font-weight: 800; color: var(--gn-navy); letter-spacing: 0.06em; margin-bottom: 2mm; }
-    .gn-qr { padding: 1.8mm; box-sizing: border-box; background: #fff; border: 0.45mm solid #0f172a; display: flex; align-items: center; justify-content: center; }
-    .gn-qr-chat { border-width: 0.55mm; box-shadow: 0 0.8mm 2mm rgba(15,23,42,0.06); }
-    .gn-qr-wifi { border-width: 0.28mm; border-color: #94a3b8; padding: 1.2mm; }
+    .gn-chat-hero-label { font-size: 8.5pt; font-weight: 800; color: var(--gn-navy); letter-spacing: 0.06em; margin-bottom: 1.4mm; }
+    .gn-qr { padding: 1.4mm; box-sizing: border-box; background: #fff; border: 0.45mm solid #0f172a; display: flex; align-items: center; justify-content: center; }
+    .gn-qr-chat { border-width: 0.55mm; box-shadow: 0 0.6mm 1.6mm rgba(15,23,42,0.06); }
+    .gn-qr-wifi { border-width: 0.28mm; border-color: #94a3b8; padding: 1mm; }
     .gn-qr svg { width: 100%; height: 100%; display: block; }
-    .gn-chat-hero-hint { margin: 2.2mm 0 0; font-size: 8pt; font-weight: 700; max-width: 150mm; }
-    .gn-chat-hero-hint-en { margin: 0.6mm 0 0; font-size: 6pt; color: var(--gn-muted); max-width: 150mm; }
-    .gn-wifi-aux { border-top: 0.25mm solid #e5e7eb; padding-top: 2mm; }
+    .gn-chat-hero-hint { margin: 1.6mm 0 0; font-size: 7.5pt; font-weight: 700; max-width: 150mm; }
+    .gn-chat-hero-hint-en { margin: 0.4mm 0 0; font-size: 5.8pt; color: var(--gn-muted); max-width: 150mm; }
+    .gn-wifi-aux { background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 1.8mm; padding: 1.8mm 2mm; }
     .gn-wifi-aux-head { text-align: center; margin-bottom: 1.5mm; }
     .gn-wifi-aux-title-row { display: inline-flex; align-items: center; justify-content: center; gap: 1mm; flex-wrap: wrap; }
     .gn-wifi-aux-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; max-width: 32mm; padding: 0 1mm; gap: 1mm; align-self: center; }
@@ -168,45 +168,47 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     .gn-wifi-aux-title { font-size: 7.5pt; font-weight: 800; color: var(--gn-muted); line-height: 1.2; }
     .gn-wifi-aux-hint { display: block; font-size: 5.5pt; color: #6b7280; line-height: 1.35; max-width: 30mm; word-break: keep-all; }
     .gn-wifi-aux-qrs { display: grid; grid-template-columns: 1fr minmax(22mm, 32mm) 1fr; gap: 2mm; align-items: stretch; }
-    .gn-wifi-band-card { display: flex; flex-direction: column; align-items: center; text-align: center; background: #fff; border: 0.2mm solid #e5e7eb; border-radius: 1.6mm; padding: 2mm 2.2mm 2.2mm; }
-    .gn-wifi-band { font-size: 7pt; font-weight: 800; margin-bottom: 1.2mm; }
-    .gn-wifi-cred { width: 100%; margin-top: 1.6mm; display: flex; flex-direction: column; gap: 1.4mm; }
-    .gn-wifi-cred-row { display: flex; flex-direction: column; gap: 0.35mm; align-items: center; }
-    .gn-wifi-cred-k { font-size: 5pt; font-weight: 800; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.06em; }
-    .gn-wifi-ssid { font-size: 6pt; font-weight: 600; font-family: ui-monospace, Consolas, monospace; color: var(--gn-muted); word-break: break-all; }
-    .gn-wifi-cred-pw { font-size: 9.5pt; font-weight: 800; font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.04em; }
+    .gn-wifi-band-card { display: flex; flex-direction: column; align-items: center; text-align: center; background: #fff; border: 0.2mm solid #e5e7eb; border-radius: 1.6mm; padding: 1.6mm 2mm 1.8mm; }
+    .gn-wifi-band { font-size: 6.5pt; font-weight: 800; margin-bottom: 1mm; }
+    .gn-wifi-cred { width: 100%; margin-top: 1.2mm; display: flex; flex-direction: column; gap: 1mm; }
+    .gn-wifi-cred-row { display: flex; flex-direction: column; gap: 0.3mm; align-items: center; }
+    .gn-wifi-cred-k { font-size: 4.8pt; font-weight: 800; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.06em; }
+    .gn-wifi-ssid { font-size: 5.5pt; font-weight: 600; font-family: ui-monospace, Consolas, monospace; color: var(--gn-muted); word-break: break-all; }
+    .gn-wifi-cred-pw { font-size: 8.5pt; font-weight: 800; font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.04em; }
     .gn-wifi-ph { box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: #eef2f7; color: #6b7280; font-size: 6pt; font-weight: 700; border: 0.25mm dashed #94a3b8; border-radius: 1mm; }
     .gn-wifi-missing { text-align: center; font-size: 6.5pt; color: var(--gn-muted); }
-    .gn-services { border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; padding: 2.2mm 2.5mm 2mm; }
-    .gn-services-title { margin: 0 0 1.8mm; text-align: center; font-size: 9.5pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-service-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.8mm 1.2mm; }
-    .gn-service-item { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.5mm; }
-    .gn-service-icon { display: inline-flex; width: 4.6mm; height: 4.6mm; color: var(--gn-icon); margin-bottom: 0.3mm; }
+    .gn-services { border: 0.25mm solid var(--gn-card-border); border-radius: 1.8mm; padding: 1.8mm 2mm 1.6mm; }
+    .gn-services-title { margin: 0 0 1.4mm; text-align: center; font-size: 9pt; font-weight: 800; color: var(--gn-navy); }
+    .gn-service-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.4mm 1mm; }
+    .gn-service-item { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.4mm; }
+    .gn-service-icon { display: inline-flex; width: 4.2mm; height: 4.2mm; color: var(--gn-icon); }
     .gn-service-icon svg { width: 100%; height: 100%; display: block; }
-    .gn-service-label { font-size: 7pt; font-weight: 700; line-height: 1.15; word-break: keep-all; }
-    .gn-service-label-en { font-size: 6pt; font-weight: 600; color: var(--gn-muted); line-height: 1.2; word-break: break-word; }
-    .gn-lang-strip { border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; padding: 2mm 2.2mm; background: var(--gn-soft); }
-    .gn-lang-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4mm; }
-    .gn-lang-pill { background: #fff; border-radius: 1.5mm; padding: 1.5mm 1.2mm; text-align: center; border: 0.2mm solid #eceff3; }
-    .gn-lang-flag { font-size: 9pt; display: block; margin-bottom: 0.5mm; }
-    .gn-lang-name { display: block; font-size: 8pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-lang-hint { display: block; margin-top: 0.6mm; font-size: 6.5pt; color: var(--gn-muted); line-height: 1.3; }
-    .gn-translate { margin-top: 1.5mm; display: flex; justify-content: center; align-items: baseline; gap: 2mm; flex-wrap: wrap; }
-    .gn-translate-badge { font-size: 8.5pt; font-weight: 800; color: var(--gn-navy); background: var(--gn-info); border: 0.2mm solid #dce3ff; border-radius: 999px; padding: 0.7mm 2.8mm; }
-    .gn-translate-en { font-size: 7.5pt; color: var(--gn-muted); font-weight: 600; }
-    .gn-trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.8mm; }
-    .gn-trust-chip { display: flex; gap: 1.3mm; background: var(--gn-soft); border-radius: 1.6mm; padding: 1.8mm 1.5mm; border: 0.2mm solid #eceff3; }
-    .gn-trust-icon { display: inline-flex; width: 3.6mm; height: 3.6mm; color: var(--gn-icon); flex-shrink: 0; }
+    .gn-service-label { font-size: 6.5pt; font-weight: 700; line-height: 1.15; word-break: keep-all; }
+    .gn-service-label-en { font-size: 5.5pt; font-weight: 600; color: var(--gn-muted); line-height: 1.15; word-break: break-word; }
+    .gn-lang-strip { border: 0.25mm solid var(--gn-card-border); border-radius: 1.8mm; padding: 1.6mm 2mm 1.8mm; background: var(--gn-soft); }
+    .gn-howto-title { margin: 0; text-align: center; font-size: 8.5pt; font-weight: 800; color: var(--gn-navy); }
+    .gn-howto-title-en { margin: 0.3mm 0 1.4mm; text-align: center; font-size: 6.5pt; color: var(--gn-muted); font-weight: 600; }
+    .gn-lang-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.2mm; }
+    .gn-lang-pill { background: #fff; border-radius: 1.4mm; padding: 1.2mm 1mm; text-align: center; border: 0.2mm solid #eceff3; }
+    .gn-lang-flag { font-size: 8pt; display: block; margin-bottom: 0.4mm; }
+    .gn-lang-name { display: block; font-size: 7.5pt; font-weight: 800; color: var(--gn-navy); }
+    .gn-lang-hint { display: block; margin-top: 0.5mm; font-size: 6pt; color: var(--gn-muted); line-height: 1.25; }
+    .gn-translate { margin-top: 1.2mm; display: flex; justify-content: center; align-items: baseline; gap: 2mm; flex-wrap: wrap; }
+    .gn-translate-badge { font-size: 7.5pt; font-weight: 800; color: var(--gn-navy); background: var(--gn-info); border: 0.2mm solid #dce3ff; border-radius: 999px; padding: 0.5mm 2.4mm; }
+    .gn-translate-en { font-size: 6.5pt; color: var(--gn-muted); font-weight: 600; }
+    .gn-trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4mm; }
+    .gn-trust-chip { display: flex; gap: 1mm; background: var(--gn-soft); border-radius: 1.4mm; padding: 1.4mm 1.2mm; border: 0.2mm solid #eceff3; }
+    .gn-trust-icon { display: inline-flex; width: 3.2mm; height: 3.2mm; color: var(--gn-icon); flex-shrink: 0; }
     .gn-trust-icon svg { width: 100%; height: 100%; display: block; }
-    .gn-trust-ko { font-size: 7.5pt; font-weight: 700; line-height: 1.3; }
-    .gn-trust-en { margin-top: 0.5mm; font-size: 6.5pt; color: var(--gn-muted); line-height: 1.3; }
-    .gn-bottom { display: grid; grid-template-columns: 1fr; max-width: 92mm; margin: 0 auto; width: 100%; }
-    .gn-bottom-box { border: 0.25mm solid #e5e7eb; border-radius: 2mm; padding: 2.2mm 2.8mm; background: var(--gn-soft); }
-    .gn-bottom-head { display: flex; align-items: center; justify-content: center; gap: 1.4mm; font-size: 8pt; font-weight: 800; margin-bottom: 1mm; color: var(--gn-danger); }
-    .gn-phone-icon { display: inline-flex; width: 3.4mm; height: 3.4mm; color: var(--gn-danger); }
+    .gn-trust-ko { font-size: 6.5pt; font-weight: 700; line-height: 1.25; }
+    .gn-trust-en { margin-top: 0.3mm; font-size: 5.5pt; color: var(--gn-muted); line-height: 1.25; }
+    .gn-bottom { display: grid; grid-template-columns: 1fr; max-width: 88mm; margin: 0 auto; width: 100%; }
+    .gn-bottom-box { border: 0.25mm solid #e5e7eb; border-radius: 1.8mm; padding: 1.6mm 2.2mm; background: var(--gn-soft); }
+    .gn-bottom-head { display: flex; align-items: center; justify-content: center; gap: 1.2mm; font-size: 7.5pt; font-weight: 800; margin-bottom: 0.6mm; color: var(--gn-danger); }
+    .gn-phone-icon { display: inline-flex; width: 3.2mm; height: 3.2mm; color: var(--gn-danger); }
     .gn-phone-icon svg { width: 100%; height: 100%; display: block; }
-    .gn-emergency-phone { margin: 0; text-align: center; font-size: 12.5pt; font-weight: 800; color: var(--gn-danger); }
-    .gn-footer { margin-top: auto; padding-top: 1.2mm; border-top: 0.2mm solid #eceff3; text-align: center; font-size: 6.5pt; color: #6b7280; display: flex; flex-wrap: wrap; justify-content: center; gap: 1.4mm; }
+    .gn-emergency-phone { margin: 0; text-align: center; font-size: 12pt; font-weight: 800; color: var(--gn-danger); }
+    .gn-footer { margin-top: auto; padding-top: 1mm; border-top: 0.2mm solid #eceff3; text-align: center; font-size: 5.8pt; color: #6b7280; display: flex; flex-wrap: wrap; justify-content: center; gap: 1.2mm; }
     .gn-footer-sep { color: #d1d5db; }
     @media print {
       .toolbar, .no-print { display: none !important; }
@@ -224,7 +226,7 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     <button type="button" onclick="window.close()">닫기</button>
     <button type="button" class="primary" onclick="window.print()">인쇄</button>
   </div>
-  <main class="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="chat-first-wifi">
+  <main class="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="chat-services-wifi">
     <header class="gn-header">
       <div class="gn-hotel">${esc(hotel)}</div>
       <div class="gn-rule"></div>
@@ -242,15 +244,14 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
         <p class="gn-chat-hero-hint">${esc(ko.scanLead)}</p>
         <p class="gn-chat-hero-hint-en">${esc(en.scanLead)}</p>
       </section>
-      <section class="gn-wifi-aux">
-        ${wifiBlock}
-      </section>
     </div>
     <section class="gn-services">
       <h2 class="gn-services-title">${esc(ko.servicesTitle)}</h2>
       <ul class="gn-service-grid">${services}</ul>
     </section>
     <section class="gn-lang-strip">
+      <h2 class="gn-howto-title">${esc(ko.howToTitle)}</h2>
+      <p class="gn-howto-title-en">${esc(en.howToTitle)}</p>
       <div class="gn-lang-row">${langPills}</div>
       <div class="gn-translate">
         <span class="gn-translate-badge">${esc(ko.translateBadge)}</span>
@@ -262,6 +263,9 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.reply}</span><div><div class="gn-trust-ko">${esc(ko.replyBody)}</div><div class="gn-trust-en">${esc(en.replyBody)}</div></div></div>
       <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.hours}</span><div><div class="gn-trust-ko">${esc(ko.hoursBody)}</div><div class="gn-trust-en">${esc(en.hoursBody)}</div></div></div>
       <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.privacy}</span><div><div class="gn-trust-ko">${esc(ko.privacyBody)}</div><div class="gn-trust-en">${esc(en.privacyBody)}</div></div></div>
+    </section>
+    <section class="gn-wifi-aux">
+      ${wifiBlock}
     </section>
     <section class="gn-bottom">
       <div class="gn-bottom-box">
