@@ -14,10 +14,10 @@ export const GUEST_CHAT_HOTEL_NAME = '호텔 레이블';
 export const GUEST_CHAT_HOTEL_NAME_LATIN = 'Hotel Label';
 
 /** Printed Guest Chat QR physical size (mm). Prefer mm over px for print fidelity. */
-export const GUEST_CHAT_NOTICE_QR_MM = 44;
+export const GUEST_CHAT_NOTICE_QR_MM = 40;
 
-/** Printed Wi-Fi QR size (mm) — secondary to Guest Chat; keep scannable but lighter. */
-export const GUEST_CHAT_NOTICE_WIFI_QR_MM = 28;
+/** Printed Wi-Fi QR size (mm) — secondary; keep scannable but compact for one A4 page. */
+export const GUEST_CHAT_NOTICE_WIFI_QR_MM = 24;
 
 /** A4 page margins (mm) — within the 12–15mm band. */
 export const GUEST_CHAT_NOTICE_MARGIN_MM = 14;

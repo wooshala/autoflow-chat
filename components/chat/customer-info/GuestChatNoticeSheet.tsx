@@ -1,7 +1,7 @@
 'use client';
 
-// A4 Guest Chat notice — Final Polish: hotel-quality hierarchy.
-// Guest Chat hero first; Wi-Fi as integrated secondary amenity (inline SVG QRs).
+// A4 Guest Chat notice — chat hero → services → multilingual how-to → trust → Wi-Fi → emergency.
+// One A4 page; Wi-Fi is bottom amenity (inline SVG QRs, print-safe).
 
 import {
   GUEST_CHAT_EMERGENCY_PHONE,
@@ -44,9 +44,7 @@ function NoticeIcon({ svg, className }: { svg: string; className?: string }) {
 export type GuestChatNoticeSheetProps = {
   roomNo: string;
   guestUrl: string;
-  /** Guest Chat SVG from QRCode.toString(..., { type: 'svg' }). */
   qrSvg: string;
-  /** Optional inline Wi-Fi SVGs (print-safe). When omitted, credentials still show. */
   wifiQrSvg5g?: string | null;
   wifiQrSvg24?: string | null;
   hotelName?: string;
@@ -105,8 +103,7 @@ export function GuestChatNoticeSheet({
   );
 
   return (
-    <main className="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="chat-first-wifi">
-      {/* ① Header — brand → room → Guest Chat */}
+    <main className="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="chat-services-wifi">
       <header className="gn-header">
         <div className="gn-hotel">{hotel}</div>
         <div className="gn-rule" aria-hidden />
@@ -118,7 +115,7 @@ export function GuestChatNoticeSheet({
         <p className="gn-value-en">{en.valueLine}</p>
       </header>
 
-      {/* ② Concierge block — Guest Chat hero + integrated Wi-Fi */}
+      {/* ① Guest Chat hero */}
       <div className="gn-concierge" data-guest-url={guestUrl}>
         <section className="gn-chat-hero" aria-label="Guest Chat QR">
           <div className="gn-chat-hero-label">{ko.chatQrCaption}</div>
@@ -130,36 +127,9 @@ export function GuestChatNoticeSheet({
           <p className="gn-chat-hero-hint">{ko.scanLead}</p>
           <p className="gn-chat-hero-hint-en">{en.scanLead}</p>
         </section>
-
-        <section className="gn-wifi-aux" aria-label="Room Wi-Fi">
-          {wifi ? (
-            <div className="gn-wifi-aux-qrs">
-              {wifiBand(ko.wifi5gLabel, wifi.ssid5g, wifi.password, wifiQrSvg5g)}
-              <div className="gn-wifi-aux-mid">
-                <div className="gn-wifi-aux-title-row">
-                  <NoticeIcon svg={GUEST_NOTICE_WIFI_ICON} className="gn-wifi-icon" />
-                  <span className="gn-wifi-aux-title">{ko.wifiPanelTitle}</span>
-                </div>
-                <span className="gn-wifi-aux-hint">{ko.wifiScanHint}</span>
-              </div>
-              {wifiBand(ko.wifi24Label, wifi.ssid24, wifi.password, wifiQrSvg24)}
-            </div>
-          ) : (
-            <>
-              <div className="gn-wifi-aux-head">
-                <div className="gn-wifi-aux-title-row">
-                  <NoticeIcon svg={GUEST_NOTICE_WIFI_ICON} className="gn-wifi-icon" />
-                  <span className="gn-wifi-aux-title">{ko.wifiPanelTitle}</span>
-                </div>
-                <span className="gn-wifi-aux-hint">{ko.wifiScanHint}</span>
-              </div>
-              <p className="gn-wifi-missing">{ko.wifiNightstand}</p>
-            </>
-          )}
-        </section>
       </div>
 
-      {/* ③ Service grid */}
+      {/* ② Services you can request via Chat */}
       <section className="gn-services" aria-label="Services">
         <h2 className="gn-services-title">{ko.servicesTitle}</h2>
         <ul className="gn-service-grid">
@@ -173,8 +143,10 @@ export function GuestChatNoticeSheet({
         </ul>
       </section>
 
-      {/* ④ Language + translate */}
-      <section className="gn-lang-strip" aria-label="Languages">
+      {/* ③ Multilingual QR how-to */}
+      <section className="gn-lang-strip" aria-label="How to use room QR">
+        <h2 className="gn-howto-title">{ko.howToTitle}</h2>
+        <p className="gn-howto-title-en">{en.howToTitle}</p>
         <div className="gn-lang-row">
           {NOTICE_STRIP_LANGS.map((lang) => (
             <div className="gn-lang-pill" key={lang}>
@@ -192,7 +164,7 @@ export function GuestChatNoticeSheet({
         </div>
       </section>
 
-      {/* ⑤ Trust */}
+      {/* ④ Trust */}
       <section className="gn-trust" aria-label="Trust">
         <div className="gn-trust-chip">
           <NoticeIcon svg={GUEST_NOTICE_TRUST_ICON.watch} className="gn-trust-icon" />
@@ -222,6 +194,34 @@ export function GuestChatNoticeSheet({
             <div className="gn-trust-en">{en.privacyBody}</div>
           </div>
         </div>
+      </section>
+
+      {/* ⑤ Room Wi-Fi — bottom amenity */}
+      <section className="gn-wifi-aux" aria-label="Room Wi-Fi">
+        {wifi ? (
+          <div className="gn-wifi-aux-qrs">
+            {wifiBand(ko.wifi5gLabel, wifi.ssid5g, wifi.password, wifiQrSvg5g)}
+            <div className="gn-wifi-aux-mid">
+              <div className="gn-wifi-aux-title-row">
+                <NoticeIcon svg={GUEST_NOTICE_WIFI_ICON} className="gn-wifi-icon" />
+                <span className="gn-wifi-aux-title">{ko.wifiPanelTitle}</span>
+              </div>
+              <span className="gn-wifi-aux-hint">{ko.wifiScanHint}</span>
+            </div>
+            {wifiBand(ko.wifi24Label, wifi.ssid24, wifi.password, wifiQrSvg24)}
+          </div>
+        ) : (
+          <>
+            <div className="gn-wifi-aux-head">
+              <div className="gn-wifi-aux-title-row">
+                <NoticeIcon svg={GUEST_NOTICE_WIFI_ICON} className="gn-wifi-icon" />
+                <span className="gn-wifi-aux-title">{ko.wifiPanelTitle}</span>
+              </div>
+              <span className="gn-wifi-aux-hint">{ko.wifiScanHint}</span>
+            </div>
+            <p className="gn-wifi-missing">{ko.wifiNightstand}</p>
+          </>
+        )}
       </section>
 
       {/* ⑥ Emergency */}
