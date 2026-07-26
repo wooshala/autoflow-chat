@@ -39,6 +39,14 @@ export interface GuestChatNoticeCopy {
   demoStaff: string;
   /** Optional caption under phone demo. */
   demoCaption: string;
+  /** Navy bar under hero QR. */
+  scanBar: string;
+  /** Guide step 1 caption (scan). */
+  step1Body: string;
+  /** Guide step 2 caption (message). */
+  step2Body: string;
+  /** Guide step 3 caption (staff assists). */
+  step3Body: string;
   /** Wi-Fi panel title. */
   wifiPanelTitle: string;
   /** Wi-Fi scan hint under panel title. */
@@ -129,6 +137,10 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     demoGuest: '생수 부탁드립니다',
     demoStaff: '네, 곧 가져다드리겠습니다',
     demoCaption: '스캔 후 이렇게 대화합니다',
+    scanBar: 'QR을 스캔해 주세요',
+    step1Body: '스마트폰으로 QR을 스캔하세요.',
+    step2Body: '필요한 내용을 보내 주세요.',
+    step3Body: '직원이 빠르게 도와드립니다.',
     wifiPanelTitle: '객실 Wi-Fi',
     wifiScanHint: 'QR을 스캔하면 자동으로 연결됩니다.',
     wifi5gLabel: '5GHz',
@@ -174,6 +186,10 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     demoGuest: 'Bottled water, please',
     demoStaff: 'Of course — right away',
     demoCaption: 'After scanning, chat like this',
+    scanBar: 'Please scan the QR code',
+    step1Body: 'Scan the QR with your phone.',
+    step2Body: 'Tell us what you need.',
+    step3Body: 'Staff will assist you quickly.',
     wifiPanelTitle: 'Room Wi-Fi',
     wifiScanHint: 'Scan the QR code to connect automatically.',
     wifi5gLabel: '5GHz',
@@ -219,6 +235,10 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     demoGuest: 'お水をお願いします',
     demoStaff: 'すぐに届けます',
     demoCaption: '読み取り後、このように会話します',
+    scanBar: 'QRコードをスキャンしてください',
+    step1Body: 'スマホでQRを読み取ってください。',
+    step2Body: '必要な内容を送ってください。',
+    step3Body: 'スタッフが迅速に対応します。',
     wifiPanelTitle: '客室Wi-Fi',
     wifiScanHint: 'QRを読み取ると自動で接続されます。',
     wifi5gLabel: '5GHz',
@@ -264,6 +284,10 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     demoGuest: '请送瓶装水',
     demoStaff: '好的，马上送去',
     demoCaption: '扫码后即可这样对话',
+    scanBar: '请扫描二维码',
+    step1Body: '请用手机扫描二维码。',
+    step2Body: '告诉我们您需要什么。',
+    step3Body: '工作人员会尽快为您服务。',
     wifiPanelTitle: '客房 Wi-Fi',
     wifiScanHint: '扫描二维码即可自动连接。',
     wifi5gLabel: '5GHz',
@@ -309,6 +333,10 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     demoGuest: 'Принесите воду, пожалуйста',
     demoStaff: 'Конечно, сейчас принесём',
     demoCaption: 'После сканирования чат выглядит так',
+    scanBar: 'Отсканируйте QR-код',
+    step1Body: 'Отсканируйте QR телефоном.',
+    step2Body: 'Напишите, что вам нужно.',
+    step3Body: 'Персонал быстро поможет.',
     wifiPanelTitle: 'Wi-Fi номера',
     wifiScanHint: 'Отсканируйте QR — подключение выполнится автоматически.',
     wifi5gLabel: '5GHz',
@@ -354,6 +382,10 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     demoGuest: 'De l’eau en bouteille, s’il vous plaît',
     demoStaff: 'Bien sûr, tout de suite',
     demoCaption: 'Après le scan, discutez ainsi',
+    scanBar: 'Veuillez scanner le QR',
+    step1Body: 'Scannez le QR avec votre téléphone.',
+    step2Body: 'Dites-nous ce dont vous avez besoin.',
+    step3Body: 'Le personnel vous assiste rapidement.',
     wifiPanelTitle: 'Wi-Fi chambre',
     wifiScanHint: 'Scannez le QR pour vous connecter automatiquement.',
     wifi5gLabel: '5GHz',
@@ -399,6 +431,10 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     demoGuest: 'Agua embotellada, por favor',
     demoStaff: 'Claro, enseguida',
     demoCaption: 'Tras escanear, chatee así',
+    scanBar: 'Escanee el código QR',
+    step1Body: 'Escanee el QR con el teléfono.',
+    step2Body: 'Díganos lo que necesita.',
+    step3Body: 'El personal le ayudará rápido.',
     wifiPanelTitle: 'Wi-Fi habitación',
     wifiScanHint: 'Escanee el QR para conectarse automáticamente.',
     wifi5gLabel: '5GHz',
