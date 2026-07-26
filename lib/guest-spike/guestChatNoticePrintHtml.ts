@@ -15,8 +15,8 @@ import {
 } from './guestChatNoticeIcons';
 import {
   GUEST_NOTICE_GUIDE_REF_QR_BOX,
-  loadGuestNoticeGuideRefDataUri,
 } from './guestChatNoticeGuideRef';
+import { loadGuestNoticeGuideRefDataUri } from './guestChatNoticeGuideRefNode';
 import {
   GUEST_NOTICE_SERVICE_ICON,
   GUEST_NOTICE_SERVICE_IDS,
