@@ -25,7 +25,7 @@
   padding: 8mm 11mm 7mm;
   display: flex;
   flex-direction: column;
-  gap: 3.2mm;
+  gap: 2.8mm;
   color: var(--gn-ink);
   font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   background: #fff;
@@ -331,14 +331,14 @@
 .gn-services {
   border: 0.25mm solid var(--gn-card-border);
   border-radius: 2mm;
-  padding: 2.6mm 2.8mm 2.4mm;
+  padding: 2.2mm 2.5mm 2mm;
   background: #fff;
 }
 
 .gn-services-title {
-  margin: 0 0 2.2mm;
+  margin: 0 0 1.8mm;
   text-align: center;
-  font-size: 8.5pt;
+  font-size: 9.5pt;
   font-weight: 800;
   color: var(--gn-navy);
 }
@@ -349,7 +349,7 @@
   padding: 0;
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 2mm 1.4mm;
+  gap: 1.8mm 1.2mm;
 }
 
 .gn-service-item {
@@ -357,14 +357,14 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 1mm;
+  gap: 0.9mm;
   min-width: 0;
 }
 
 .gn-service-icon {
   display: inline-flex;
-  width: 4.2mm;
-  height: 4.2mm;
+  width: 4.6mm;
+  height: 4.6mm;
   color: var(--gn-icon);
 }
 
@@ -375,7 +375,7 @@
 }
 
 .gn-service-label {
-  font-size: 5.8pt;
+  font-size: 7pt;
   font-weight: 700;
   color: var(--gn-ink);
   line-height: 1.2;
@@ -386,48 +386,48 @@
 .gn-lang-strip {
   border: 0.25mm solid var(--gn-card-border);
   border-radius: 2mm;
-  padding: 2.2mm 2.4mm;
+  padding: 2mm 2.2mm;
   background: var(--gn-soft);
 }
 
 .gn-lang-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 1.6mm;
+  gap: 1.4mm;
 }
 
 .gn-lang-pill {
   background: #fff;
   border-radius: 1.5mm;
-  padding: 1.6mm 1.2mm;
+  padding: 1.5mm 1.2mm;
   text-align: center;
   border: 0.2mm solid #eceff3;
 }
 
 .gn-lang-flag {
-  font-size: 8.5pt;
+  font-size: 9pt;
   display: block;
   line-height: 1;
-  margin-bottom: 0.6mm;
+  margin-bottom: 0.5mm;
 }
 
 .gn-lang-name {
   display: block;
-  font-size: 7pt;
+  font-size: 8pt;
   font-weight: 800;
   color: var(--gn-navy);
 }
 
 .gn-lang-hint {
   display: block;
-  margin-top: 0.7mm;
-  font-size: 5.2pt;
+  margin-top: 0.6mm;
+  font-size: 6.5pt;
   color: var(--gn-muted);
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .gn-translate {
-  margin-top: 1.8mm;
+  margin-top: 1.5mm;
   display: flex;
   justify-content: center;
   align-items: baseline;
@@ -436,7 +436,7 @@
 }
 
 .gn-translate-badge {
-  font-size: 7.5pt;
+  font-size: 8.5pt;
   font-weight: 800;
   color: var(--gn-navy);
   background: var(--gn-info);
@@ -446,7 +446,7 @@
 }
 
 .gn-translate-en {
-  font-size: 6pt;
+  font-size: 7.5pt;
   color: var(--gn-muted);
   font-weight: 600;
 }
@@ -455,23 +455,23 @@
 .gn-trust {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 2mm;
+  gap: 1.8mm;
 }
 
 .gn-trust-chip {
   display: flex;
-  gap: 1.4mm;
+  gap: 1.3mm;
   align-items: flex-start;
   background: var(--gn-soft);
   border-radius: 1.6mm;
-  padding: 2mm 1.6mm;
+  padding: 1.8mm 1.5mm;
   border: 0.2mm solid #eceff3;
 }
 
 .gn-trust-icon {
   display: inline-flex;
-  width: 3.4mm;
-  height: 3.4mm;
+  width: 3.6mm;
+  height: 3.6mm;
   color: var(--gn-icon);
   flex-shrink: 0;
   margin-top: 0.2mm;
@@ -484,17 +484,17 @@
 }
 
 .gn-trust-ko {
-  font-size: 6pt;
+  font-size: 7.5pt;
   font-weight: 700;
   line-height: 1.3;
   color: var(--gn-ink);
 }
 
 .gn-trust-en {
-  margin-top: 0.4mm;
-  font-size: 5pt;
+  margin-top: 0.5mm;
+  font-size: 6.5pt;
   color: var(--gn-muted);
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 /* ⑥ Bottom */
@@ -556,10 +556,10 @@
 
 .gn-footer {
   margin-top: auto;
-  padding-top: 1.4mm;
+  padding-top: 1.2mm;
   border-top: 0.2mm solid #eceff3;
   text-align: center;
-  font-size: 5.6pt;
+  font-size: 6.5pt;
   color: #6b7280;
   line-height: 1.35;
   display: flex;
