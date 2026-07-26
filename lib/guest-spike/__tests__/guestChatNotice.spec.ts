@@ -116,7 +116,7 @@ test('language line uses SoT display names', () => {
   assert.match(line, /中文/);
 });
 
-test('A4 HTML is chat → services → trust → Wi-Fi bottom (one page hierarchy)', () => {
+test('A4 HTML is guide-ref → services → Wi-Fi bottom (one page hierarchy)', () => {
   const wifiSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8"/></svg>';
   for (const room of ['201', '607']) {
     const url = guestRoomUrl(room);
@@ -135,36 +135,28 @@ test('A4 HTML is chat → services → trust → Wi-Fi bottom (one page hierarch
     assert.match(html, new RegExp(`room-${room}`));
     assert.match(html, /010-4657-6680/);
     assert.match(html, /gn-concierge/);
-    assert.match(html, /gn-guide/);
-    assert.match(html, /gn-guide-steps/);
-    assert.match(html, /gn-step-num/);
-    assert.match(html, /gn-scan-bar/);
+    assert.match(html, /gn-guide-ref/);
+    assert.match(html, /gn-guide-ref-img/);
+    assert.match(html, /gn-guide-ref-qr/);
+    assert.match(html, /data:image\/jpeg;base64,/);
+    assert.doesNotMatch(html, /gn-guide-steps/);
     assert.doesNotMatch(html, /class="gn-chat-hero"/);
-    assert.doesNotMatch(html, /class="gn-phone"/);
-    assert.match(html, /생수 부탁드립니다/);
-    assert.match(html, /곧 가져다드리겠습니다/);
-    assert.match(html, /스마트폰으로 QR/);
     assert.match(html, /gn-services/);
     assert.doesNotMatch(html, /gn-howto-title/);
-    assert.doesNotMatch(html, /객실 QR 사용 방법/);
     assert.doesNotMatch(html, /gn-lang-strip/);
-    assert.match(html, /gn-trust/);
-    assert.match(html, /24시간 이용/);
-    assert.match(html, /전화 없이 요청/);
+    assert.doesNotMatch(html, /class="gn-trust"/);
     assert.match(html, /gn-wifi-aux/);
     assert.match(html, /gn-wifi-band-card/);
     assert.match(html, /gn-wifi-aux-mid/);
     assert.match(html, /gn-wifi-icon/);
     assert.doesNotMatch(html, /gn-wifi-panel/);
     const bodyHtml = html.slice(html.indexOf('<body'));
-    const chatIdx = bodyHtml.indexOf('class="gn-guide"');
+    const chatIdx = bodyHtml.indexOf('class="gn-guide-ref"');
     const servicesIdx = bodyHtml.indexOf('class="gn-services"');
-    const trustIdx = bodyHtml.indexOf('class="gn-trust"');
     const wifiIdx = bodyHtml.indexOf('class="gn-wifi-aux"');
     const emergencyIdx = bodyHtml.indexOf('gn-emergency-phone');
-    assert.ok(chatIdx > 0 && servicesIdx > chatIdx, 'services after chat');
-    assert.ok(trustIdx > servicesIdx, 'trust after services');
-    assert.ok(wifiIdx > trustIdx, 'Wi-Fi after trust');
+    assert.ok(chatIdx > 0 && servicesIdx > chatIdx, 'services after guide');
+    assert.ok(wifiIdx > servicesIdx, 'Wi-Fi after services');
     assert.ok(emergencyIdx > wifiIdx, 'emergency after Wi-Fi');
     const midIdx = bodyHtml.indexOf('class="gn-wifi-aux-mid"');
     const firstBand = bodyHtml.indexOf('class="gn-wifi-band-card"');
@@ -181,8 +173,6 @@ test('A4 HTML is chat → services → trust → Wi-Fi bottom (one page hierarch
     assert.match(html, /자동 번역/);
     assert.match(html, /자동으로 연결/);
     assert.match(html, /Front Desk/);
-    assert.match(html, /width:\s*40mm/);
-    assert.match(html, /height:\s*40mm/);
     assert.match(html, /width:\s*24mm/);
     assert.match(html, /height:\s*24mm/);
     assert.match(html, new RegExp(`data-guest-url="[^"]*room-${room}`));
@@ -233,8 +223,8 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(sheet, /GUEST_NOTICE_SERVICE_IDS/);
   assert.match(sheet, /roomWifiFor/);
   assert.match(sheet, /gn-concierge/);
-  assert.match(sheet, /gn-guide/);
-  assert.match(sheet, /gn-guide-steps/);
+  assert.match(sheet, /gn-guide-ref/);
+  assert.match(sheet, /GUEST_NOTICE_GUIDE_REF_SRC/);
   assert.match(sheet, /gn-wifi-aux/);
   assert.match(sheet, /gn-wifi-band-card/);
   assert.match(sheet, /gn-wifi-aux-mid/);
@@ -246,24 +236,21 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(css, /body\.printing-guest-notice/);
   assert.match(css, /\.guest-notice-print-root/);
   assert.match(css, /\.gn-concierge/);
-  assert.match(css, /\.gn-guide/);
+  assert.match(css, /\.gn-guide-ref/);
+  assert.match(css, /\.gn-guide-ref-qr/);
   assert.match(css, /\.gn-wifi-aux/);
   assert.match(css, /\.gn-wifi-aux-mid/);
   assert.match(css, /\.gn-wifi-band-card/);
-  assert.match(sheet, /GUEST_NOTICE_STEP_SCAN_ART/);
-  assert.match(sheet, /GUEST_NOTICE_STEP_STAFF_ART/);
-  assert.match(sheet, /gn-scan-bar/);
-  assert.match(css, /\.gn-step-num/);
-  assert.match(css, /\.gn-scan-bar/);
+  assert.doesNotMatch(sheet, /GUEST_NOTICE_STEP_SCAN_ART/);
+  assert.doesNotMatch(sheet, /gn-guide-steps/);
   assert.doesNotMatch(sheet, /gn-howto-title/);
   assert.doesNotMatch(sheet, /gn-lang-strip/);
-  assert.doesNotMatch(sheet, /gn-chat-hero[^-]/);
+  assert.doesNotMatch(sheet, /gn-trust/);
   assert.match(sheet, /gn-translate-badge/);
   assert.match(sheet, /data-layout="chat-services-wifi"/);
   assert.doesNotMatch(css, /\.gn-howto-title/);
   assert.match(css, /\.gn-translate-badge/);
   assert.match(css, /minmax\(22mm,\s*32mm\)/);
-  assert.match(sheet, /GUEST_CHAT_NOTICE_QR_MM/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_WIFI_QR_MM/);
 });
 

@@ -6,21 +6,17 @@ import {
   GUEST_CHAT_EMERGENCY_PHONE,
   GUEST_CHAT_HOTEL_NAME,
   GUEST_CHAT_NOTICE_MARGIN_MM,
-  GUEST_CHAT_NOTICE_QR_MM,
   GUEST_CHAT_NOTICE_WIFI_QR_MM,
 } from './guestChatNoticeConfig';
 import { guestChatNoticeCopy } from './guestChatNoticeCopy';
 import {
   GUEST_NOTICE_PHONE_ICON,
-  GUEST_NOTICE_TRUST_ICON,
   GUEST_NOTICE_WIFI_ICON,
 } from './guestChatNoticeIcons';
 import {
-  GUEST_NOTICE_SCAN_BAR_ICON,
-  GUEST_NOTICE_STEP_CHAT_ART,
-  GUEST_NOTICE_STEP_SCAN_ART,
-  GUEST_NOTICE_STEP_STAFF_ART,
-} from './guestChatNoticeGuide';
+  GUEST_NOTICE_GUIDE_REF_QR_BOX,
+  loadGuestNoticeGuideRefDataUri,
+} from './guestChatNoticeGuideRef';
 import {
   GUEST_NOTICE_SERVICE_ICON,
   GUEST_NOTICE_SERVICE_IDS,
@@ -73,9 +69,10 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
   const ko = guestChatNoticeCopy.ko;
   const en = guestChatNoticeCopy.en;
   const margin = GUEST_CHAT_NOTICE_MARGIN_MM;
-  const chatMm = GUEST_CHAT_NOTICE_QR_MM;
   const wifiMm = GUEST_CHAT_NOTICE_WIFI_QR_MM;
   const wifi = roomWifiFor(room);
+  const guideRef = loadGuestNoticeGuideRefDataUri();
+  const qrBox = GUEST_NOTICE_GUIDE_REF_QR_BOX;
 
   const services = GUEST_NOTICE_SERVICE_IDS.map(
     (id) =>
@@ -130,45 +127,23 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       --gn-ink: #111827; --gn-muted: #4b5563; --gn-soft: #f8fafc; --gn-box: #f3f4f6;
       --gn-info: #eef2ff; --gn-danger: #b91c1c; --gn-card-border: #e8e8ee; --gn-icon: #475569;
       box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0 auto;
-      padding: 7mm 10mm 6mm; display: flex; flex-direction: column; gap: 2.8mm;
+      padding: 5mm 8mm 5mm; display: flex; flex-direction: column; gap: 2mm;
       color: var(--gn-ink); background: #fff;
     }
     .gn-header { text-align: center; }
-    .gn-hotel { font-size: 11.5pt; font-weight: 700; letter-spacing: 0.08em; color: var(--gn-gold); margin-bottom: 1.4mm; }
+    .gn-header-compact .gn-hotel { font-size: 10.5pt; font-weight: 700; letter-spacing: 0.08em; color: var(--gn-gold); margin-bottom: 0.8mm; }
     .gn-rule { height: 0; border: 0; border-top: 0.3mm solid var(--gn-gold-line); width: 100%; opacity: 0.85; }
-    .gn-room { margin-top: 1.2mm; font-size: 24pt; font-weight: 800; line-height: 1.02; }
-    .gn-room-en { margin-top: 0.3mm; margin-bottom: 1.2mm; font-size: 8pt; font-weight: 600; letter-spacing: 0.04em; color: var(--gn-gold); }
-    .gn-title { margin: 1.4mm 0 0; font-size: 11.5pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-value { margin: 0.8mm auto 0; max-width: 165mm; font-size: 8.5pt; font-weight: 700; line-height: 1.3; }
-    .gn-value-en { margin: 0.3mm auto 0; max-width: 165mm; font-size: 6pt; color: var(--gn-muted); }
-    .gn-concierge { display: flex; flex-direction: column; padding: 2mm 2.2mm 2.2mm; background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; }
-    .gn-guide { display: grid; grid-template-columns: minmax(48mm, 0.95fr) 1.35fr; gap: 2.5mm; align-items: stretch; }
-    .gn-guide-qr { display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: center; }
-    .gn-chat-hero-label { font-size: 8pt; font-weight: 800; color: var(--gn-navy); letter-spacing: 0.06em; margin-bottom: 1.2mm; }
+    .gn-header-compact .gn-room { margin-top: 0.8mm; font-size: 20pt; font-weight: 800; line-height: 1.02; }
+    .gn-header-compact .gn-room-en { margin-top: 0.3mm; margin-bottom: 0.4mm; font-size: 8pt; font-weight: 600; letter-spacing: 0.04em; color: var(--gn-gold); }
+    .gn-concierge { display: flex; flex-direction: column; padding: 0; background: transparent; border: 0; }
+    .gn-guide-ref { position: relative; width: 100%; line-height: 0; }
+    .gn-guide-ref-img { width: 100%; height: auto; display: block; border-radius: 1.5mm; border: 0.25mm solid var(--gn-card-border); }
+    .gn-guide-ref-qr { position: absolute; box-sizing: border-box; aspect-ratio: 1 / 1; height: auto; padding: 0.6mm; background: #fff; border: 0.35mm solid #0f172a; display: flex; align-items: center; justify-content: center; z-index: 2; left: ${qrBox.leftPct}%; top: ${qrBox.topPct}%; width: ${qrBox.widthPct}%; }
+    .gn-guide-ref-qr svg { width: 100%; height: 100%; display: block; }
     .gn-qr { padding: 1.4mm; box-sizing: border-box; background: #fff; border: 0.45mm solid #0f172a; display: flex; align-items: center; justify-content: center; }
-    .gn-qr-chat { border-width: 0.55mm; box-shadow: 0 0.6mm 1.6mm rgba(15,23,42,0.06); }
     .gn-qr-wifi { border-width: 0.28mm; border-color: #94a3b8; padding: 1mm; }
     .gn-qr svg { width: 100%; height: 100%; display: block; }
-    .gn-scan-bar { margin-top: 1.6mm; width: 100%; max-width: 48mm; box-sizing: border-box; display: flex; align-items: center; gap: 1.4mm; padding: 1.4mm 1.8mm; background: var(--gn-navy); color: #fff; border-radius: 1.2mm; }
-    .gn-scan-bar-icon { display: inline-flex; width: 4mm; height: 4mm; flex-shrink: 0; color: #fff; }
-    .gn-scan-bar-icon svg { width: 100%; height: 100%; display: block; }
-    .gn-scan-bar-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2mm; text-align: left; min-width: 0; }
-    .gn-scan-bar-ko { font-size: 6.5pt; font-weight: 800; line-height: 1.2; }
-    .gn-scan-bar-en { font-size: 5pt; font-weight: 600; opacity: 0.88; line-height: 1.2; }
-    .gn-guide-steps { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 1mm; align-items: start; padding: 1mm 0.5mm; }
-    .gn-step { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
-    .gn-step-num { width: 5mm; height: 5mm; border-radius: 999px; background: var(--gn-navy); color: #fff; font-size: 7pt; font-weight: 800; display: flex; align-items: center; justify-content: center; line-height: 1; margin-bottom: 1mm; }
-    .gn-step-art { display: inline-flex; width: 22mm; height: 20mm; color: var(--gn-navy); margin-bottom: 1mm; }
-    .gn-step-art svg { width: 100%; height: 100%; display: block; }
-    .gn-step-art-chat { width: 16mm; height: 22mm; }
-    .gn-step-sample { margin: 0 0 0.8mm; display: flex; flex-direction: column; gap: 0.4mm; width: 100%; }
-    .gn-step-sample-g, .gn-step-sample-s { display: block; font-size: 5pt; font-weight: 700; line-height: 1.25; word-break: keep-all; padding: 0.6mm 1mm; border-radius: 1mm; }
-    .gn-step-sample-g { align-self: flex-start; background: #fff; border: 0.2mm solid #e2e8f0; }
-    .gn-step-sample-s { align-self: flex-end; background: #eef2ff; border: 0.2mm solid #c7d2fe; color: var(--gn-navy); }
-    .gn-step-ko { margin: 0; font-size: 6pt; font-weight: 700; line-height: 1.25; word-break: keep-all; }
-    .gn-step-en { margin: 0.3mm 0 0; font-size: 5pt; font-weight: 600; color: var(--gn-muted); line-height: 1.2; }
-    .gn-step-arrow { align-self: center; font-size: 14pt; font-weight: 800; color: var(--gn-navy); line-height: 1; padding-top: 4mm; }
-    .gn-wifi-aux { background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 1.8mm; padding: 1.8mm 2mm; }
+    .gn-wifi-aux { background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 1.8mm; padding: 1.4mm 1.8mm; }
     .gn-wifi-aux-head { text-align: center; margin-bottom: 1.5mm; }
     .gn-wifi-aux-title-row { display: inline-flex; align-items: center; justify-content: center; gap: 1mm; flex-wrap: wrap; }
     .gn-wifi-aux-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; max-width: 32mm; padding: 0 1mm; gap: 1mm; align-self: center; }
@@ -195,15 +170,9 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     .gn-service-icon svg { width: 100%; height: 100%; display: block; }
     .gn-service-label { font-size: 6.5pt; font-weight: 700; line-height: 1.15; word-break: keep-all; }
     .gn-service-label-en { font-size: 5.5pt; font-weight: 600; color: var(--gn-muted); line-height: 1.15; word-break: break-word; }
-    .gn-translate { margin-top: 1.6mm; display: flex; justify-content: center; align-items: baseline; gap: 2mm; flex-wrap: wrap; }
-    .gn-translate-badge { font-size: 7.5pt; font-weight: 800; color: var(--gn-navy); background: var(--gn-info); border: 0.2mm solid #dce3ff; border-radius: 999px; padding: 0.5mm 2.4mm; }
-    .gn-translate-en { font-size: 6.5pt; color: var(--gn-muted); font-weight: 600; }
-    .gn-trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4mm; }
-    .gn-trust-chip { display: flex; gap: 1mm; background: var(--gn-soft); border-radius: 1.4mm; padding: 1.4mm 1.2mm; border: 0.2mm solid #eceff3; }
-    .gn-trust-icon { display: inline-flex; width: 3.2mm; height: 3.2mm; color: var(--gn-icon); flex-shrink: 0; }
-    .gn-trust-icon svg { width: 100%; height: 100%; display: block; }
-    .gn-trust-ko { font-size: 6.5pt; font-weight: 700; line-height: 1.25; }
-    .gn-trust-en { margin-top: 0.3mm; font-size: 5.5pt; color: var(--gn-muted); line-height: 1.25; }
+    .gn-translate { margin-top: 1.2mm; display: flex; justify-content: center; align-items: baseline; gap: 2mm; flex-wrap: wrap; }
+    .gn-translate-badge { font-size: 7pt; font-weight: 800; color: var(--gn-navy); background: var(--gn-info); border: 0.2mm solid #dce3ff; border-radius: 999px; padding: 0.4mm 2mm; }
+    .gn-translate-en { font-size: 6pt; color: var(--gn-muted); font-weight: 600; }
     .gn-bottom { display: grid; grid-template-columns: 1fr; max-width: 88mm; margin: 0 auto; width: 100%; }
     .gn-bottom-box { border: 0.25mm solid #e5e7eb; border-radius: 1.8mm; padding: 1.6mm 2.2mm; background: var(--gn-soft); }
     .gn-bottom-head { display: flex; align-items: center; justify-content: center; gap: 1.2mm; font-size: 7.5pt; font-weight: 800; margin-bottom: 0.6mm; color: var(--gn-danger); }
@@ -229,52 +198,16 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     <button type="button" class="primary" onclick="window.print()">인쇄</button>
   </div>
   <main class="guest-notice-sheet" data-guest-notice-sheet="1" data-layout="chat-services-wifi">
-    <header class="gn-header">
+    <header class="gn-header gn-header-compact">
       <div class="gn-hotel">${esc(hotel)}</div>
       <div class="gn-rule"></div>
       <div class="gn-room">${esc(room)}호</div>
       <div class="gn-room-en">Room ${esc(room)}</div>
-      <div class="gn-rule"></div>
-      <h1 class="gn-title">${esc(ko.roomChatSubtitle)}</h1>
-      <p class="gn-value">${esc(ko.valueLine)}</p>
-      <p class="gn-value-en">${esc(en.valueLine)}</p>
     </header>
-    <div class="gn-concierge" data-guest-url="${esc(input.guestUrl)}">
-      <section class="gn-guide">
-        <div class="gn-guide-qr">
-          <div class="gn-chat-hero-label">${esc(ko.chatQrCaption)}</div>
-          <div class="gn-qr gn-qr-chat" style="width:${chatMm}mm;height:${chatMm}mm">${input.qrSvg}</div>
-          <div class="gn-scan-bar">
-            <span class="gn-scan-bar-icon">${GUEST_NOTICE_SCAN_BAR_ICON}</span>
-            <div class="gn-scan-bar-text">
-              <span class="gn-scan-bar-ko">${esc(ko.scanBar)}</span>
-              <span class="gn-scan-bar-en">${esc(en.scanBar)}</span>
-            </div>
-          </div>
-        </div>
-        <div class="gn-guide-steps">
-          <div class="gn-step">
-            <div class="gn-step-num">1</div>
-            <span class="gn-step-art">${GUEST_NOTICE_STEP_SCAN_ART}</span>
-            <p class="gn-step-ko">${esc(ko.step1Body)}</p>
-            <p class="gn-step-en">${esc(en.step1Body)}</p>
-          </div>
-          <div class="gn-step-arrow">›</div>
-          <div class="gn-step">
-            <div class="gn-step-num">2</div>
-            <span class="gn-step-art gn-step-art-chat">${GUEST_NOTICE_STEP_CHAT_ART}</span>
-            <p class="gn-step-sample"><span class="gn-step-sample-g">${esc(ko.demoGuest)}</span><span class="gn-step-sample-s">${esc(ko.demoStaff)}</span></p>
-            <p class="gn-step-ko">${esc(ko.step2Body)}</p>
-            <p class="gn-step-en">${esc(en.step2Body)}</p>
-          </div>
-          <div class="gn-step-arrow">›</div>
-          <div class="gn-step">
-            <div class="gn-step-num">3</div>
-            <span class="gn-step-art">${GUEST_NOTICE_STEP_STAFF_ART}</span>
-            <p class="gn-step-ko">${esc(ko.step3Body)}</p>
-            <p class="gn-step-en">${esc(en.step3Body)}</p>
-          </div>
-        </div>
+    <div class="gn-concierge gn-concierge-ref" data-guest-url="${esc(input.guestUrl)}">
+      <section class="gn-guide-ref">
+        <img class="gn-guide-ref-img" src="${guideRef}" alt="Guest Chat guide" />
+        <div class="gn-guide-ref-qr gn-qr gn-qr-chat">${input.qrSvg}</div>
       </section>
     </div>
     <section class="gn-services">
@@ -284,12 +217,6 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
         <span class="gn-translate-badge">${esc(ko.translateBadge)}</span>
         <span class="gn-translate-en">${esc(en.translateBadge)}</span>
       </div>
-    </section>
-    <section class="gn-trust">
-      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.hours}</span><div><div class="gn-trust-ko">${esc(ko.hoursBody)}</div><div class="gn-trust-en">${esc(en.hoursBody)}</div></div></div>
-      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.reply}</span><div><div class="gn-trust-ko">${esc(ko.replyBody)}</div><div class="gn-trust-en">${esc(en.replyBody)}</div></div></div>
-      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.watch}</span><div><div class="gn-trust-ko">${esc(ko.staffWatchBody)}</div><div class="gn-trust-en">${esc(en.staffWatchBody)}</div></div></div>
-      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.privacy}</span><div><div class="gn-trust-ko">${esc(ko.privacyBody)}</div><div class="gn-trust-en">${esc(en.privacyBody)}</div></div></div>
     </section>
     <section class="gn-wifi-aux">
       ${wifiBlock}
