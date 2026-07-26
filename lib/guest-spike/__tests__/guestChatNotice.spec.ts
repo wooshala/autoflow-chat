@@ -139,6 +139,9 @@ test('A4 HTML is chat-first: 44mm Guest QR above compact Wi-Fi (inline SVG, no j
     assert.doesNotMatch(html, /\/wifi-qr\//);
     assert.match(html, /gn-wifi-cred-pw/);
     assert.match(html, /gn-service-grid/);
+    assert.match(html, /gn-service-label-en/);
+    assert.match(html, /Extra towels/);
+    assert.match(html, /추가 수건/);
     assert.match(html, /gn-service-icon[\s\S]*<svg/);
     assert.match(html, /자동 번역/);
     assert.match(html, /자동으로 연결/);
@@ -218,6 +221,8 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(css, /\.gn-wifi-band-card/);
   assert.match(css, /minmax\(22mm,\s*32mm\)/);
   assert.doesNotMatch(css, /\.gn-wifi-panel/);
+  assert.match(sheet, /gn-service-label-en/);
+  assert.match(css, /\.gn-service-label-en/);
   assert.match(css, /\.gn-service-label/);
   assert.match(css, /font-size:\s*7pt/);
   assert.match(css, /\.gn-trust-en[\s\S]*?font-size:\s*6\.5pt/);

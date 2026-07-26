@@ -357,7 +357,7 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.9mm;
+  gap: 0.5mm;
   min-width: 0;
 }
 
@@ -366,6 +366,7 @@
   width: 4.6mm;
   height: 4.6mm;
   color: var(--gn-icon);
+  margin-bottom: 0.3mm;
 }
 
 .gn-service-icon svg {
@@ -378,8 +379,16 @@
   font-size: 7pt;
   font-weight: 700;
   color: var(--gn-ink);
-  line-height: 1.2;
+  line-height: 1.15;
   word-break: keep-all;
+}
+
+.gn-service-label-en {
+  font-size: 6pt;
+  font-weight: 600;
+  color: var(--gn-muted);
+  line-height: 1.2;
+  word-break: break-word;
 }
 
 /* ④ Language strip */
