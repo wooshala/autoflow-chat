@@ -1,7 +1,8 @@
 'use client';
 
-// A4 Guest Chat notice — chat hero → services → multilingual how-to → trust → Wi-Fi → emergency.
+// A4 Guest Chat notice — chat hero → services → trust → Wi-Fi → emergency.
 // One A4 page; Wi-Fi is bottom amenity (inline SVG QRs, print-safe).
+// How-to / language strip removed: hero phone demo already shows usage.
 
 import {
   GUEST_CHAT_EMERGENCY_PHONE,
@@ -24,16 +25,6 @@ import {
   GUEST_NOTICE_SERVICE_IDS,
 } from '@/lib/guest-spike/guestChatNoticeServices';
 import { roomWifiFor } from '@/lib/guest-spike/roomWifiCredentials.generated';
-import { langDisplayName } from '@/lib/guest-spike/languages';
-
-const NOTICE_STRIP_LANGS = ['ko', 'en', 'zh-CN', 'ja'] as const;
-
-const LANG_FLAG: Record<(typeof NOTICE_STRIP_LANGS)[number], string> = {
-  ko: '🇰🇷',
-  en: '🇺🇸',
-  'zh-CN': '🇨🇳',
-  ja: '🇯🇵',
-};
 
 function NoticeIcon({ svg, className }: { svg: string; className?: string }) {
   return (
@@ -155,7 +146,7 @@ export function GuestChatNoticeSheet({
         </section>
       </div>
 
-      {/* ② Services you can request via Chat */}
+      {/* ② Services + multilingual badge */}
       <section className="gn-services" aria-label="Services">
         <h2 className="gn-services-title">{ko.servicesTitle}</h2>
         <ul className="gn-service-grid">
@@ -167,36 +158,19 @@ export function GuestChatNoticeSheet({
             </li>
           ))}
         </ul>
-      </section>
-
-      {/* ③ Multilingual QR how-to */}
-      <section className="gn-lang-strip" aria-label="How to use room QR">
-        <h2 className="gn-howto-title">{ko.howToTitle}</h2>
-        <p className="gn-howto-title-en">{en.howToTitle}</p>
-        <div className="gn-lang-row">
-          {NOTICE_STRIP_LANGS.map((lang) => (
-            <div className="gn-lang-pill" key={lang}>
-              <span className="gn-lang-flag" aria-hidden>
-                {LANG_FLAG[lang]}
-              </span>
-              <span className="gn-lang-name">{langDisplayName(lang)}</span>
-              <span className="gn-lang-hint">{guestChatNoticeCopy[lang].helpIntro}</span>
-            </div>
-          ))}
-        </div>
         <div className="gn-translate">
           <span className="gn-translate-badge">{ko.translateBadge}</span>
           <span className="gn-translate-en">{en.translateBadge}</span>
         </div>
       </section>
 
-      {/* ④ Trust */}
+      {/* ③ Trust */}
       <section className="gn-trust" aria-label="Trust">
         <div className="gn-trust-chip">
-          <NoticeIcon svg={GUEST_NOTICE_TRUST_ICON.watch} className="gn-trust-icon" />
+          <NoticeIcon svg={GUEST_NOTICE_TRUST_ICON.hours} className="gn-trust-icon" />
           <div>
-            <div className="gn-trust-ko">{ko.staffWatchBody}</div>
-            <div className="gn-trust-en">{en.staffWatchBody}</div>
+            <div className="gn-trust-ko">{ko.hoursBody}</div>
+            <div className="gn-trust-en">{en.hoursBody}</div>
           </div>
         </div>
         <div className="gn-trust-chip">
@@ -207,10 +181,10 @@ export function GuestChatNoticeSheet({
           </div>
         </div>
         <div className="gn-trust-chip">
-          <NoticeIcon svg={GUEST_NOTICE_TRUST_ICON.hours} className="gn-trust-icon" />
+          <NoticeIcon svg={GUEST_NOTICE_TRUST_ICON.watch} className="gn-trust-icon" />
           <div>
-            <div className="gn-trust-ko">{ko.hoursBody}</div>
-            <div className="gn-trust-en">{en.hoursBody}</div>
+            <div className="gn-trust-ko">{ko.staffWatchBody}</div>
+            <div className="gn-trust-en">{en.staffWatchBody}</div>
           </div>
         </div>
         <div className="gn-trust-chip">
@@ -222,7 +196,7 @@ export function GuestChatNoticeSheet({
         </div>
       </section>
 
-      {/* ⑤ Room Wi-Fi — bottom amenity */}
+      {/* ④ Room Wi-Fi — bottom amenity */}
       <section className="gn-wifi-aux" aria-label="Room Wi-Fi">
         {wifi ? (
           <div className="gn-wifi-aux-qrs">
@@ -250,7 +224,7 @@ export function GuestChatNoticeSheet({
         )}
       </section>
 
-      {/* ⑥ Emergency */}
+      {/* ⑤ Emergency */}
       <section className="gn-bottom gn-bottom-single">
         <div className="gn-bottom-box gn-emergency">
           <div className="gn-bottom-head gn-emergency-head">

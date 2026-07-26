@@ -24,7 +24,7 @@ import {
   GUEST_NOTICE_SERVICE_IDS,
 } from './guestChatNoticeServices';
 import { roomWifiFor } from './roomWifiCredentials.generated';
-import { SUPPORTED_LANGS, langDisplayName, type GuestLang } from './languages';
+import { SUPPORTED_LANGS, type GuestLang } from './languages';
 
 export type GuestChatNoticePrintInput = {
   roomNo: string;
@@ -33,15 +33,6 @@ export type GuestChatNoticePrintInput = {
   hotelName?: string;
   wifiQrSvg5g?: string | null;
   wifiQrSvg24?: string | null;
-};
-
-const NOTICE_STRIP_LANGS = ['ko', 'en', 'zh-CN', 'ja'] as const;
-
-const LANG_FLAG: Record<(typeof NOTICE_STRIP_LANGS)[number], string> = {
-  ko: '🇰🇷',
-  en: '🇺🇸',
-  'zh-CN': '🇨🇳',
-  ja: '🇯🇵',
 };
 
 function esc(s: string): string {
@@ -88,11 +79,6 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     (id) =>
       `<li class="gn-service-item"><span class="gn-service-icon">${GUEST_NOTICE_SERVICE_ICON[id]}</span><span class="gn-service-label">${esc(ko.serviceLabels[id])}</span><span class="gn-service-label-en">${esc(en.serviceLabels[id])}</span></li>`,
   ).join('');
-
-  const langPills = NOTICE_STRIP_LANGS.map((lang) => {
-    const c = guestChatNoticeCopy[lang];
-    return `<div class="gn-lang-pill"><span class="gn-lang-flag">${LANG_FLAG[lang]}</span><span class="gn-lang-name">${esc(langDisplayName(lang))}</span><span class="gn-lang-hint">${esc(c.helpIntro)}</span></div>`;
-  }).join('');
 
   const wifiMid = `<div class="gn-wifi-aux-mid">
         <div class="gn-wifi-aux-title-row">
@@ -142,7 +128,7 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
       --gn-ink: #111827; --gn-muted: #4b5563; --gn-soft: #f8fafc; --gn-box: #f3f4f6;
       --gn-info: #eef2ff; --gn-danger: #b91c1c; --gn-card-border: #e8e8ee; --gn-icon: #475569;
       box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0 auto;
-      padding: 7mm 10mm 6mm; display: flex; flex-direction: column; gap: 2.2mm;
+      padding: 7mm 10mm 6mm; display: flex; flex-direction: column; gap: 2.8mm;
       color: var(--gn-ink); background: #fff;
     }
     .gn-header { text-align: center; }
@@ -203,15 +189,7 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     .gn-service-icon svg { width: 100%; height: 100%; display: block; }
     .gn-service-label { font-size: 6.5pt; font-weight: 700; line-height: 1.15; word-break: keep-all; }
     .gn-service-label-en { font-size: 5.5pt; font-weight: 600; color: var(--gn-muted); line-height: 1.15; word-break: break-word; }
-    .gn-lang-strip { border: 0.25mm solid var(--gn-card-border); border-radius: 1.8mm; padding: 1.6mm 2mm 1.8mm; background: var(--gn-soft); }
-    .gn-howto-title { margin: 0; text-align: center; font-size: 8.5pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-howto-title-en { margin: 0.3mm 0 1.4mm; text-align: center; font-size: 6.5pt; color: var(--gn-muted); font-weight: 600; }
-    .gn-lang-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.2mm; }
-    .gn-lang-pill { background: #fff; border-radius: 1.4mm; padding: 1.2mm 1mm; text-align: center; border: 0.2mm solid #eceff3; }
-    .gn-lang-flag { font-size: 8pt; display: block; margin-bottom: 0.4mm; }
-    .gn-lang-name { display: block; font-size: 7.5pt; font-weight: 800; color: var(--gn-navy); }
-    .gn-lang-hint { display: block; margin-top: 0.5mm; font-size: 6pt; color: var(--gn-muted); line-height: 1.25; }
-    .gn-translate { margin-top: 1.2mm; display: flex; justify-content: center; align-items: baseline; gap: 2mm; flex-wrap: wrap; }
+    .gn-translate { margin-top: 1.6mm; display: flex; justify-content: center; align-items: baseline; gap: 2mm; flex-wrap: wrap; }
     .gn-translate-badge { font-size: 7.5pt; font-weight: 800; color: var(--gn-navy); background: var(--gn-info); border: 0.2mm solid #dce3ff; border-radius: 999px; padding: 0.5mm 2.4mm; }
     .gn-translate-en { font-size: 6.5pt; color: var(--gn-muted); font-weight: 600; }
     .gn-trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4mm; }
@@ -280,20 +258,15 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     <section class="gn-services">
       <h2 class="gn-services-title">${esc(ko.servicesTitle)}</h2>
       <ul class="gn-service-grid">${services}</ul>
-    </section>
-    <section class="gn-lang-strip">
-      <h2 class="gn-howto-title">${esc(ko.howToTitle)}</h2>
-      <p class="gn-howto-title-en">${esc(en.howToTitle)}</p>
-      <div class="gn-lang-row">${langPills}</div>
       <div class="gn-translate">
         <span class="gn-translate-badge">${esc(ko.translateBadge)}</span>
         <span class="gn-translate-en">${esc(en.translateBadge)}</span>
       </div>
     </section>
     <section class="gn-trust">
-      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.watch}</span><div><div class="gn-trust-ko">${esc(ko.staffWatchBody)}</div><div class="gn-trust-en">${esc(en.staffWatchBody)}</div></div></div>
-      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.reply}</span><div><div class="gn-trust-ko">${esc(ko.replyBody)}</div><div class="gn-trust-en">${esc(en.replyBody)}</div></div></div>
       <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.hours}</span><div><div class="gn-trust-ko">${esc(ko.hoursBody)}</div><div class="gn-trust-en">${esc(en.hoursBody)}</div></div></div>
+      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.reply}</span><div><div class="gn-trust-ko">${esc(ko.replyBody)}</div><div class="gn-trust-en">${esc(en.replyBody)}</div></div></div>
+      <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.watch}</span><div><div class="gn-trust-ko">${esc(ko.staffWatchBody)}</div><div class="gn-trust-en">${esc(en.staffWatchBody)}</div></div></div>
       <div class="gn-trust-chip"><span class="gn-trust-icon">${GUEST_NOTICE_TRUST_ICON.privacy}</span><div><div class="gn-trust-ko">${esc(ko.privacyBody)}</div><div class="gn-trust-en">${esc(en.privacyBody)}</div></div></div>
     </section>
     <section class="gn-wifi-aux">

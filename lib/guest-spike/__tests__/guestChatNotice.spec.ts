@@ -84,6 +84,8 @@ test('Korean Wi-Fi copy emphasizes auto-connect (credentials live in roomWifi So
   assert.match(guestChatNoticeCopy.ko.wifi24Label, /2\.4GHz/);
   assert.match(guestChatNoticeCopy.ko.howToTitle, /QR/);
   assert.match(guestChatNoticeCopy.ko.helpIntro, /Guest Chat QR/);
+  assert.match(guestChatNoticeCopy.ko.hoursBody, /24시간/);
+  assert.match(guestChatNoticeCopy.ko.replyBody, /전화 없이/);
   assert.doesNotMatch(guestChatNoticeCopy.ko.wifiNightstand, /A52D33A1/);
 });
 
@@ -108,7 +110,7 @@ test('language line uses SoT display names', () => {
   assert.match(line, /中文/);
 });
 
-test('A4 HTML is chat → services → how-to → Wi-Fi bottom (one page hierarchy)', () => {
+test('A4 HTML is chat → services → trust → Wi-Fi bottom (one page hierarchy)', () => {
   const wifiSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8"/></svg>';
   for (const room of ['201', '607']) {
     const url = guestRoomUrl(room);
@@ -134,8 +136,12 @@ test('A4 HTML is chat → services → how-to → Wi-Fi bottom (one page hierarc
     assert.match(html, /생수 부탁드립니다/);
     assert.match(html, /곧 가져다드리겠습니다/);
     assert.match(html, /gn-services/);
-    assert.match(html, /gn-howto-title/);
-    assert.match(html, /객실 QR 사용 방법/);
+    assert.doesNotMatch(html, /gn-howto-title/);
+    assert.doesNotMatch(html, /객실 QR 사용 방법/);
+    assert.doesNotMatch(html, /gn-lang-strip/);
+    assert.match(html, /gn-trust/);
+    assert.match(html, /24시간 이용/);
+    assert.match(html, /전화 없이 요청/);
     assert.match(html, /gn-wifi-aux/);
     assert.match(html, /gn-wifi-band-card/);
     assert.match(html, /gn-wifi-aux-mid/);
@@ -144,12 +150,12 @@ test('A4 HTML is chat → services → how-to → Wi-Fi bottom (one page hierarc
     const bodyHtml = html.slice(html.indexOf('<body'));
     const chatIdx = bodyHtml.indexOf('class="gn-chat-hero"');
     const servicesIdx = bodyHtml.indexOf('class="gn-services"');
-    const howtoIdx = bodyHtml.indexOf('class="gn-howto-title"');
+    const trustIdx = bodyHtml.indexOf('class="gn-trust"');
     const wifiIdx = bodyHtml.indexOf('class="gn-wifi-aux"');
     const emergencyIdx = bodyHtml.indexOf('gn-emergency-phone');
     assert.ok(chatIdx > 0 && servicesIdx > chatIdx, 'services after chat');
-    assert.ok(howtoIdx > servicesIdx, 'how-to after services');
-    assert.ok(wifiIdx > howtoIdx, 'Wi-Fi after how-to');
+    assert.ok(trustIdx > servicesIdx, 'trust after services');
+    assert.ok(wifiIdx > trustIdx, 'Wi-Fi after trust');
     assert.ok(emergencyIdx > wifiIdx, 'emergency after Wi-Fi');
     const midIdx = bodyHtml.indexOf('class="gn-wifi-aux-mid"');
     const firstBand = bodyHtml.indexOf('class="gn-wifi-band-card"');
@@ -239,9 +245,12 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(sheet, /GUEST_NOTICE_DEMO_WATER_ICON/);
   assert.match(css, /\.gn-phone/);
   assert.match(css, /\.gn-bubble-staff/);
-  assert.match(sheet, /gn-howto-title/);
+  assert.doesNotMatch(sheet, /gn-howto-title/);
+  assert.doesNotMatch(sheet, /gn-lang-strip/);
+  assert.match(sheet, /gn-translate-badge/);
   assert.match(sheet, /data-layout="chat-services-wifi"/);
-  assert.match(css, /\.gn-howto-title/);
+  assert.doesNotMatch(css, /\.gn-howto-title/);
+  assert.match(css, /\.gn-translate-badge/);
   assert.match(css, /minmax\(22mm,\s*32mm\)/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_QR_MM/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_WIFI_QR_MM/);
