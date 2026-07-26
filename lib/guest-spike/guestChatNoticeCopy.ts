@@ -33,6 +33,12 @@ export interface GuestChatNoticeCopy {
   translateBadge: string;
   /** Guest Chat QR caption. */
   chatQrCaption: string;
+  /** Hero phone-demo: guest request line (short). */
+  demoGuest: string;
+  /** Hero phone-demo: staff reply line (short). */
+  demoStaff: string;
+  /** Optional caption under phone demo. */
+  demoCaption: string;
   /** Wi-Fi panel title. */
   wifiPanelTitle: string;
   /** Wi-Fi scan hint under panel title. */
@@ -120,6 +126,9 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     ),
     translateBadge: '자동 번역 지원',
     chatQrCaption: 'Guest Chat',
+    demoGuest: '생수 부탁드립니다',
+    demoStaff: '네, 곧 가져다드리겠습니다',
+    demoCaption: '스캔 후 이렇게 대화합니다',
     wifiPanelTitle: '객실 Wi-Fi',
     wifiScanHint: 'QR을 스캔하면 자동으로 연결됩니다.',
     wifi5gLabel: '5GHz',
@@ -162,6 +171,9 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     ),
     translateBadge: 'Auto-translate supported',
     chatQrCaption: 'Guest Chat',
+    demoGuest: 'Bottled water, please',
+    demoStaff: 'Of course — right away',
+    demoCaption: 'After scanning, chat like this',
     wifiPanelTitle: 'Room Wi-Fi',
     wifiScanHint: 'Scan the QR code to connect automatically.',
     wifi5gLabel: '5GHz',
@@ -204,6 +216,9 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     ),
     translateBadge: '自動翻訳対応',
     chatQrCaption: 'Guest Chat',
+    demoGuest: 'お水をお願いします',
+    demoStaff: 'すぐに届けます',
+    demoCaption: '読み取り後、このように会話します',
     wifiPanelTitle: '客室Wi-Fi',
     wifiScanHint: 'QRを読み取ると自動で接続されます。',
     wifi5gLabel: '5GHz',
@@ -246,6 +261,9 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     ),
     translateBadge: '支持自动翻译',
     chatQrCaption: 'Guest Chat',
+    demoGuest: '请送瓶装水',
+    demoStaff: '好的，马上送去',
+    demoCaption: '扫码后即可这样对话',
     wifiPanelTitle: '客房 Wi-Fi',
     wifiScanHint: '扫描二维码即可自动连接。',
     wifi5gLabel: '5GHz',
@@ -288,6 +306,9 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     ),
     translateBadge: 'Автоперевод',
     chatQrCaption: 'Guest Chat',
+    demoGuest: 'Принесите воду, пожалуйста',
+    demoStaff: 'Конечно, сейчас принесём',
+    demoCaption: 'После сканирования чат выглядит так',
     wifiPanelTitle: 'Wi-Fi номера',
     wifiScanHint: 'Отсканируйте QR — подключение выполнится автоматически.',
     wifi5gLabel: '5GHz',
@@ -330,6 +351,9 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     ),
     translateBadge: 'Traduction auto',
     chatQrCaption: 'Guest Chat',
+    demoGuest: 'De l’eau en bouteille, s’il vous plaît',
+    demoStaff: 'Bien sûr, tout de suite',
+    demoCaption: 'Après le scan, discutez ainsi',
     wifiPanelTitle: 'Wi-Fi chambre',
     wifiScanHint: 'Scannez le QR pour vous connecter automatiquement.',
     wifi5gLabel: '5GHz',
@@ -372,6 +396,9 @@ export const guestChatNoticeCopy: Record<GuestLang, GuestChatNoticeCopy> = {
     ),
     translateBadge: 'Traducción automática',
     chatQrCaption: 'Guest Chat',
+    demoGuest: 'Agua embotellada, por favor',
+    demoStaff: 'Claro, enseguida',
+    demoCaption: 'Tras escanear, chatee así',
     wifiPanelTitle: 'Wi-Fi habitación',
     wifiScanHint: 'Escanee el QR para conectarse automáticamente.',
     wifi5gLabel: '5GHz',

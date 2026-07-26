@@ -48,7 +48,9 @@ test('WIFI join payload escapes special characters', () => {
 test('notice copy exists for every supported guest language', () => {
   for (const lang of SUPPORTED_LANGS) {
     const c = noticeCopyFor(lang);
-    assert.ok(c.howToTitle.length > 0, lang);
+    assert.ok(c.demoGuest.length > 0, lang);
+    assert.ok(c.demoStaff.length > 0, lang);
+    assert.ok(c.demoCaption.length > 0, lang);
     assert.match(c.helpIntro, /QR|qr|二维码|スキャン|скан|Scan|Escane/i);
     assert.ok(c.valueLine.length > 0, lang);
     assert.ok(c.servicesTitle.length > 0, lang);
@@ -126,6 +128,11 @@ test('A4 HTML is chat → services → how-to → Wi-Fi bottom (one page hierarc
     assert.match(html, /010-4657-6680/);
     assert.match(html, /gn-concierge/);
     assert.match(html, /gn-chat-hero/);
+    assert.match(html, /gn-phone/);
+    assert.match(html, /gn-bubble-guest/);
+    assert.match(html, /gn-bubble-staff/);
+    assert.match(html, /생수 부탁드립니다/);
+    assert.match(html, /곧 가져다드리겠습니다/);
     assert.match(html, /gn-services/);
     assert.match(html, /gn-howto-title/);
     assert.match(html, /객실 QR 사용 방법/);
@@ -227,6 +234,11 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(css, /\.gn-wifi-aux/);
   assert.match(css, /\.gn-wifi-aux-mid/);
   assert.match(css, /\.gn-wifi-band-card/);
+  assert.match(sheet, /gn-phone/);
+  assert.match(sheet, /gn-bubble-guest/);
+  assert.match(sheet, /GUEST_NOTICE_DEMO_WATER_ICON/);
+  assert.match(css, /\.gn-phone/);
+  assert.match(css, /\.gn-bubble-staff/);
   assert.match(sheet, /gn-howto-title/);
   assert.match(sheet, /data-layout="chat-services-wifi"/);
   assert.match(css, /\.gn-howto-title/);

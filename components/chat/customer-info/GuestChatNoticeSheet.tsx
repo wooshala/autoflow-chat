@@ -16,6 +16,10 @@ import {
   GUEST_NOTICE_WIFI_ICON,
 } from '@/lib/guest-spike/guestChatNoticeIcons';
 import {
+  GUEST_NOTICE_DEMO_CHECK_ICON,
+  GUEST_NOTICE_DEMO_WATER_ICON,
+} from '@/lib/guest-spike/guestChatNoticeDemo';
+import {
   GUEST_NOTICE_SERVICE_ICON,
   GUEST_NOTICE_SERVICE_IDS,
 } from '@/lib/guest-spike/guestChatNoticeServices';
@@ -115,17 +119,39 @@ export function GuestChatNoticeSheet({
         <p className="gn-value-en">{en.valueLine}</p>
       </header>
 
-      {/* ① Guest Chat hero */}
+      {/* ① Guest Chat hero — QR (primary) + phone chat demo (secondary) */}
       <div className="gn-concierge" data-guest-url={guestUrl}>
         <section className="gn-chat-hero" aria-label="Guest Chat QR">
-          <div className="gn-chat-hero-label">{ko.chatQrCaption}</div>
-          <div
-            className="gn-qr gn-qr-chat"
-            style={{ width: `${chatMm}mm`, height: `${chatMm}mm` }}
-            dangerouslySetInnerHTML={{ __html: qrSvg }}
-          />
-          <p className="gn-chat-hero-hint">{ko.scanLead}</p>
-          <p className="gn-chat-hero-hint-en">{en.scanLead}</p>
+          <div className="gn-chat-hero-qr">
+            <div className="gn-chat-hero-label">{ko.chatQrCaption}</div>
+            <div
+              className="gn-qr gn-qr-chat"
+              style={{ width: `${chatMm}mm`, height: `${chatMm}mm` }}
+              dangerouslySetInnerHTML={{ __html: qrSvg }}
+            />
+            <p className="gn-chat-hero-hint">{ko.scanLead}</p>
+            <p className="gn-chat-hero-hint-en">{en.scanLead}</p>
+          </div>
+          <div className="gn-chat-demo" aria-label="Chat example">
+            <div className="gn-phone">
+              <div className="gn-phone-notch" aria-hidden />
+              <div className="gn-phone-screen">
+                <div className="gn-bubble gn-bubble-guest">
+                  <NoticeIcon svg={GUEST_NOTICE_DEMO_WATER_ICON} className="gn-bubble-icon" />
+                  <span className="gn-bubble-text">{ko.demoGuest}</span>
+                </div>
+                <div className="gn-bubble-arrow" aria-hidden>
+                  ↓
+                </div>
+                <div className="gn-bubble gn-bubble-staff">
+                  <NoticeIcon svg={GUEST_NOTICE_DEMO_CHECK_ICON} className="gn-bubble-icon" />
+                  <span className="gn-bubble-text">{ko.demoStaff}</span>
+                </div>
+              </div>
+            </div>
+            <p className="gn-demo-caption">{ko.demoCaption}</p>
+            <p className="gn-demo-caption-en">{en.demoCaption}</p>
+          </div>
         </section>
       </div>
 
