@@ -218,6 +218,11 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(css, /\.gn-wifi-band-card/);
   assert.match(css, /minmax\(22mm,\s*32mm\)/);
   assert.doesNotMatch(css, /\.gn-wifi-panel/);
+  assert.match(css, /\.gn-service-label/);
+  assert.match(css, /font-size:\s*7pt/);
+  assert.match(css, /\.gn-trust-en[\s\S]*?font-size:\s*6\.5pt/);
+  assert.match(css, /\.gn-lang-hint[\s\S]*?font-size:\s*6\.5pt/);
+  assert.match(css, /\.gn-translate-en[\s\S]*?font-size:\s*7\.5pt/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_QR_MM/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_WIFI_QR_MM/);
 });
