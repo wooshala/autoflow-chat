@@ -210,6 +210,8 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(card, /printing-guest-notice/);
   assert.match(card, /guest-notice-print-root/);
   assert.match(card, /GuestChatNoticeSheet/);
+  assert.match(card, /loadGuideRefDataUri|GUEST_NOTICE_GUIDE_REF_SRC/);
+  assert.match(card, /waitForPrintImages|guideRefSrc/);
   assert.match(card, /출력 준비 중/);
   assert.match(card, /printBusyRef/);
   assert.doesNotMatch(card, /window\.open\s*\(/);
