@@ -132,20 +132,29 @@ export function GuestChatNoticeSheet({
         </section>
 
         <section className="gn-wifi-aux" aria-label="Room Wi-Fi">
-          <div className="gn-wifi-aux-head">
-            <div className="gn-wifi-aux-title-row">
-              <NoticeIcon svg={GUEST_NOTICE_WIFI_ICON} className="gn-wifi-icon" />
-              <span className="gn-wifi-aux-title">{ko.wifiPanelTitle}</span>
-            </div>
-            <span className="gn-wifi-aux-hint">{ko.wifiScanHint}</span>
-          </div>
           {wifi ? (
             <div className="gn-wifi-aux-qrs">
               {wifiBand(ko.wifi5gLabel, wifi.ssid5g, wifi.password, wifiQrSvg5g)}
+              <div className="gn-wifi-aux-mid">
+                <div className="gn-wifi-aux-title-row">
+                  <NoticeIcon svg={GUEST_NOTICE_WIFI_ICON} className="gn-wifi-icon" />
+                  <span className="gn-wifi-aux-title">{ko.wifiPanelTitle}</span>
+                </div>
+                <span className="gn-wifi-aux-hint">{ko.wifiScanHint}</span>
+              </div>
               {wifiBand(ko.wifi24Label, wifi.ssid24, wifi.password, wifiQrSvg24)}
             </div>
           ) : (
-            <p className="gn-wifi-missing">{ko.wifiNightstand}</p>
+            <>
+              <div className="gn-wifi-aux-head">
+                <div className="gn-wifi-aux-title-row">
+                  <NoticeIcon svg={GUEST_NOTICE_WIFI_ICON} className="gn-wifi-icon" />
+                  <span className="gn-wifi-aux-title">{ko.wifiPanelTitle}</span>
+                </div>
+                <span className="gn-wifi-aux-hint">{ko.wifiScanHint}</span>
+              </div>
+              <p className="gn-wifi-missing">{ko.wifiNightstand}</p>
+            </>
           )}
         </section>
       </div>

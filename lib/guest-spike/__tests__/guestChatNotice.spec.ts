@@ -126,8 +126,15 @@ test('A4 HTML is chat-first: 44mm Guest QR above compact Wi-Fi (inline SVG, no j
     assert.match(html, /gn-chat-hero/);
     assert.match(html, /gn-wifi-aux/);
     assert.match(html, /gn-wifi-band-card/);
+    assert.match(html, /gn-wifi-aux-mid/);
     assert.match(html, /gn-wifi-icon/);
     assert.doesNotMatch(html, /gn-wifi-panel/);
+    // Title lives between band cards (vertical space reclaim)
+    const bodyHtml = html.slice(html.indexOf('<body'));
+    const midIdx = bodyHtml.indexOf('class="gn-wifi-aux-mid"');
+    const firstBand = bodyHtml.indexOf('class="gn-wifi-band-card"');
+    const secondBand = bodyHtml.indexOf('class="gn-wifi-band-card"', firstBand + 1);
+    assert.ok(firstBand > 0 && midIdx > firstBand && secondBand > midIdx, 'Wi-Fi title must sit between band cards');
     assert.doesNotMatch(html, /class="gn-url"/);
     assert.doesNotMatch(html, /\/wifi-qr\//);
     assert.match(html, /gn-wifi-cred-pw/);
@@ -196,6 +203,7 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(sheet, /gn-chat-hero/);
   assert.match(sheet, /gn-wifi-aux/);
   assert.match(sheet, /gn-wifi-band-card/);
+  assert.match(sheet, /gn-wifi-aux-mid/);
   assert.match(sheet, /GUEST_NOTICE_WIFI_ICON/);
   assert.match(sheet, /wifiQrSvg5g/);
   assert.doesNotMatch(sheet, /gn-wifi-panel/);
@@ -206,7 +214,9 @@ test('RoomGuestQrCard uses same-document print + inline Wi-Fi SVG (no window.ope
   assert.match(css, /\.gn-concierge/);
   assert.match(css, /\.gn-chat-hero/);
   assert.match(css, /\.gn-wifi-aux/);
+  assert.match(css, /\.gn-wifi-aux-mid/);
   assert.match(css, /\.gn-wifi-band-card/);
+  assert.match(css, /minmax\(22mm,\s*32mm\)/);
   assert.doesNotMatch(css, /\.gn-wifi-panel/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_QR_MM/);
   assert.match(sheet, /GUEST_CHAT_NOTICE_WIFI_QR_MM/);
