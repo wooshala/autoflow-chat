@@ -12,6 +12,7 @@ import { GuestChatNoticeSheet } from '@/components/chat/customer-info/GuestChatN
 import '@/components/chat/customer-info/guestChatNoticePrint.css';
 import { guestChannelUrl, resolveGuestChannelKey } from '@/lib/guest-spike/guestRoomUrl';
 import { GUEST_CHAT_HOTEL_NAME } from '@/lib/guest-spike/guestChatNoticeConfig';
+import { GUEST_NOTICE_GUIDE_REF_SRC } from '@/lib/guest-spike/guestChatNoticeGuideRef';
 import { buildGuestChatNoticeQrSvg, buildWifiNoticeQrSvg } from '@/lib/guest-spike/buildGuestChatNoticeQrSvg';
 import { roomWifiFor } from '@/lib/guest-spike/roomWifiCredentials.generated';
 
@@ -34,7 +35,43 @@ type PrintNoticeData = {
   qrSvg: string;
   wifiQrSvg5g: string | null;
   wifiQrSvg24: string | null;
+  /** Data URI so print does not race a cold network image load. */
+  guideRefSrc: string;
 };
+
+async function loadGuideRefDataUri(): Promise<string> {
+  const res = await fetch(GUEST_NOTICE_GUIDE_REF_SRC, { cache: 'force-cache' });
+  if (!res.ok) throw new Error(`guide ref ${res.status}`);
+  const blob = await res.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error('guide ref read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function waitForPrintImages(root: HTMLElement): Promise<void> {
+  const imgs = Array.from(root.querySelectorAll('img'));
+  return Promise.all(
+    imgs.map(async (img) => {
+      if (!img.complete || img.naturalWidth === 0) {
+        await new Promise<void>((resolve) => {
+          const done = () => resolve();
+          img.addEventListener('load', done, { once: true });
+          img.addEventListener('error', done, { once: true });
+        });
+      }
+      if (typeof img.decode === 'function') {
+        try {
+          await img.decode();
+        } catch {
+          /* still print — decode can reject on SVG data URLs */
+        }
+      }
+    }),
+  ).then(() => undefined);
+}
 
 export function RoomGuestQrCard({
   channelKey,
@@ -112,7 +149,7 @@ export function RoomGuestQrCard({
     setPrintBusy(false);
   }, []);
 
-  // Same-document print: render notice → layout paint → window.print() → afterprint cleanup.
+  // Same-document print: render notice → wait for guide art → window.print() → cleanup.
   useEffect(() => {
     if (!printNotice) return;
 
@@ -124,33 +161,40 @@ export function RoomGuestQrCard({
     };
     window.addEventListener('afterprint', onAfterPrint);
 
-    let raf1 = 0;
-    let raf2 = 0;
+    let cancelled = false;
     let stuckTimer = 0;
 
-    raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
+    const run = async () => {
+      const root = document.querySelector<HTMLElement>('[data-guest-notice-print="1"]');
+      if (root) {
         try {
-          window.print();
+          await waitForPrintImages(root);
         } catch {
-          endPrintSession();
-          setPrintFail(true);
-          window.setTimeout(() => setPrintFail(false), 2500);
-          return;
+          /* proceed — better a late image than a hung print */
         }
-        // Chromium/WebView2: print() returns after the dialog closes.
-        // afterprint covers environments where print() returns earlier.
+      }
+      // Two frames after decode so layout/paint settle (WebView2 print dialog).
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      if (cancelled) return;
+      try {
+        window.print();
+      } catch {
         endPrintSession();
-        // Safety only — print root is display:none on screen (no permanent overlay).
-        stuckTimer = window.setTimeout(() => {
-          endPrintSession();
-        }, 60_000);
-      });
-    });
+        setPrintFail(true);
+        window.setTimeout(() => setPrintFail(false), 2500);
+        return;
+      }
+      // Chromium/WebView2: print() returns after the dialog closes.
+      endPrintSession();
+      stuckTimer = window.setTimeout(() => {
+        endPrintSession();
+      }, 60_000);
+    };
+
+    void run();
 
     return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
+      cancelled = true;
       if (stuckTimer) window.clearTimeout(stuckTimer);
       window.removeEventListener('afterprint', onAfterPrint);
       document.body.classList.remove(PRINT_BODY_CLASS);
@@ -180,10 +224,11 @@ export function RoomGuestQrCard({
     setPrintFail(false);
     try {
       const wifi = roomWifiFor(roomLabel);
-      const [qrSvg, wifiQrSvg5g, wifiQrSvg24] = await Promise.all([
+      const [qrSvg, wifiQrSvg5g, wifiQrSvg24, guideRefSrc] = await Promise.all([
         buildGuestChatNoticeQrSvg(url),
         wifi ? buildWifiNoticeQrSvg(wifi.ssid5g, wifi.password) : Promise.resolve(null),
         wifi ? buildWifiNoticeQrSvg(wifi.ssid24, wifi.password) : Promise.resolve(null),
+        loadGuideRefDataUri(),
       ]);
       setPrintNotice({
         roomNo: roomLabel,
@@ -191,6 +236,7 @@ export function RoomGuestQrCard({
         qrSvg,
         wifiQrSvg5g,
         wifiQrSvg24,
+        guideRefSrc,
       });
     } catch {
       printBusyRef.current = false;
@@ -210,6 +256,7 @@ export function RoomGuestQrCard({
               qrSvg={printNotice.qrSvg}
               wifiQrSvg5g={printNotice.wifiQrSvg5g}
               wifiQrSvg24={printNotice.wifiQrSvg24}
+              guideRefSrc={printNotice.guideRefSrc}
               hotelName={GUEST_CHAT_HOTEL_NAME}
             />
           </div>,
