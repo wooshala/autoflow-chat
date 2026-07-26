@@ -90,12 +90,28 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     return `<div class="gn-lang-pill"><span class="gn-lang-flag">${LANG_FLAG[lang]}</span><span class="gn-lang-name">${esc(langDisplayName(lang))}</span><span class="gn-lang-hint">${esc(c.helpIntro)}</span></div>`;
   }).join('');
 
+  const wifiMid = `<div class="gn-wifi-aux-mid">
+        <div class="gn-wifi-aux-title-row">
+          <span class="gn-wifi-icon">${GUEST_NOTICE_WIFI_ICON}</span>
+          <span class="gn-wifi-aux-title">${esc(ko.wifiPanelTitle)}</span>
+        </div>
+        <span class="gn-wifi-aux-hint">${esc(ko.wifiScanHint)}</span>
+      </div>`;
+
   const wifiBlock = wifi
     ? `<div class="gn-wifi-aux-qrs">
         ${wifiBandCard(ko.wifi5gLabel, wifi.ssid5g, wifi.password, ko.wifiPasswordLabel, input.wifiQrSvg5g, wifiMm)}
+        ${wifiMid}
         ${wifiBandCard(ko.wifi24Label, wifi.ssid24, wifi.password, ko.wifiPasswordLabel, input.wifiQrSvg24, wifiMm)}
       </div>`
-    : `<p class="gn-wifi-missing">${esc(ko.wifiNightstand)}</p>`;
+    : `<div class="gn-wifi-aux-head">
+        <div class="gn-wifi-aux-title-row">
+          <span class="gn-wifi-icon">${GUEST_NOTICE_WIFI_ICON}</span>
+          <span class="gn-wifi-aux-title">${esc(ko.wifiPanelTitle)}</span>
+        </div>
+        <span class="gn-wifi-aux-hint">${esc(ko.wifiScanHint)}</span>
+      </div>
+      <p class="gn-wifi-missing">${esc(ko.wifiNightstand)}</p>`;
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -142,14 +158,16 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     .gn-qr svg { width: 100%; height: 100%; display: block; }
     .gn-chat-hero-hint { margin: 2.2mm 0 0; font-size: 8pt; font-weight: 700; max-width: 150mm; }
     .gn-chat-hero-hint-en { margin: 0.6mm 0 0; font-size: 6pt; color: var(--gn-muted); max-width: 150mm; }
-    .gn-wifi-aux { border-top: 0.25mm solid #e5e7eb; padding-top: 2.4mm; }
-    .gn-wifi-aux-head { text-align: center; margin-bottom: 2mm; }
-    .gn-wifi-aux-title-row { display: inline-flex; align-items: center; gap: 1.2mm; }
+    .gn-wifi-aux { border-top: 0.25mm solid #e5e7eb; padding-top: 2mm; }
+    .gn-wifi-aux-head { text-align: center; margin-bottom: 1.5mm; }
+    .gn-wifi-aux-title-row { display: inline-flex; align-items: center; justify-content: center; gap: 1mm; flex-wrap: wrap; }
+    .gn-wifi-aux-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; max-width: 32mm; padding: 0 1mm; gap: 1mm; align-self: center; }
+    .gn-wifi-aux-mid .gn-wifi-aux-title-row { flex-direction: column; gap: 0.6mm; }
     .gn-wifi-icon { display: inline-flex; width: 3.2mm; height: 3.2mm; color: var(--gn-icon); }
     .gn-wifi-icon svg { width: 100%; height: 100%; display: block; }
-    .gn-wifi-aux-title { font-size: 8pt; font-weight: 800; color: var(--gn-muted); }
-    .gn-wifi-aux-hint { display: block; margin-top: 0.7mm; font-size: 6pt; color: #6b7280; }
-    .gn-wifi-aux-qrs { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+    .gn-wifi-aux-title { font-size: 7.5pt; font-weight: 800; color: var(--gn-muted); line-height: 1.2; }
+    .gn-wifi-aux-hint { display: block; font-size: 5.5pt; color: #6b7280; line-height: 1.35; max-width: 30mm; word-break: keep-all; }
+    .gn-wifi-aux-qrs { display: grid; grid-template-columns: 1fr minmax(22mm, 32mm) 1fr; gap: 2mm; align-items: stretch; }
     .gn-wifi-band-card { display: flex; flex-direction: column; align-items: center; text-align: center; background: #fff; border: 0.2mm solid #e5e7eb; border-radius: 1.6mm; padding: 2mm 2.2mm 2.2mm; }
     .gn-wifi-band { font-size: 7pt; font-weight: 800; margin-bottom: 1.2mm; }
     .gn-wifi-cred { width: 100%; margin-top: 1.6mm; display: flex; flex-direction: column; gap: 1.4mm; }
@@ -224,13 +242,6 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
         <p class="gn-chat-hero-hint-en">${esc(en.scanLead)}</p>
       </section>
       <section class="gn-wifi-aux">
-        <div class="gn-wifi-aux-head">
-          <div class="gn-wifi-aux-title-row">
-            <span class="gn-wifi-icon">${GUEST_NOTICE_WIFI_ICON}</span>
-            <span class="gn-wifi-aux-title">${esc(ko.wifiPanelTitle)}</span>
-          </div>
-          <span class="gn-wifi-aux-hint">${esc(ko.wifiScanHint)}</span>
-        </div>
         ${wifiBlock}
       </section>
     </div>
