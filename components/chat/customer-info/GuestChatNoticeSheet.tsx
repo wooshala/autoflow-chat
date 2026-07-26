@@ -1,8 +1,8 @@
 'use client';
 
-// A4 Guest Chat notice — chat hero → services → trust → Wi-Fi → emergency.
+// A4 Guest Chat notice — chat guide hero (QR + 1→2→3) → services → trust → Wi-Fi → emergency.
 // One A4 page; Wi-Fi is bottom amenity (inline SVG QRs, print-safe).
-// How-to / language strip removed: hero phone demo already shows usage.
+// Hero follows reference flyer layout; QR is always the live Guest Chat SVG (never decorative).
 
 import {
   GUEST_CHAT_EMERGENCY_PHONE,
@@ -17,9 +17,11 @@ import {
   GUEST_NOTICE_WIFI_ICON,
 } from '@/lib/guest-spike/guestChatNoticeIcons';
 import {
-  GUEST_NOTICE_DEMO_CHECK_ICON,
-  GUEST_NOTICE_DEMO_WATER_ICON,
-} from '@/lib/guest-spike/guestChatNoticeDemo';
+  GUEST_NOTICE_SCAN_BAR_ICON,
+  GUEST_NOTICE_STEP_CHAT_ART,
+  GUEST_NOTICE_STEP_SCAN_ART,
+  GUEST_NOTICE_STEP_STAFF_ART,
+} from '@/lib/guest-spike/guestChatNoticeGuide';
 import {
   GUEST_NOTICE_SERVICE_ICON,
   GUEST_NOTICE_SERVICE_IDS,
@@ -110,38 +112,60 @@ export function GuestChatNoticeSheet({
         <p className="gn-value-en">{en.valueLine}</p>
       </header>
 
-      {/* ① Guest Chat hero — QR (primary) + phone chat demo (secondary) */}
+      {/* ① Guest Chat guide — live QR + 1→2→3 steps */}
       <div className="gn-concierge" data-guest-url={guestUrl}>
-        <section className="gn-chat-hero" aria-label="Guest Chat QR">
-          <div className="gn-chat-hero-qr">
+        <section className="gn-guide" aria-label="Guest Chat QR">
+          <div className="gn-guide-qr">
             <div className="gn-chat-hero-label">{ko.chatQrCaption}</div>
             <div
               className="gn-qr gn-qr-chat"
               style={{ width: `${chatMm}mm`, height: `${chatMm}mm` }}
               dangerouslySetInnerHTML={{ __html: qrSvg }}
             />
-            <p className="gn-chat-hero-hint">{ko.scanLead}</p>
-            <p className="gn-chat-hero-hint-en">{en.scanLead}</p>
-          </div>
-          <div className="gn-chat-demo" aria-label="Chat example">
-            <div className="gn-phone">
-              <div className="gn-phone-notch" aria-hidden />
-              <div className="gn-phone-screen">
-                <div className="gn-bubble gn-bubble-guest">
-                  <NoticeIcon svg={GUEST_NOTICE_DEMO_WATER_ICON} className="gn-bubble-icon" />
-                  <span className="gn-bubble-text">{ko.demoGuest}</span>
-                </div>
-                <div className="gn-bubble-arrow" aria-hidden>
-                  ↓
-                </div>
-                <div className="gn-bubble gn-bubble-staff">
-                  <NoticeIcon svg={GUEST_NOTICE_DEMO_CHECK_ICON} className="gn-bubble-icon" />
-                  <span className="gn-bubble-text">{ko.demoStaff}</span>
-                </div>
+            <div className="gn-scan-bar">
+              <NoticeIcon svg={GUEST_NOTICE_SCAN_BAR_ICON} className="gn-scan-bar-icon" />
+              <div className="gn-scan-bar-text">
+                <span className="gn-scan-bar-ko">{ko.scanBar}</span>
+                <span className="gn-scan-bar-en">{en.scanBar}</span>
               </div>
             </div>
-            <p className="gn-demo-caption">{ko.demoCaption}</p>
-            <p className="gn-demo-caption-en">{en.demoCaption}</p>
+          </div>
+
+          <div className="gn-guide-steps" aria-label="How Guest Chat works">
+            <div className="gn-step">
+              <div className="gn-step-num" aria-hidden>
+                1
+              </div>
+              <NoticeIcon svg={GUEST_NOTICE_STEP_SCAN_ART} className="gn-step-art" />
+              <p className="gn-step-ko">{ko.step1Body}</p>
+              <p className="gn-step-en">{en.step1Body}</p>
+            </div>
+            <div className="gn-step-arrow" aria-hidden>
+              ›
+            </div>
+            <div className="gn-step">
+              <div className="gn-step-num" aria-hidden>
+                2
+              </div>
+              <NoticeIcon svg={GUEST_NOTICE_STEP_CHAT_ART} className="gn-step-art gn-step-art-chat" />
+              <p className="gn-step-sample">
+                <span className="gn-step-sample-g">{ko.demoGuest}</span>
+                <span className="gn-step-sample-s">{ko.demoStaff}</span>
+              </p>
+              <p className="gn-step-ko">{ko.step2Body}</p>
+              <p className="gn-step-en">{en.step2Body}</p>
+            </div>
+            <div className="gn-step-arrow" aria-hidden>
+              ›
+            </div>
+            <div className="gn-step">
+              <div className="gn-step-num" aria-hidden>
+                3
+              </div>
+              <NoticeIcon svg={GUEST_NOTICE_STEP_STAFF_ART} className="gn-step-art" />
+              <p className="gn-step-ko">{ko.step3Body}</p>
+              <p className="gn-step-en">{en.step3Body}</p>
+            </div>
           </div>
         </section>
       </div>
