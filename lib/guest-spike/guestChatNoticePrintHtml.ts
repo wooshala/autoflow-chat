@@ -16,6 +16,10 @@ import {
   GUEST_NOTICE_WIFI_ICON,
 } from './guestChatNoticeIcons';
 import {
+  GUEST_NOTICE_DEMO_CHECK_ICON,
+  GUEST_NOTICE_DEMO_WATER_ICON,
+} from './guestChatNoticeDemo';
+import {
   GUEST_NOTICE_SERVICE_ICON,
   GUEST_NOTICE_SERVICE_IDS,
 } from './guestChatNoticeServices';
@@ -149,15 +153,29 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     .gn-title { margin: 1.4mm 0 0; font-size: 11.5pt; font-weight: 800; color: var(--gn-navy); }
     .gn-value { margin: 0.8mm auto 0; max-width: 165mm; font-size: 8.5pt; font-weight: 700; line-height: 1.3; }
     .gn-value-en { margin: 0.3mm auto 0; max-width: 165mm; font-size: 6pt; color: var(--gn-muted); }
-    .gn-concierge { display: flex; flex-direction: column; padding: 2mm 2.5mm 2.2mm; background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; }
-    .gn-chat-hero { display: flex; flex-direction: column; align-items: center; text-align: center; }
+    .gn-concierge { display: flex; flex-direction: column; padding: 2mm 2.5mm 2mm; background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; }
+    .gn-chat-hero { display: grid; grid-template-columns: 1.2fr 0.9fr; gap: 3mm; align-items: center; }
+    .gn-chat-hero-qr { display: flex; flex-direction: column; align-items: center; text-align: center; }
     .gn-chat-hero-label { font-size: 8.5pt; font-weight: 800; color: var(--gn-navy); letter-spacing: 0.06em; margin-bottom: 1.4mm; }
     .gn-qr { padding: 1.4mm; box-sizing: border-box; background: #fff; border: 0.45mm solid #0f172a; display: flex; align-items: center; justify-content: center; }
     .gn-qr-chat { border-width: 0.55mm; box-shadow: 0 0.6mm 1.6mm rgba(15,23,42,0.06); }
     .gn-qr-wifi { border-width: 0.28mm; border-color: #94a3b8; padding: 1mm; }
     .gn-qr svg { width: 100%; height: 100%; display: block; }
-    .gn-chat-hero-hint { margin: 1.6mm 0 0; font-size: 7.5pt; font-weight: 700; max-width: 150mm; }
-    .gn-chat-hero-hint-en { margin: 0.4mm 0 0; font-size: 5.8pt; color: var(--gn-muted); max-width: 150mm; }
+    .gn-chat-hero-hint { margin: 1.4mm 0 0; font-size: 7pt; font-weight: 700; max-width: 55mm; }
+    .gn-chat-hero-hint-en { margin: 0.3mm 0 0; font-size: 5.5pt; color: var(--gn-muted); max-width: 55mm; }
+    .gn-chat-demo { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .gn-phone { box-sizing: border-box; width: 34mm; padding: 2.2mm 1.8mm 2.4mm; background: #fff; border: 0.45mm solid #334155; border-radius: 3.2mm; }
+    .gn-phone-notch { width: 10mm; height: 1.1mm; margin: 0 auto 1.6mm; background: #cbd5e1; border-radius: 999px; }
+    .gn-phone-screen { display: flex; flex-direction: column; gap: 1.2mm; min-height: 28mm; padding: 1.2mm; background: #f8fafc; border-radius: 1.6mm; border: 0.2mm solid #e5e7eb; }
+    .gn-bubble { display: flex; align-items: flex-start; gap: 1mm; padding: 1.3mm 1.5mm; border-radius: 1.4mm; font-size: 6pt; font-weight: 700; line-height: 1.3; word-break: keep-all; }
+    .gn-bubble-guest { align-self: flex-start; background: #fff; border: 0.25mm solid #e2e8f0; border-bottom-left-radius: 0.4mm; }
+    .gn-bubble-staff { align-self: flex-end; background: #eef2ff; border: 0.25mm solid #c7d2fe; color: var(--gn-navy); border-bottom-right-radius: 0.4mm; }
+    .gn-bubble-icon { display: inline-flex; width: 2.8mm; height: 2.8mm; flex-shrink: 0; color: var(--gn-icon); }
+    .gn-bubble-icon svg { width: 100%; height: 100%; display: block; }
+    .gn-bubble-staff .gn-bubble-icon { color: var(--gn-navy); }
+    .gn-bubble-arrow { align-self: center; font-size: 6pt; color: #94a3b8; font-weight: 700; }
+    .gn-demo-caption { margin: 1.4mm 0 0; text-align: center; font-size: 6pt; font-weight: 700; color: var(--gn-muted); max-width: 40mm; }
+    .gn-demo-caption-en { margin: 0.3mm 0 0; text-align: center; font-size: 5pt; color: #9ca3af; max-width: 40mm; }
     .gn-wifi-aux { background: var(--gn-soft); border: 0.25mm solid var(--gn-card-border); border-radius: 1.8mm; padding: 1.8mm 2mm; }
     .gn-wifi-aux-head { text-align: center; margin-bottom: 1.5mm; }
     .gn-wifi-aux-title-row { display: inline-flex; align-items: center; justify-content: center; gap: 1mm; flex-wrap: wrap; }
@@ -239,10 +257,24 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     </header>
     <div class="gn-concierge" data-guest-url="${esc(input.guestUrl)}">
       <section class="gn-chat-hero">
-        <div class="gn-chat-hero-label">${esc(ko.chatQrCaption)}</div>
-        <div class="gn-qr gn-qr-chat" style="width:${chatMm}mm;height:${chatMm}mm">${input.qrSvg}</div>
-        <p class="gn-chat-hero-hint">${esc(ko.scanLead)}</p>
-        <p class="gn-chat-hero-hint-en">${esc(en.scanLead)}</p>
+        <div class="gn-chat-hero-qr">
+          <div class="gn-chat-hero-label">${esc(ko.chatQrCaption)}</div>
+          <div class="gn-qr gn-qr-chat" style="width:${chatMm}mm;height:${chatMm}mm">${input.qrSvg}</div>
+          <p class="gn-chat-hero-hint">${esc(ko.scanLead)}</p>
+          <p class="gn-chat-hero-hint-en">${esc(en.scanLead)}</p>
+        </div>
+        <div class="gn-chat-demo">
+          <div class="gn-phone">
+            <div class="gn-phone-notch"></div>
+            <div class="gn-phone-screen">
+              <div class="gn-bubble gn-bubble-guest"><span class="gn-bubble-icon">${GUEST_NOTICE_DEMO_WATER_ICON}</span><span class="gn-bubble-text">${esc(ko.demoGuest)}</span></div>
+              <div class="gn-bubble-arrow">↓</div>
+              <div class="gn-bubble gn-bubble-staff"><span class="gn-bubble-icon">${GUEST_NOTICE_DEMO_CHECK_ICON}</span><span class="gn-bubble-text">${esc(ko.demoStaff)}</span></div>
+            </div>
+          </div>
+          <p class="gn-demo-caption">${esc(ko.demoCaption)}</p>
+          <p class="gn-demo-caption-en">${esc(en.demoCaption)}</p>
+        </div>
       </section>
     </div>
     <section class="gn-services">

@@ -14,7 +14,7 @@ import {
   buildGuestChatNoticeQrSvg,
   buildWifiNoticeQrSvg,
 } from '../lib/guest-spike/buildGuestChatNoticeQrSvg.ts';
-import { GUEST_CHAT_HOTEL_NAME } from '../lib/guest-spike/guestChatNoticeConfig.ts';
+import { GUEST_CHAT_HOTEL_NAME, GUEST_CHAT_NOTICE_QR_MM, GUEST_CHAT_NOTICE_WIFI_QR_MM } from '../lib/guest-spike/guestChatNoticeConfig.ts';
 import { guestRoomUrl } from '../lib/guest-spike/guestRoomUrl.ts';
 import { roomWifiFor } from '../lib/guest-spike/roomWifiCredentials.generated.ts';
 
@@ -82,9 +82,9 @@ async function main() {
       JSON.stringify(
         {
           room,
-          chatQrMm: 44,
-          wifiQrMm: 28,
-          layout: 'chat-first-wifi',
+          chatQrMm: GUEST_CHAT_NOTICE_QR_MM,
+          wifiQrMm: GUEST_CHAT_NOTICE_WIFI_QR_MM,
+          layout: 'chat-services-wifi',
           html: htmlPath,
           png: pngPath,
           pdf: pdfPath,
