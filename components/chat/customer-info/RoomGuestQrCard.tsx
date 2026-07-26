@@ -12,7 +12,8 @@ import { GuestChatNoticeSheet } from '@/components/chat/customer-info/GuestChatN
 import '@/components/chat/customer-info/guestChatNoticePrint.css';
 import { guestChannelUrl, resolveGuestChannelKey } from '@/lib/guest-spike/guestRoomUrl';
 import { GUEST_CHAT_HOTEL_NAME } from '@/lib/guest-spike/guestChatNoticeConfig';
-import { buildGuestChatNoticeQrSvg } from '@/lib/guest-spike/buildGuestChatNoticeQrSvg';
+import { buildGuestChatNoticeQrSvg, buildWifiNoticeQrSvg } from '@/lib/guest-spike/buildGuestChatNoticeQrSvg';
+import { roomWifiFor } from '@/lib/guest-spike/roomWifiCredentials.generated';
 
 /** Display size in the panel (CSS). */
 const QR_DISPLAY_PX = 160;
@@ -31,6 +32,8 @@ type PrintNoticeData = {
   roomNo: string;
   guestUrl: string;
   qrSvg: string;
+  wifiQrSvg5g: string | null;
+  wifiQrSvg24: string | null;
 };
 
 export function RoomGuestQrCard({
@@ -176,11 +179,18 @@ export function RoomGuestQrCard({
     setPrintBusy(true);
     setPrintFail(false);
     try {
-      const qrSvg = await buildGuestChatNoticeQrSvg(url);
+      const wifi = roomWifiFor(roomLabel);
+      const [qrSvg, wifiQrSvg5g, wifiQrSvg24] = await Promise.all([
+        buildGuestChatNoticeQrSvg(url),
+        wifi ? buildWifiNoticeQrSvg(wifi.ssid5g, wifi.password) : Promise.resolve(null),
+        wifi ? buildWifiNoticeQrSvg(wifi.ssid24, wifi.password) : Promise.resolve(null),
+      ]);
       setPrintNotice({
         roomNo: roomLabel,
         guestUrl: url,
         qrSvg,
+        wifiQrSvg5g,
+        wifiQrSvg24,
       });
     } catch {
       printBusyRef.current = false;
@@ -198,6 +208,8 @@ export function RoomGuestQrCard({
               roomNo={printNotice.roomNo}
               guestUrl={printNotice.guestUrl}
               qrSvg={printNotice.qrSvg}
+              wifiQrSvg5g={printNotice.wifiQrSvg5g}
+              wifiQrSvg24={printNotice.wifiQrSvg24}
               hotelName={GUEST_CHAT_HOTEL_NAME}
             />
           </div>,

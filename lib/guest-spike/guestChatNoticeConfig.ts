@@ -13,8 +13,11 @@ export const GUEST_CHAT_HOTEL_NAME = '호텔 레이블';
 /** Latin fallback when a PDF font cannot render Hangul (batch pipeline only). */
 export const GUEST_CHAT_HOTEL_NAME_LATIN = 'Hotel Label';
 
-/** Printed QR physical size (mm). Prefer mm over px for print fidelity. */
-export const GUEST_CHAT_NOTICE_QR_MM = 40;
+/** Printed Guest Chat QR physical size (mm). Prefer mm over px for print fidelity. */
+export const GUEST_CHAT_NOTICE_QR_MM = 44;
+
+/** Printed Wi-Fi QR size (mm) — secondary to Guest Chat; keep scannable but lighter. */
+export const GUEST_CHAT_NOTICE_WIFI_QR_MM = 28;
 
 /** A4 page margins (mm) — within the 12–15mm band. */
 export const GUEST_CHAT_NOTICE_MARGIN_MM = 14;

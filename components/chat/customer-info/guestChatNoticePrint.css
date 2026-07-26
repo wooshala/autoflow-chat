@@ -1,4 +1,4 @@
-/* Guest Chat A4 notice — Phase 2 Layout A (Service-first Digital Concierge). */
+/* Guest Chat A4 notice — Final Polish: hotel-quality, chat-first hierarchy. */
 
 .guest-notice-print-root {
   display: none;
@@ -10,21 +10,22 @@
   --gn-gold-line: #d4a574;
   --gn-ink: #111827;
   --gn-muted: #4b5563;
+  --gn-soft: #f8fafc;
   --gn-box: #f3f4f6;
   --gn-info: #eef2ff;
-  --gn-url: #dbeafe;
   --gn-danger: #b91c1c;
-  --gn-card-border: #e5e7eb;
+  --gn-card-border: #e8e8ee;
+  --gn-icon: #475569;
 
   box-sizing: border-box;
   width: 210mm;
   min-height: 297mm;
   max-height: 297mm;
   margin: 0 auto;
-  padding: 7mm 10mm 6mm;
+  padding: 8mm 11mm 7mm;
   display: flex;
   flex-direction: column;
-  gap: 2.6mm;
+  gap: 3.2mm;
   color: var(--gn-ink);
   font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   background: #fff;
@@ -33,109 +34,99 @@
   overflow: hidden;
 }
 
-/* ① Header */
+/* ① Header — restrained brand mark */
 .gn-header {
   text-align: center;
 }
 
 .gn-hotel {
-  font-size: 13pt;
+  font-size: 12.5pt;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--gn-gold);
-  margin-bottom: 1.8mm;
+  margin-bottom: 2mm;
 }
 
 .gn-rule {
   height: 0;
   border: 0;
-  border-top: 0.35mm solid var(--gn-gold-line);
+  border-top: 0.3mm solid var(--gn-gold-line);
   margin: 0 auto;
   width: 100%;
+  opacity: 0.85;
 }
 
 .gn-room {
-  margin-top: 1.4mm;
-  font-size: 24pt;
+  margin-top: 1.8mm;
+  font-size: 26pt;
   font-weight: 800;
   line-height: 1.02;
   letter-spacing: -0.02em;
 }
 
 .gn-room-en {
-  margin-top: 0.3mm;
-  margin-bottom: 1.4mm;
-  font-size: 9pt;
-  font-weight: 700;
+  margin-top: 0.5mm;
+  margin-bottom: 1.8mm;
+  font-size: 8.5pt;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--gn-gold);
 }
 
 .gn-title {
-  margin: 1.5mm 0 0;
+  margin: 2mm 0 0;
   font-size: 12pt;
   font-weight: 800;
   color: var(--gn-navy);
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .gn-value {
-  margin: 1mm auto 0;
-  max-width: 170mm;
+  margin: 1.2mm auto 0;
+  max-width: 165mm;
   font-size: 9pt;
   font-weight: 700;
   color: var(--gn-ink);
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .gn-value-en {
-  margin: 0.4mm auto 0;
-  max-width: 170mm;
-  font-size: 6.8pt;
+  margin: 0.5mm auto 0;
+  max-width: 165mm;
+  font-size: 6.5pt;
   color: var(--gn-muted);
   line-height: 1.3;
 }
 
-/* ② Guest Chat + Wi-Fi QR row */
-.gn-qr-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3mm;
-  align-items: stretch;
+/* ② Concierge block — Guest Chat + Wi-Fi as one experience */
+.gn-concierge {
+  display: flex;
+  flex-direction: column;
+  gap: 2.8mm;
+  padding: 2.5mm 3mm 2.8mm;
+  background: var(--gn-soft);
+  border: 0.25mm solid var(--gn-card-border);
+  border-radius: 2.2mm;
 }
 
-.gn-chat-block {
+.gn-chat-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 1.5mm 2mm;
+  padding: 1mm 0 0.5mm;
 }
 
-.gn-block-caption {
-  font-size: 8pt;
+.gn-chat-hero-label {
+  font-size: 9pt;
   font-weight: 800;
   color: var(--gn-navy);
-  margin-bottom: 1.2mm;
-}
-
-.gn-block-hint {
-  margin: 1.2mm 0 0;
-  font-size: 6.5pt;
-  font-weight: 700;
-  line-height: 1.3;
-  max-width: 42mm;
-}
-
-.gn-block-hint-en {
-  margin: 0.4mm 0 0;
-  font-size: 5.5pt;
-  color: var(--gn-muted);
-  line-height: 1.25;
-  max-width: 42mm;
+  letter-spacing: 0.06em;
+  margin-bottom: 2mm;
 }
 
 .gn-qr {
-  padding: 1.5mm;
+  padding: 1.8mm;
   box-sizing: border-box;
   background: #fff;
   border: 0.45mm solid #0f172a;
@@ -144,141 +135,190 @@
   justify-content: center;
 }
 
+.gn-qr-chat {
+  border-width: 0.55mm;
+  box-shadow: 0 0.8mm 2mm rgba(15, 23, 42, 0.06);
+}
+
+.gn-qr-wifi {
+  border-width: 0.28mm;
+  border-color: #94a3b8;
+  padding: 1.2mm;
+}
+
 .gn-qr svg {
   width: 100%;
   height: 100%;
   display: block;
 }
 
-.gn-url {
-  margin-top: 1.2mm;
-  max-width: 42mm;
-  padding: 0.9mm 2mm;
-  border-radius: 999px;
-  background: var(--gn-url);
-  color: var(--gn-navy);
-  font-size: 4.8pt;
-  font-weight: 600;
-  font-family: ui-monospace, Consolas, monospace;
-  word-break: break-all;
-  text-align: center;
-  line-height: 1.2;
+.gn-chat-hero-hint {
+  margin: 2.2mm 0 0;
+  font-size: 8pt;
+  font-weight: 700;
+  color: var(--gn-ink);
+  line-height: 1.35;
+  max-width: 150mm;
 }
 
-.gn-wifi-panel {
-  border: 0.55mm solid var(--gn-navy);
-  border-radius: 2.2mm;
-  background: #f8fafc;
-  padding: 2mm 2.5mm 2.2mm;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5mm;
-}
-
-.gn-wifi-panel-head {
-  text-align: center;
-}
-
-.gn-wifi-panel-title {
-  display: block;
-  font-size: 9pt;
-  font-weight: 800;
-  color: var(--gn-navy);
-}
-
-.gn-wifi-panel-hint {
-  display: block;
-  margin-top: 0.6mm;
+.gn-chat-hero-hint-en {
+  margin: 0.6mm 0 0;
   font-size: 6pt;
   color: var(--gn-muted);
   line-height: 1.3;
+  max-width: 150mm;
 }
 
-.gn-wifi-qrs {
+/* Wi-Fi — secondary amenity inside concierge */
+.gn-wifi-aux {
+  border-top: 0.25mm solid #e5e7eb;
+  padding-top: 2.4mm;
+}
+
+.gn-wifi-aux-head {
+  text-align: center;
+  margin-bottom: 2mm;
+}
+
+.gn-wifi-aux-title-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2mm;
+}
+
+.gn-wifi-icon {
+  display: inline-flex;
+  width: 3.2mm;
+  height: 3.2mm;
+  color: var(--gn-icon);
+  flex-shrink: 0;
+}
+
+.gn-wifi-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.gn-wifi-aux-title {
+  font-size: 8pt;
+  font-weight: 800;
+  color: var(--gn-muted);
+  letter-spacing: 0.02em;
+}
+
+.gn-wifi-aux-hint {
+  display: block;
+  margin-top: 0.7mm;
+  font-size: 6pt;
+  color: #6b7280;
+  line-height: 1.3;
+}
+
+.gn-wifi-aux-qrs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2.5mm;
+  gap: 3mm;
+  align-items: start;
 }
 
-.gn-wifi-qr-col {
+.gn-wifi-band-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  background: #fff;
+  border: 0.2mm solid #e5e7eb;
+  border-radius: 1.6mm;
+  padding: 2mm 2.2mm 2.2mm;
 }
 
 .gn-wifi-band {
   font-size: 7pt;
   font-weight: 800;
   color: var(--gn-ink);
-  margin-bottom: 1mm;
+  letter-spacing: 0.03em;
+  margin-bottom: 1.2mm;
 }
 
-.gn-wifi-qr-img {
-  display: block;
-  object-fit: contain;
-  background: #fff;
-  border: 0.35mm solid #94a3b8;
-  border-radius: 1.2mm;
-  padding: 1mm;
-  box-sizing: border-box;
+.gn-wifi-cred {
+  width: 100%;
+  margin-top: 1.6mm;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4mm;
+}
+
+.gn-wifi-cred-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35mm;
+  align-items: center;
+}
+
+.gn-wifi-cred-k {
+  font-size: 5pt;
+  font-weight: 800;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .gn-wifi-ssid {
-  margin-top: 1mm;
-  font-size: 6.2pt;
-  font-weight: 700;
+  font-size: 6pt;
+  font-weight: 600;
   font-family: ui-monospace, Consolas, monospace;
-  color: var(--gn-ink);
+  color: var(--gn-muted);
   word-break: break-all;
+  line-height: 1.25;
 }
 
-.gn-wifi-password {
-  margin-top: 0.5mm;
-  display: flex;
-  justify-content: center;
-  align-items: baseline;
-  gap: 2mm;
-  flex-wrap: wrap;
-  background: #fff;
-  border: 0.3mm dashed #94a3b8;
-  border-radius: 1.5mm;
-  padding: 1.4mm 2.5mm;
-}
-
-.gn-wifi-password-label {
-  font-size: 7pt;
-  font-weight: 800;
-  color: var(--gn-navy);
-}
-
-.gn-wifi-password-value {
-  font-size: 11pt;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+.gn-wifi-cred-v {
   font-family: ui-monospace, Consolas, monospace;
+  word-break: break-all;
+  line-height: 1.25;
+}
+
+.gn-wifi-cred-pw {
+  font-size: 9.5pt;
+  font-weight: 800;
   color: var(--gn-ink);
+  letter-spacing: 0.04em;
+}
+
+.gn-wifi-ph {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef2f7;
+  color: #6b7280;
+  font-size: 6pt;
+  font-weight: 700;
+  border: 0.25mm dashed #94a3b8;
+  border-radius: 1mm;
 }
 
 .gn-wifi-missing {
-  margin: 2mm 0;
+  margin: 1mm 0;
   text-align: center;
-  font-size: 7pt;
+  font-size: 6.5pt;
   color: var(--gn-muted);
 }
 
 /* ③ Service grid */
 .gn-services {
-  border: 0.35mm solid var(--gn-card-border);
+  border: 0.25mm solid var(--gn-card-border);
   border-radius: 2mm;
-  padding: 2.4mm 2.5mm 2.2mm;
+  padding: 2.6mm 2.8mm 2.4mm;
   background: #fff;
 }
 
 .gn-services-title {
-  margin: 0 0 2mm;
+  margin: 0 0 2.2mm;
   text-align: center;
-  font-size: 9pt;
+  font-size: 8.5pt;
   font-weight: 800;
   color: var(--gn-navy);
 }
@@ -289,7 +329,7 @@
   padding: 0;
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 1.6mm 1.2mm;
+  gap: 2mm 1.4mm;
 }
 
 .gn-service-item {
@@ -297,17 +337,25 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.8mm;
+  gap: 1mm;
   min-width: 0;
 }
 
 .gn-service-icon {
-  font-size: 13pt;
-  line-height: 1;
+  display: inline-flex;
+  width: 4.2mm;
+  height: 4.2mm;
+  color: var(--gn-icon);
+}
+
+.gn-service-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .gn-service-label {
-  font-size: 6pt;
+  font-size: 5.8pt;
   font-weight: 700;
   color: var(--gn-ink);
   line-height: 1.2;
@@ -316,16 +364,16 @@
 
 /* ④ Language strip */
 .gn-lang-strip {
-  border: 0.3mm solid var(--gn-card-border);
+  border: 0.25mm solid var(--gn-card-border);
   border-radius: 2mm;
-  padding: 2mm 2.2mm;
-  background: var(--gn-box);
+  padding: 2.2mm 2.4mm;
+  background: var(--gn-soft);
 }
 
 .gn-lang-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 1.5mm;
+  gap: 1.6mm;
 }
 
 .gn-lang-pill {
@@ -333,11 +381,11 @@
   border-radius: 1.5mm;
   padding: 1.6mm 1.2mm;
   text-align: center;
-  border: 0.2mm solid #e5e7eb;
+  border: 0.2mm solid #eceff3;
 }
 
 .gn-lang-flag {
-  font-size: 9pt;
+  font-size: 8.5pt;
   display: block;
   line-height: 1;
   margin-bottom: 0.6mm;
@@ -345,21 +393,21 @@
 
 .gn-lang-name {
   display: block;
-  font-size: 7.5pt;
+  font-size: 7pt;
   font-weight: 800;
   color: var(--gn-navy);
 }
 
 .gn-lang-hint {
   display: block;
-  margin-top: 0.8mm;
-  font-size: 5.5pt;
+  margin-top: 0.7mm;
+  font-size: 5.2pt;
   color: var(--gn-muted);
   line-height: 1.25;
 }
 
 .gn-translate {
-  margin-top: 1.6mm;
+  margin-top: 1.8mm;
   display: flex;
   justify-content: center;
   align-items: baseline;
@@ -368,17 +416,17 @@
 }
 
 .gn-translate-badge {
-  font-size: 8pt;
+  font-size: 7.5pt;
   font-weight: 800;
   color: var(--gn-navy);
   background: var(--gn-info);
-  border: 0.25mm solid #c7d2fe;
+  border: 0.2mm solid #dce3ff;
   border-radius: 999px;
-  padding: 0.8mm 3mm;
+  padding: 0.7mm 2.8mm;
 }
 
 .gn-translate-en {
-  font-size: 6.5pt;
+  font-size: 6pt;
   color: var(--gn-muted);
   font-weight: 600;
 }
@@ -394,28 +442,37 @@
   display: flex;
   gap: 1.4mm;
   align-items: flex-start;
-  background: var(--gn-info);
-  border-radius: 1.8mm;
-  padding: 2mm 1.8mm;
-  border: 0.2mm solid #e0e7ff;
+  background: var(--gn-soft);
+  border-radius: 1.6mm;
+  padding: 2mm 1.6mm;
+  border: 0.2mm solid #eceff3;
 }
 
 .gn-trust-icon {
-  font-size: 10pt;
-  line-height: 1;
+  display: inline-flex;
+  width: 3.4mm;
+  height: 3.4mm;
+  color: var(--gn-icon);
   flex-shrink: 0;
+  margin-top: 0.2mm;
+}
+
+.gn-trust-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .gn-trust-ko {
-  font-size: 6.5pt;
+  font-size: 6pt;
   font-weight: 700;
   line-height: 1.3;
   color: var(--gn-ink);
 }
 
 .gn-trust-en {
-  margin-top: 0.5mm;
-  font-size: 5.4pt;
+  margin-top: 0.4mm;
+  font-size: 5pt;
   color: var(--gn-muted);
   line-height: 1.25;
 }
@@ -424,44 +481,43 @@
 .gn-bottom {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 2.2mm;
+  gap: 2mm;
 }
 
 .gn-bottom-single {
-  max-width: 95mm;
+  max-width: 92mm;
   margin: 0 auto;
   width: 100%;
 }
 
 .gn-bottom-box {
-  border: 0.35mm solid #d1d5db;
+  border: 0.25mm solid #e5e7eb;
   border-radius: 2mm;
   padding: 2.2mm 2.8mm;
-  background: var(--gn-box);
+  background: var(--gn-soft);
 }
 
 .gn-bottom-head {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 1.4mm;
-  font-size: 8.5pt;
+  font-size: 8pt;
   font-weight: 800;
-  margin-bottom: 1.2mm;
+  margin-bottom: 1mm;
 }
 
-.gn-bottom-body {
-  margin: 0;
-  font-size: 7.5pt;
-  font-weight: 600;
-  color: var(--gn-ink);
-  line-height: 1.35;
+.gn-phone-icon {
+  display: inline-flex;
+  width: 3.4mm;
+  height: 3.4mm;
+  color: var(--gn-danger);
 }
 
-.gn-bottom-en {
-  margin: 0.6mm 0 0;
-  font-size: 6pt;
-  color: var(--gn-muted);
-  line-height: 1.3;
+.gn-phone-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .gn-emergency-head {
@@ -470,7 +526,8 @@
 
 .gn-emergency-phone {
   margin: 0.4mm 0 0;
-  font-size: 13pt;
+  text-align: center;
+  font-size: 12.5pt;
   font-weight: 800;
   color: var(--gn-danger);
   letter-spacing: 0.02em;
@@ -479,10 +536,10 @@
 
 .gn-footer {
   margin-top: auto;
-  padding-top: 1.2mm;
-  border-top: 0.25mm solid #e5e7eb;
+  padding-top: 1.4mm;
+  border-top: 0.2mm solid #eceff3;
   text-align: center;
-  font-size: 6pt;
+  font-size: 5.6pt;
   color: #6b7280;
   line-height: 1.35;
   display: flex;
