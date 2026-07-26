@@ -82,7 +82,7 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
 
   const services = GUEST_NOTICE_SERVICE_IDS.map(
     (id) =>
-      `<li class="gn-service-item"><span class="gn-service-icon">${GUEST_NOTICE_SERVICE_ICON[id]}</span><span class="gn-service-label">${esc(ko.serviceLabels[id])}</span></li>`,
+      `<li class="gn-service-item"><span class="gn-service-icon">${GUEST_NOTICE_SERVICE_ICON[id]}</span><span class="gn-service-label">${esc(ko.serviceLabels[id])}</span><span class="gn-service-label-en">${esc(en.serviceLabels[id])}</span></li>`,
   ).join('');
 
   const langPills = NOTICE_STRIP_LANGS.map((lang) => {
@@ -180,10 +180,11 @@ export function buildGuestChatNoticeHtml(input: GuestChatNoticePrintInput): stri
     .gn-services { border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; padding: 2.2mm 2.5mm 2mm; }
     .gn-services-title { margin: 0 0 1.8mm; text-align: center; font-size: 9.5pt; font-weight: 800; color: var(--gn-navy); }
     .gn-service-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.8mm 1.2mm; }
-    .gn-service-item { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.9mm; }
-    .gn-service-icon { display: inline-flex; width: 4.6mm; height: 4.6mm; color: var(--gn-icon); }
+    .gn-service-item { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.5mm; }
+    .gn-service-icon { display: inline-flex; width: 4.6mm; height: 4.6mm; color: var(--gn-icon); margin-bottom: 0.3mm; }
     .gn-service-icon svg { width: 100%; height: 100%; display: block; }
-    .gn-service-label { font-size: 7pt; font-weight: 700; line-height: 1.2; word-break: keep-all; }
+    .gn-service-label { font-size: 7pt; font-weight: 700; line-height: 1.15; word-break: keep-all; }
+    .gn-service-label-en { font-size: 6pt; font-weight: 600; color: var(--gn-muted); line-height: 1.2; word-break: break-word; }
     .gn-lang-strip { border: 0.25mm solid var(--gn-card-border); border-radius: 2mm; padding: 2mm 2.2mm; background: var(--gn-soft); }
     .gn-lang-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4mm; }
     .gn-lang-pill { background: #fff; border-radius: 1.5mm; padding: 1.5mm 1.2mm; text-align: center; border: 0.2mm solid #eceff3; }

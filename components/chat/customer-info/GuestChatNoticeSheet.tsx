@@ -167,6 +167,7 @@ export function GuestChatNoticeSheet({
             <li className="gn-service-item" key={id}>
               <NoticeIcon svg={GUEST_NOTICE_SERVICE_ICON[id]} className="gn-service-icon" />
               <span className="gn-service-label">{ko.serviceLabels[id]}</span>
+              <span className="gn-service-label-en">{en.serviceLabels[id]}</span>
             </li>
           ))}
         </ul>
