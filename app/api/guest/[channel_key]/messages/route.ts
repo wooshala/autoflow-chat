@@ -101,6 +101,10 @@ export async function GET(req: NextRequest, { params }: { params: { channel_key:
 
 export async function POST(req: NextRequest, { params }: { params: { channel_key: string } }) {
   const channelKey = params.channel_key;
+  // Phase 2A' — `sender` is decided by the SERVER from the authenticated context, never by the
+  // request body. Previously `body.sender === 'staff'` let a cookie-holding guest store a message
+  // as staff, which would silently clear that room's unanswered state.
+  // `body.sender` is still accepted and ignored so existing clients keep working.
   let body: { text?: unknown; sender?: unknown };
   try {
     body = await req.json();
@@ -109,9 +113,9 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
   }
   const text = String(body.text ?? '').trim();
   if (!text) return NextResponse.json({ ok: false, error: 'EMPTY' }, { status: 400 });
-  const sender: 'guest' | 'staff' = body.sender === 'staff' ? 'staff' : 'guest';
 
   let session: GuestSession;
+  let sender: 'guest' | 'staff';
   try {
     const r = await resolveSession(req, channelKey);
     if (!r.ok) {
@@ -121,6 +125,9 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
     }
     if (!r.session) return NextResponse.json({ ok: false, error: 'NO_ACTIVE_SESSION' }, { status: 409 });
     session = r.session;
+    // resolveSession() already enforced requireStaff() for the ?as=staff branch, so reaching here
+    // with as=staff proves a valid staff Bearer. A cookie-only guest can never take this branch.
+    sender = req.nextUrl.searchParams.get('as') === 'staff' ? 'staff' : 'guest';
   } catch (e) {
     return dbError(e);
   }

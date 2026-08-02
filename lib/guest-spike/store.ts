@@ -12,6 +12,7 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { isOneOpenConflict } from './sessionConflict';
 import type { OpenSessionRow, SummaryMessageRow } from './guestChannelSummary';
+import type { UnansweredMessageRow, UnansweredSessionRow } from './unansweredSummary';
 import type { GuestSpikeMsg, NewGuestMsg } from './types';
 
 export type { GuestSpikeMsg, NewGuestMsg };
@@ -264,4 +265,31 @@ export async function setChannelLanguage(
   if (error) throw new Error(`DB_ERROR: ${error.message}`);
   const row = data as { preferred_language: string; language_source: string };
   return { preferred_language: row.preferred_language, language_source: row.language_source };
+}
+
+/**
+ * Phase 2D — data for the internal UNANSWERED summary (ledger banner).
+ *
+ * Deliberately narrower than listOpenChannelSummaryData(): no original_text / translated_json,
+ * so message bodies cannot leak through the internal feed. Two queries (open sessions, then
+ * their messages by session_id) — no per-room N+1.
+ */
+export async function listUnansweredSummaryData(): Promise<{
+  sessions: UnansweredSessionRow[];
+  messages: UnansweredMessageRow[];
+}> {
+  const { data: sessions, error } = await db()
+    .from(SESSIONS)
+    .select('id, channel_key, started_at')
+    .eq('status', 'open');
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  const rows = (sessions ?? []) as UnansweredSessionRow[];
+  const ids = rows.map((s) => s.id);
+  if (ids.length === 0) return { sessions: rows, messages: [] };
+  const { data: messages, error: mErr } = await db()
+    .from(TABLE)
+    .select('id, session_id, sender, created_at')
+    .in('session_id', ids);
+  if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
+  return { sessions: rows, messages: (messages ?? []) as UnansweredMessageRow[] };
 }
