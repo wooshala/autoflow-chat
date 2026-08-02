@@ -63,6 +63,8 @@ import { RoomCenter } from '@/components/rooms/RoomCenter';
 import { RoomRightPanel } from '@/components/rooms/RoomRightPanel';
 import { useRoomNavigationPilotShortcut } from '@/lib/hooks/useRoomNavigationPilotShortcut';
 import { resolveLeftNavigationMode, type ChatLayoutMode } from '@/lib/rooms/chatLayout';
+import { guestRoomFromSearchParams } from '@/lib/rooms/guestRoomDeepLink';
+import { GuestRoomDeepLinkApplier } from '@/components/rooms/GuestRoomDeepLinkApplier';
 
 function getDeviceSide(): SenderSide {
   if (typeof navigator === 'undefined') return 'pc';
@@ -170,12 +172,20 @@ export default function ChatPage() {
   }, []);
   // Phase 1E.2: Ctrl+Alt+Shift+N pilot toggle (works even without WebView devtools).
   useRoomNavigationPilotShortcut();
+  // Phase 4A deep link: /chat?guestRoom=802 — parse after mount (SSR/client first paint agree).
+  // Valid guestRoom forces Room Nav UI + GuestChatPanel even when NEXT_PUBLIC_ROOM_NAVIGATION is OFF.
+  // Invalid / missing → null → existing /chat behavior unchanged. Does not touch ?room= (composer).
+  const [deepLinkGuestRoom, setDeepLinkGuestRoom] = useState<string | null>(null);
+  useEffect(() => {
+    setDeepLinkGuestRoom(guestRoomFromSearchParams(new URLSearchParams(window.location.search)));
+  }, []);
   // Phase 1F.1: Room Navigation feature intent (decoupled from the ops console) + the
   // resolved left-nav mode for the current layout/viewport.
-  const roomNavigationEnabled = resolveRoomNavigationEnabled({
-    buildEnabled: isRoomNavigationEnabled(),
-    runtimeOverride: roomNavOverride
-  });
+  const roomNavigationEnabled =
+    resolveRoomNavigationEnabled({
+      buildEnabled: isRoomNavigationEnabled(),
+      runtimeOverride: roomNavOverride
+    }) || Boolean(deepLinkGuestRoom);
   const layoutMode: ChatLayoutMode = showOpsConsole ? 'ops' : 'standard';
   const leftNavigationMode = resolveLeftNavigationMode({ layoutMode, roomNavigationEnabled, isMobileViewport });
   useEffect(() => {
@@ -184,12 +194,13 @@ export default function ChatPage() {
       buildEnabled: isRoomNavigationEnabled(),
       runtimeOverride: roomNavOverride,
       effectiveEnabled: roomNavigationEnabled,
+      deepLinkGuestRoom,
       showOpsConsole,
       isMobileViewport,
       layoutMode,
       leftNavigation: leftNavigationMode
     });
-  }, [roomNavigationEnabled, showOpsConsole, isMobileViewport, layoutMode, leftNavigationMode, roomNavOverride]);
+  }, [roomNavigationEnabled, deepLinkGuestRoom, showOpsConsole, isMobileViewport, layoutMode, leftNavigationMode, roomNavOverride]);
   const [lostFoundByMessageId, setLostFoundByMessageId] = useState<Record<string, LostFoundMessageLink>>({});
   const [lostFoundItems, setLostFoundItems] = useState<LostFoundItemWithMatch[]>([]);
   const [consoleRoomNo, setConsoleRoomNo] = useState<string | null>(null);
@@ -1239,7 +1250,10 @@ export default function ChatPage() {
         ) : null}
         <StaffChatAdminSection open={showAdminPanel} />
         {roomNavigationEnabled ? (
-          <RoomNavigationProvider>{layoutBody}</RoomNavigationProvider>
+          <RoomNavigationProvider>
+            {deepLinkGuestRoom ? <GuestRoomDeepLinkApplier roomNumber={deepLinkGuestRoom} /> : null}
+            {layoutBody}
+          </RoomNavigationProvider>
         ) : (
           layoutBody
         )}
@@ -1262,11 +1276,13 @@ export default function ChatPage() {
       {chatComposer}
     </>
   );
-  const standardRoomNavActive = leftNavigationMode === 'room-navigation';
+  // Deep link may force RoomCenter even when left nav stays 'none' (mobile standard).
+  const standardRoomNavActive = leftNavigationMode === 'room-navigation' || Boolean(deepLinkGuestRoom);
   const standardChatRegion = standardRoomNavActive ? (
     <RoomNavigationProvider>
+      {deepLinkGuestRoom ? <GuestRoomDeepLinkApplier roomNumber={deepLinkGuestRoom} /> : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <RoomNavigation widthClassName="w-64" />
+        {leftNavigationMode === 'room-navigation' ? <RoomNavigation widthClassName="w-64" /> : null}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <RoomCenter staffGlobalSlot={standardChatBody} />
         </section>
