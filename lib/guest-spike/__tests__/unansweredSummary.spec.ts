@@ -13,11 +13,20 @@ const S = (id: string, channel_key: string, started_at = '2026-08-01T00:00:00.00
   channel_key,
   started_at,
 });
-const M = (id: string, session_id: string | null, sender: string, created_at: string) => ({
+const M = (
+  id: string,
+  session_id: string | null,
+  sender: string,
+  created_at: string,
+  original_text?: string,
+  translated_json?: Record<string, string>,
+) => ({
   id,
   session_id,
   sender,
   created_at,
+  original_text: original_text ?? null,
+  translated_json: translated_json ?? null,
 });
 
 // ── 6. open session + guest only → 포함 ────────────────────────────────
@@ -173,8 +182,36 @@ test('a staff reply at the same instant counts as answered', () => {
   assert.equal(r.totalRooms, 0);
 });
 
-// ── 본문 미포함 계약 ──────────────────────────────────────────────────
-test('no message text can appear in the feed', () => {
+test('latestGuestMessagePreview prefers KO and never exposes raw fields', () => {
+  const r = buildUnansweredSummary(
+    [S('s1', 'room-802')],
+    [
+      M('m1', 's1', 'guest', '2026-08-01T10:00:00.000Z', 'hello', { ko: '수건 주세요' }),
+      M('m2', 's1', 'guest', '2026-08-01T10:01:00.000Z', 'water please', {
+        ko: '생수도 부탁합니다',
+      }),
+    ],
+    AT,
+  );
+  assert.equal(r.rooms[0]!.guestMessageCount, 2);
+  assert.equal(r.rooms[0]!.latestGuestMessagePreview, '생수도 부탁합니다');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(r.rooms[0]!, 'original_text'),
+    false,
+  );
+});
+
+test('preview falls back to original when KO missing', () => {
+  const r = buildUnansweredSummary(
+    [S('s1', 'room-802')],
+    [M('m1', 's1', 'guest', '2026-08-01T10:00:00.000Z', 'こんにちは')],
+    AT,
+  );
+  assert.equal(r.rooms[0]!.latestGuestMessagePreview, 'こんにちは');
+});
+
+// ── 본문 미포함 계약 (preview 문자열만 허용) ──────────────────────────
+test('no raw message body fields can appear in the feed', () => {
   const r = buildUnansweredSummary(
     [S('s1', 'room-802')],
     [M('m1', 's1', 'guest', '2026-08-01T10:00:00.000Z')],
@@ -187,19 +224,22 @@ test('no message text can appear in the feed', () => {
     'firstUnansweredAt',
     'guestMessageCount',
     'latestGuestMessageAt',
+    'latestGuestMessagePreview',
     'latestStaffMessageAt',
     'roomNumber',
     'sessionStartedAt',
     'sessionStatus',
     'unanswered',
   ]);
-  for (const banned of ['text', 'preview', 'body', 'original', 'translated']) {
+  for (const banned of ['text', 'body', 'original', 'translated']) {
     assert.equal(
       Object.keys(r.rooms[0]!).some((k) => k.toLowerCase().includes(banned)),
       false,
       `field name must not contain "${banned}"`,
     );
   }
+  assert.equal(typeof r.rooms[0]!.latestGuestMessagePreview, 'string');
+  assert.ok(r.rooms[0]!.latestGuestMessagePreview.length > 0);
 });
 
 // ── guest 없는 open session → 제외 ────────────────────────────────────

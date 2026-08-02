@@ -1,13 +1,10 @@
-// Phase 2D — PURE transform: (open sessions + their messages) → per-room UNANSWERED summary
-// for the ledger (univer-ops) banner. Import-free so it is unit-testable.
+// Phase 2D+4A — PURE transform: open sessions + messages → unanswered rooms for ledger banner.
 //
-// unanswered := within an OPEN session, the newest guest message is newer than the newest
-// staff message (or there is no staff message at all).
-//
-// NO MESSAGE BODIES. This feed carries only room / session / counts / timestamps. Guest text
-// (and its translations) never leaves through this API — see guestChannelSummary.ts if a
-// staff-facing preview is needed instead.
+// unanswered := newest guest message newer than newest staff (or no staff).
+// Bodies: only `latestGuestMessagePreview` (server-built, masked, ≤80). Never return
+// original_text / translated_json on the wire.
 
+import { buildGuestMessagePreview } from './guestMessagePreview';
 import { roomNumberFromChannelKey } from './roomAllowlist';
 
 export type GuestChatUnansweredRoom = {
@@ -17,6 +14,8 @@ export type GuestChatUnansweredRoom = {
 
   /** Guest messages after the last staff reply (all guest messages if staff never replied). */
   guestMessageCount: number;
+  /** Staff one-liner; always non-empty. Built server-side (KO → original → fallback). */
+  latestGuestMessagePreview: string;
 
   firstUnansweredAt: string;
   latestGuestMessageAt: string;
@@ -41,12 +40,14 @@ export interface UnansweredSessionRow {
   started_at: string;
 }
 
-/** guest_chat_messages row, minimal columns. Text is deliberately absent. */
+/** Message row for unanswered fold. Text fields are used only to build the preview. */
 export interface UnansweredMessageRow {
   id: string;
   session_id: string | null;
   sender: string; // 'guest' | 'staff'
   created_at: string; // ISO 8601 — lexicographic order matches chronological order
+  original_text?: string | null;
+  translated_json?: Record<string, string> | null;
 }
 
 /**
@@ -80,16 +81,20 @@ export function buildUnansweredSummary(
     if (!roomNumber) continue; // test channel or unknown room
 
     let latestGuestAt: string | null = null;
+    let latestGuest: UnansweredMessageRow | null = null;
     let latestStaffAt: string | null = null;
     for (const m of bySession.get(s.id) ?? []) {
       if (m.sender === 'guest') {
-        if (!latestGuestAt || m.created_at > latestGuestAt) latestGuestAt = m.created_at;
+        if (!latestGuestAt || m.created_at > latestGuestAt) {
+          latestGuestAt = m.created_at;
+          latestGuest = m;
+        }
       } else if (m.sender === 'staff') {
         if (!latestStaffAt || m.created_at > latestStaffAt) latestStaffAt = m.created_at;
       }
     }
 
-    if (!latestGuestAt) continue; // no guest message
+    if (!latestGuestAt || !latestGuest) continue; // no guest message
     // Tie → answered (staff wins), hence `<=` rather than `<`.
     if (latestStaffAt && latestGuestAt <= latestStaffAt) continue;
 
@@ -106,6 +111,7 @@ export function buildUnansweredSummary(
       channelKey: s.channel_key,
       conversationId: s.id,
       guestMessageCount: pending.length,
+      latestGuestMessagePreview: buildGuestMessagePreview(latestGuest),
       firstUnansweredAt,
       latestGuestMessageAt: latestGuestAt,
       latestStaffMessageAt: latestStaffAt,
