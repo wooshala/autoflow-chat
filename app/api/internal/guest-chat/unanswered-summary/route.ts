@@ -5,7 +5,7 @@
 // emitted (an Access-Control-Allow-Origin here would make the feed browser-reachable).
 //
 // Returns rooms whose OPEN session has a guest message newer than the newest staff reply.
-// NO MESSAGE BODIES — room / session / counts / timestamps only.
+// Bodies: only `latestGuestMessagePreview` (masked ≤80). Never original_text / translated_json.
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { authorizeInternalRequest } from '@/lib/guest-spike/internalAuth';

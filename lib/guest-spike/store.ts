@@ -268,11 +268,11 @@ export async function setChannelLanguage(
 }
 
 /**
- * Phase 2D — data for the internal UNANSWERED summary (ledger banner).
+ * Phase 2D+4A — data for the internal UNANSWERED summary (ledger banner).
  *
- * Deliberately narrower than listOpenChannelSummaryData(): no original_text / translated_json,
- * so message bodies cannot leak through the internal feed. Two queries (open sessions, then
- * their messages by session_id) — no per-room N+1.
+ * Loads original_text / translated_json only to build `latestGuestMessagePreview` on the
+ * server. Those columns must never appear on the HTTP response (whitelist in the builder).
+ * Two queries (open sessions, then their messages by session_id) — no per-room N+1.
  */
 export async function listUnansweredSummaryData(): Promise<{
   sessions: UnansweredSessionRow[];
@@ -288,7 +288,7 @@ export async function listUnansweredSummaryData(): Promise<{
   if (ids.length === 0) return { sessions: rows, messages: [] };
   const { data: messages, error: mErr } = await db()
     .from(TABLE)
-    .select('id, session_id, sender, created_at')
+    .select('id, session_id, sender, created_at, original_text, translated_json')
     .in('session_id', ids);
   if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
   return { sessions: rows, messages: (messages ?? []) as UnansweredMessageRow[] };
