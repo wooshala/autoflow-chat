@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.4"
+version = "0.1.5"
 description = "AutoFlow desktop shell"
 authors = ["you"]
 license = ""
@@ -33,8 +33,14 @@ tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-deep-link = "2"
 rodio = "0.20"
+url = "2"
+
+# Windows/Linux deep links arrive as CLI args on a new process — pair with single-instance
+# so the existing EXE focuses and navigates instead of spawning a second window.
+[target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\"))".dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 # Windows: build the OS toast directly so we can force it SILENT (no Windows
 # default beep). AutoFlow plays the single selected sound via rodio.

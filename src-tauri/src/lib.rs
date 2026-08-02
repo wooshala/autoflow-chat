@@ -13,6 +13,9 @@ use tauri::{
 };
 
 const REMOTE_CHAT_URL: &str = "https://autoflow-mvp.vercel.app/chat";
+/// Custom protocol registered via tauri-plugin-deep-link (`autoflow://…`).
+/// Ledger [열기] uses `autoflow://chat?guestRoom=<N>` in Production EXE mode.
+const DEEP_LINK_SCHEME: &str = "autoflow";
 const SND_DEFAULT: &[u8] = include_bytes!("../assets/default.wav");
 const SND_BELL: &[u8] = include_bytes!("../assets/bell.wav");
 const SND_BEEP: &[u8] = include_bytes!("../assets/beep.wav");
@@ -78,6 +81,73 @@ fn focus_main(app: &tauri::AppHandle) {
         let _ = w.set_focus();
     }
     set_alert(app, false);
+}
+
+/// Parse `guestRoom` from `autoflow://chat?guestRoom=201` (digits, 3–4 chars).
+fn parse_guest_room_from_deep_link(url_str: &str) -> Option<String> {
+    let url = url::Url::parse(url_str.trim()).ok()?;
+    if url.scheme() != DEEP_LINK_SCHEME {
+        return None;
+    }
+    for (k, v) in url.query_pairs() {
+        if k != "guestRoom" {
+            continue;
+        }
+        let t = v.trim();
+        if !t.is_empty()
+            && t.len() >= 3
+            && t.len() <= 4
+            && t.chars().all(|c| c.is_ascii_digit())
+        {
+            return Some(t.to_string());
+        }
+    }
+    None
+}
+
+fn guest_room_from_argv(argv: &[String]) -> Option<String> {
+    argv.iter().find_map(|a| {
+        if a.trim_start().starts_with("autoflow:") {
+            parse_guest_room_from_deep_link(a)
+        } else {
+            None
+        }
+    })
+}
+
+fn cache_bust_ts() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn chat_url_with_optional_guest_room(guest_room: Option<&str>) -> String {
+    let ts = cache_bust_ts();
+    match guest_room {
+        Some(room) => format!("{}?guestRoom={}&afts={}", REMOTE_CHAT_URL, room, ts),
+        None => format!("{}?afts={}", REMOTE_CHAT_URL, ts),
+    }
+}
+
+/// Focus Staff EXE and navigate the webview to Production `/chat?guestRoom=`.
+fn open_guest_room_in_shell(app: &tauri::AppHandle, room: &str) {
+    focus_main(app);
+    let target = chat_url_with_optional_guest_room(Some(room));
+    let Some(w) = app.get_webview_window("main") else {
+        log::warn!("[DEEP_LINK] main window missing; guestRoom={}", room);
+        return;
+    };
+    match target.parse::<url::Url>() {
+        Ok(u) => {
+            if let Err(e) = w.navigate(u) {
+                log::warn!("[DEEP_LINK_NAV_ERR] guestRoom={} err={}", room, e);
+            } else {
+                log::info!("[DEEP_LINK_NAV] guestRoom={}", room);
+            }
+        }
+        Err(e) => log::warn!("[DEEP_LINK_URL_ERR] guestRoom={} err={}", room, e),
+    }
 }
 
 /// Toggle the tray "new message" indicator (icon + tooltip).
@@ -239,21 +309,30 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
 
     // Must register before other plugins so duplicate launches focus the existing
-    // instance instead of spawning a second process/window.
+    // instance instead of spawning a second process/window. `deep-link` feature
+    // forwards protocol argv from the second process into this callback.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(
-            |app, _args, _cwd| {
-                log::info!("[SINGLE_INSTANCE] duplicate launch → focus existing window");
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // Do not log argv / protocol URLs (may include query values).
+            let room = guest_room_from_argv(&argv);
+            log::info!(
+                "[SINGLE_INSTANCE] duplicate launch guest_room={:?}",
+                room.as_deref()
+            );
+            if let Some(room) = room {
+                open_guest_room_in_shell(app, &room);
+            } else {
                 focus_main(app);
-            },
-        ));
+            }
+        }));
     }
 
     builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -261,6 +340,33 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            // Dev / unpackaged: register protocol at runtime. Packaged builds
+            // register `autoflow://` via installer (tauri.conf plugins.deep-link).
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(e) = app.deep_link().register_all() {
+                    log::warn!("[DEEP_LINK_REGISTER_ERR] {}", e);
+                }
+            }
+
+            // Runtime deep-link events (macOS / some Windows paths). Windows
+            // second-instance URLs are primarily handled via single-instance argv.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let app_handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for u in event.urls() {
+                        // Log only parsed guestRoom — never the full URL (no query dump).
+                        let room = parse_guest_room_from_deep_link(u.as_str());
+                        log::info!("[DEEP_LINK_EVENT] guest_room={:?}", room.as_deref());
+                        if let Some(room) = room {
+                            open_guest_room_in_shell(&app_handle, &room);
+                        }
+                    }
+                });
             }
 
             let handle = app.handle().clone();
@@ -293,17 +399,21 @@ pub fn run() {
 
             // ── Main window: remote /chat + injected native bridge ─────────
             let reachable = server_reachable();
-            log::info!("[AUTOFLOW_BOOT] reachable={} shell=0.1.4", reachable);
+            let boot_argv: Vec<String> = std::env::args().collect();
+            let cold_guest_room = guest_room_from_argv(&boot_argv);
+            // Never log argv or navigation URLs (afts cache-bust must stay out of logs).
+            log::info!(
+                "[AUTOFLOW_BOOT] reachable={} shell=0.1.5 cold_guest_room={:?}",
+                reachable,
+                cold_guest_room.as_deref()
+            );
 
             // Cache-bust the page HTML per launch so a freshly deployed /chat
             // (web fixes) always loads — WebView2 otherwise serves a stale
             // cached bundle. Hashed static chunks remain cacheable; only the
             // HTML document URL changes. The query param is ignored by routing.
-            let ts = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let chat_url = format!("{}?afts={}", REMOTE_CHAT_URL, ts);
+            // Cold-start deep link: include guestRoom so staff lands on that room.
+            let chat_url = chat_url_with_optional_guest_room(cold_guest_room.as_deref());
 
             let win = WebviewWindowBuilder::new(
                 &handle,

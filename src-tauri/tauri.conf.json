@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AutoFlow",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "com.autoflow.frontops",
   "build": {
     "frontendDist": "https://autoflow-mvp.vercel.app",
@@ -15,6 +15,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["autoflow"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFRUUzOUEzNzJGOTI5NEEKUldSS0tmbHlvem51WHN2ODRQektrTlphY1FJeFpHNVVrRnllRS9TNFdZMmZ5azBpemNnb2paaHgK",
       "endpoints": [
