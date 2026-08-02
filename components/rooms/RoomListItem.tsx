@@ -3,7 +3,7 @@
 // Phase 1C.1 — a single room row. Icon comes from room.icon (staff) or the language flag
 // (customer, secondary hint); the language NAME is always in the title (§6). 'live' rooms
 // show a 실시간 badge, 'mock' rooms a DEV badge. The operations room can't be hidden.
-// Phase GC-Notification — customer rooms show unanswered count badge (ledger-identical), not a dot.
+// Phase GC-Notification — customer rooms show unanswered count badge (not localStorage unread dot).
 
 import { memo } from 'react';
 
@@ -68,7 +68,9 @@ export const RoomListItem = memo(function RoomListItem({
   const unanswered = room.category === 'customer' ? channelUnanswered[room.id] : undefined;
   const badgeLabel = unanswered ? formatUnansweredBadgeCount(unanswered.guestMessageCount) : '';
   const stale = unanswered ? isUnansweredStale(unanswered.firstUnansweredAt) : false;
+  const singleDigit = badgeLabel.length === 1;
 
+  // Priority: selected > hover > unanswered tint
   const rowTone = active
     ? 'bg-white ring-1 ring-inset ring-blue-300'
     : unanswered
@@ -83,12 +85,22 @@ export const RoomListItem = memo(function RoomListItem({
         <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 flex-col text-left">
           <div className="flex items-center gap-1.5">
             {stale ? (
-              <span className="shrink-0 text-[13px] leading-none text-amber-600" aria-label="장기 미응답" title="24시간 이상 미응답">
+              <span
+                className="shrink-0 text-[13px] leading-none text-amber-600"
+                aria-label="장기 미응답"
+                title="장기 미응답"
+              >
                 ⚠
               </span>
             ) : null}
             {icon && <span aria-hidden className={roomColorText(room.colorToken)}>{icon}</span>}
-            <span className="truncate font-medium text-gray-800 dark:text-gray-100">{room.title}</span>
+            <span
+              className={`truncate text-gray-800 dark:text-gray-100 ${
+                unanswered ? 'font-semibold' : 'font-medium'
+              }`}
+            >
+              {room.title}
+            </span>
             {languageBadge && (
               <span
                 className={
@@ -112,7 +124,11 @@ export const RoomListItem = memo(function RoomListItem({
             {room.category === 'customer' ? (
               badgeLabel ? (
                 <span
-                  className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold leading-none text-white"
+                  className={
+                    singleDigit
+                      ? 'ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold leading-none text-white'
+                      : 'ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold leading-none text-white'
+                  }
                   aria-label={`미응답 ${badgeLabel}건`}
                 >
                   {badgeLabel}

@@ -1,7 +1,8 @@
 // Phase 1H.11 — staff-only channel summary. ONE request replaces the per-room language meta
 // fan-out (was ~N requests / poll for N customer rooms). Returns, per OPEN channel, the language
 // (session-owned) + latest / latest-guest message timestamps so the client can compute unread.
-// No message bodies. Reuses the same staff Bearer auth as the staff messages GET.
+// Phase GC-Notification — additive unanswered_count / first_unanswered_at (ledger-identical).
+// No full message bodies beyond the existing latest-guest preview. Reuses staff Bearer auth.
 
 import { NextRequest, NextResponse } from 'next/server';
 

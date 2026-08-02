@@ -117,9 +117,8 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
   // Phase 1H.11 — ONE /channels/summary poll for the whole nav (replaces the per-room language
   // meta fan-out). Language + session_status per room derive from the open-session summary; the
   // OPEN room additionally reports from its own message poll (reportChannelLanguage), which wins
-  // because it is the most up-to-date.
-  // Phase GC-Notification — same poll interval also refreshes unanswered-summary badges.
-  const { summaries: summaryByChannel, unansweredByChannel } = useGuestChannelSummaries();
+  // because it is the most up-to-date. Additive unanswered_count rides the same poll.
+  const summaryByChannel = useGuestChannelSummaries();
   const [reportedLanguages, setReportedLanguages] = useState<RoomChannelLanguages>({});
   const [reportedSessionStatus, setReportedSessionStatus] = useState<RoomChannelSessionStatus>({});
   const reportChannelLanguage = useCallback(
@@ -186,17 +185,19 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     }
     return out;
   }, [rooms, summaryByChannel, lastViewed, selectedRoomId]);
-  // Phase GC-Notification — roomId → unanswered badge fields (from same unanswered-summary as ledger).
+  // Phase GC-Notification — unanswered badge from additive channels/summary fields (not unread).
   const channelUnanswered = useMemo<Record<string, { guestMessageCount: number; firstUnansweredAt: string }>>(() => {
     const out: Record<string, { guestMessageCount: number; firstUnansweredAt: string }> = {};
     for (const r of rooms) {
       const ck = lookupChannelKey(r.id);
       if (!ck) continue;
-      const u = unansweredByChannel[ck];
-      if (u) out[r.id] = u;
+      const s = summaryByChannel[ck];
+      const count = s?.unanswered_count ?? 0;
+      const first = s?.first_unanswered_at ?? null;
+      if (count > 0 && first) out[r.id] = { guestMessageCount: count, firstUnansweredAt: first };
     }
     return out;
-  }, [rooms, unansweredByChannel]);
+  }, [rooms, summaryByChannel]);
   // Phase 1H.12 — latest guest message time per room (from the SAME summary) so the "안읽은 대화"
   // group can sort newest-first. No extra request.
   const channelLatestGuestAt = useMemo<Record<string, string | null>>(() => {
