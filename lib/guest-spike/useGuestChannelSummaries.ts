@@ -1,18 +1,26 @@
 'use client';
 
 // Phase 1H.11 — ONE polling hook for the whole staff Room Navigation. Replaces useChannelLanguages'
-// per-room meta fan-out (≈N requests/poll) with a single /channels/summary request. Returns a
-// { channel_key → summary } map. On error it KEEPS the last good map (never clears the UI).
+// per-room meta fan-out (≈N requests/poll) with a single /channels/summary request.
+// Phase GC-Notification — same interval also loads unanswered-summary (ledger-identical counts).
+// No second timer. On error each feed KEEPS its last good map (never clears the UI).
 
 import { useEffect, useRef, useState } from 'react';
 
-import { fetchGuestChannelSummaries } from './api';
+import { fetchGuestChannelSummaries, fetchGuestChatUnansweredSummary } from './api';
 import type { GuestChannelSummary } from './guestChannelSummary';
+import type { ChannelUnansweredBadgeMap } from './unansweredBadge';
 
 export type GuestChannelSummaryMap = Record<string, GuestChannelSummary>;
 
-export function useGuestChannelSummaries(intervalMs = 5000): GuestChannelSummaryMap {
-  const [map, setMap] = useState<GuestChannelSummaryMap>({});
+export type GuestNavPollState = {
+  summaries: GuestChannelSummaryMap;
+  unansweredByChannel: ChannelUnansweredBadgeMap;
+};
+
+export function useGuestChannelSummaries(intervalMs = 5000): GuestNavPollState {
+  const [summaries, setSummaries] = useState<GuestChannelSummaryMap>({});
+  const [unansweredByChannel, setUnansweredByChannel] = useState<ChannelUnansweredBadgeMap>({});
   const inFlight = useRef(false);
 
   useEffect(() => {
@@ -21,11 +29,27 @@ export function useGuestChannelSummaries(intervalMs = 5000): GuestChannelSummary
       if (inFlight.current) return; // no overlapping requests
       inFlight.current = true;
       try {
-        const channels = await fetchGuestChannelSummaries();
-        if (!alive || channels === null) return; // error → keep last good map
-        const next: GuestChannelSummaryMap = {};
-        for (const c of channels) next[c.channel_key] = c;
-        setMap(next);
+        const [channels, unanswered] = await Promise.all([
+          fetchGuestChannelSummaries(),
+          fetchGuestChatUnansweredSummary(),
+        ]);
+        if (!alive) return;
+        if (channels !== null) {
+          const next: GuestChannelSummaryMap = {};
+          for (const c of channels) next[c.channel_key] = c;
+          setSummaries(next);
+        }
+        if (unanswered !== null) {
+          const next: ChannelUnansweredBadgeMap = {};
+          for (const room of unanswered.rooms) {
+            if (!room.channelKey || !(room.guestMessageCount > 0)) continue;
+            next[room.channelKey] = {
+              guestMessageCount: room.guestMessageCount,
+              firstUnansweredAt: room.firstUnansweredAt,
+            };
+          }
+          setUnansweredByChannel(next);
+        }
       } finally {
         inFlight.current = false;
       }
@@ -44,5 +68,5 @@ export function useGuestChannelSummaries(intervalMs = 5000): GuestChannelSummary
     };
   }, [intervalMs]);
 
-  return map;
+  return { summaries, unansweredByChannel };
 }

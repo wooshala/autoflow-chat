@@ -7,6 +7,7 @@
 
 import type { GuestSpikeMsg } from './types';
 import type { GuestChannelSummary } from './guestChannelSummary';
+import type { GuestChatUnansweredSummaryResponse } from './unansweredSummary';
 import { staffSessionAuthHeaders } from '@/lib/auth/staffAccountSession';
 import {
   CLOSE_SESSION_FAILED_USER_MESSAGE,
@@ -147,6 +148,25 @@ export async function fetchGuestChannelSummaries(): Promise<GuestChannelSummary[
     const j = await r.json();
     if (!r.ok || !j?.ok || !Array.isArray(j.channels)) return null;
     return j.channels as GuestChannelSummary[];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Phase GC-Notification — same unanswered-summary JSON as the ledger relay (staff session).
+ * Swallows errors → null so Room Nav keeps the last good badge map.
+ */
+export async function fetchGuestChatUnansweredSummary(): Promise<GuestChatUnansweredSummaryResponse | null> {
+  try {
+    const r = await fetch('/api/internal/guest-chat/unanswered-summary', {
+      cache: 'no-store',
+      headers: staffSessionAuthHeaders(),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as GuestChatUnansweredSummaryResponse;
+    if (!j || !Array.isArray(j.rooms)) return null;
+    return j;
   } catch {
     return null;
   }

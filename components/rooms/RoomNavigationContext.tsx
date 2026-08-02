@@ -72,6 +72,8 @@ interface RoomNavigationValue {
   reportChannelLanguage: (roomId: string, lang: GuestLang | null, sessionStatus: 'open' | 'none' | null) => void;
   /** Phase 1H.11 — per-browser unread (roomId → boolean) for channel-mapped customer rooms. */
   channelUnread: Record<string, boolean>;
+  /** Phase GC-Notification — unanswered badge by roomId (ledger-identical guestMessageCount). */
+  channelUnanswered: Record<string, { guestMessageCount: number; firstUnansweredAt: string }>;
   /** Phase 1H.12 — latest guest message time per room (roomId → ISO|null) for unread-group sort. */
   channelLatestGuestAt: Record<string, string | null>;
   /** Phase 2A.3 — active guest session id per room (roomId → session_id|null), from the SAME
@@ -116,7 +118,8 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
   // meta fan-out). Language + session_status per room derive from the open-session summary; the
   // OPEN room additionally reports from its own message poll (reportChannelLanguage), which wins
   // because it is the most up-to-date.
-  const summaryByChannel = useGuestChannelSummaries();
+  // Phase GC-Notification — same poll interval also refreshes unanswered-summary badges.
+  const { summaries: summaryByChannel, unansweredByChannel } = useGuestChannelSummaries();
   const [reportedLanguages, setReportedLanguages] = useState<RoomChannelLanguages>({});
   const [reportedSessionStatus, setReportedSessionStatus] = useState<RoomChannelSessionStatus>({});
   const reportChannelLanguage = useCallback(
@@ -183,6 +186,17 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
     }
     return out;
   }, [rooms, summaryByChannel, lastViewed, selectedRoomId]);
+  // Phase GC-Notification — roomId → unanswered badge fields (from same unanswered-summary as ledger).
+  const channelUnanswered = useMemo<Record<string, { guestMessageCount: number; firstUnansweredAt: string }>>(() => {
+    const out: Record<string, { guestMessageCount: number; firstUnansweredAt: string }> = {};
+    for (const r of rooms) {
+      const ck = lookupChannelKey(r.id);
+      if (!ck) continue;
+      const u = unansweredByChannel[ck];
+      if (u) out[r.id] = u;
+    }
+    return out;
+  }, [rooms, unansweredByChannel]);
   // Phase 1H.12 — latest guest message time per room (from the SAME summary) so the "안읽은 대화"
   // group can sort newest-first. No extra request.
   const channelLatestGuestAt = useMemo<Record<string, string | null>>(() => {
@@ -330,6 +344,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       channelSessionStatus,
       reportChannelLanguage,
       channelUnread,
+      channelUnanswered,
       channelLatestGuestAt,
       channelActiveSessionId,
       markChannelViewed,
@@ -356,6 +371,7 @@ export function RoomNavigationProvider({ children }: { children: ReactNode }) {
       channelSessionStatus,
       reportChannelLanguage,
       channelUnread,
+      channelUnanswered,
       channelLatestGuestAt,
       channelActiveSessionId,
       markChannelViewed,
