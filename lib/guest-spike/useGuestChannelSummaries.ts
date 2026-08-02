@@ -2,7 +2,8 @@
 
 // Phase 1H.11 — ONE polling hook for the whole staff Room Navigation. Replaces useChannelLanguages'
 // per-room meta fan-out (≈N requests/poll) with a single /channels/summary request. Returns a
-// { channel_key → summary } map. On error it KEEPS the last good map (never clears the UI).
+// { channel_key → summary } map (includes additive unanswered_count). On error it KEEPS the last
+// good map (never clears the UI). No second timer / no internal unanswered API.
 
 import { useEffect, useRef, useState } from 'react';
 
