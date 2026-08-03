@@ -239,7 +239,7 @@ fn handle_toast_activation(app: &tauri::AppHandle, notify_id: &str) {
     let handle = app.clone();
     let id = notify_id.to_string();
     let guest_room = take_toast_guest_room(notify_id);
-    let _ = handle.run_on_main_thread(move || {
+    let _ = handle.clone().run_on_main_thread(move || {
         if let Some(room) = guest_room {
             log::info!("[NATIVE_TOAST_ACTIVATED] id={} guest_room={}", id, room);
             open_guest_room_in_shell(&handle, &room);
@@ -508,7 +508,7 @@ pub fn run() {
             let cold_guest_room = guest_room_from_argv(&boot_argv);
             // Never log argv or navigation URLs (afts cache-bust must stay out of logs).
             log::info!(
-                "[AUTOFLOW_BOOT] reachable={} shell=0.2.1 cold_guest_room={:?}",
+                "[AUTOFLOW_BOOT] reachable={} shell=0.2.2 cold_guest_room={:?}",
                 reachable,
                 cold_guest_room.as_deref()
             );
