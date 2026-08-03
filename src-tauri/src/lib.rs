@@ -3,13 +3,15 @@
 // layer only: native OS notification, loud WAV, system tray, window focus.
 // The web app at https://autoflow-mvp.vercel.app/chat is loaded unchanged.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    Manager, UserAttentionType, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 
 const REMOTE_CHAT_URL: &str = "https://autoflow-mvp.vercel.app/chat";
@@ -25,6 +27,30 @@ const SND_NOTIFY_036: &[u8] = include_bytes!("../assets/notify-036.mp3");
 const SND_NOTIFY_053: &[u8] = include_bytes!("../assets/notify-053.mp3");
 const ALERT_ICON: &[u8] = include_bytes!("../icons/alert.png");
 const BRIDGE_JS: &str = include_str!("../notify-bridge.js");
+
+/// Toast id → guestRoom for activation → `open_guest_room_in_shell` (Phase GC-Notification-Completion).
+fn toast_guest_rooms() -> &'static Mutex<HashMap<String, String>> {
+    static MAP: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    MAP.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn remember_toast_guest_room(notify_id: &str, guest_room: Option<&str>) {
+    let Ok(mut map) = toast_guest_rooms().lock() else {
+        return;
+    };
+    if let Some(room) = guest_room.map(str::trim).filter(|s| !s.is_empty()) {
+        map.insert(notify_id.to_string(), room.to_string());
+    } else {
+        map.remove(notify_id);
+    }
+}
+
+fn take_toast_guest_room(notify_id: &str) -> Option<String> {
+    toast_guest_rooms()
+        .lock()
+        .ok()
+        .and_then(|mut map| map.remove(notify_id))
+}
 
 /// Play the selected notification sound via the OS audio device, amplified for
 /// "loud". Runs detached so the notification path never blocks. OS-level
@@ -167,18 +193,60 @@ fn set_alert(app: &tauri::AppHandle, on: bool) {
     }
 }
 
-/// Handle WinRT toast activation: foreground the main window and relay the click
-/// to the injected notify-bridge (no sound replay on click).
+/// Windows taskbar overlay badge (red alert icon when unanswered > 0).
+fn set_taskbar_overlay(app: &tauri::AppHandle, on: bool) {
+    #[cfg(windows)]
+    {
+        let Some(w) = app.get_webview_window("main") else {
+            return;
+        };
+        if on {
+            if let Ok(img) = Image::from_bytes(ALERT_ICON) {
+                if let Err(e) = w.set_overlay_icon(Some(img)) {
+                    log::warn!("[TASKBAR_OVERLAY_ERR] {}", e);
+                }
+            }
+        } else if let Err(e) = w.set_overlay_icon(None) {
+            log::warn!("[TASKBAR_OVERLAY_CLEAR_ERR] {}", e);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, on);
+    }
+}
+
+/// Flash the taskbar for ~5s (Phase 3), then clear attention request.
+fn flash_taskbar_briefly(app: &tauri::AppHandle) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = w.request_user_attention(Some(UserAttentionType::Critical));
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(5));
+        if let Some(w) = handle.get_webview_window("main") {
+            let _ = w.request_user_attention(None);
+        }
+    });
+}
+
+/// Handle WinRT toast activation: open guestRoom when present, else relay notify-click.
 #[cfg(windows)]
 fn handle_toast_activation(app: &tauri::AppHandle, notify_id: &str) {
     use tauri::Emitter;
 
     let handle = app.clone();
     let id = notify_id.to_string();
-    let focus_handle = handle.clone();
+    let guest_room = take_toast_guest_room(notify_id);
     let _ = handle.run_on_main_thread(move || {
-        focus_main(&focus_handle);
-        let _ = focus_handle.emit(
+        if let Some(room) = guest_room {
+            log::info!("[NATIVE_TOAST_ACTIVATED] id={} guest_room={}", id, room);
+            open_guest_room_in_shell(&handle, &room);
+            return;
+        }
+        focus_main(&handle);
+        let _ = handle.emit(
             "autoflow://notify-click",
             serde_json::json!({ "id": id.clone() }),
         );
@@ -275,6 +343,7 @@ fn native_notify(
     _tag: String,
     silent: Option<bool>,
     sound_key: Option<String>,
+    guest_room: Option<String>,
 ) {
     let title = if title.trim().is_empty() {
         "AutoFlow".to_string()
@@ -283,11 +352,19 @@ fn native_notify(
     };
     // Default silent: the OS toast is visual-only; AutoFlow owns the sound.
     let want_silent = silent.unwrap_or(true);
+    remember_toast_guest_room(&id, guest_room.as_deref());
     show_native_toast(&app, &id, &title, &body, want_silent);
     let key = sound_key.as_deref().unwrap_or("default");
     play_sound_key(key);
     set_alert(&app, true);
-    log::info!("[NATIVE_NOTIFY] id={} sound={} silent={}", id, key, want_silent);
+    flash_taskbar_briefly(&app);
+    log::info!(
+        "[NATIVE_NOTIFY] id={} sound={} silent={} guest_room={:?}",
+        id,
+        key,
+        want_silent,
+        guest_room.as_deref()
+    );
 }
 
 /// Play a notification sound natively without showing a toast ("테스트 재생").
@@ -302,6 +379,34 @@ fn play_sound(sound_key: Option<String>) {
 #[tauri::command]
 fn focus_main_window(app: tauri::AppHandle) {
     focus_main(&app);
+}
+
+/// Navigate like `autoflow://chat?guestRoom=N` (toast click / web helper).
+#[tauri::command]
+fn open_guest_room(app: tauri::AppHandle, room: String) {
+    let room = room.trim().to_string();
+    if room.is_empty() {
+        focus_main(&app);
+        return;
+    }
+    open_guest_room_in_shell(&app, &room);
+}
+
+/// Sync taskbar overlay + tray alert from unanswered total (web Room Nav).
+#[tauri::command]
+fn set_unanswered_badge(app: tauri::AppHandle, count: u32) {
+    let on = count > 0;
+    set_taskbar_overlay(&app, on);
+    set_alert(&app, on);
+    if let Some(w) = app.get_webview_window("main") {
+        let title = if on {
+            format!("AutoFlow 채팅 ({})", count)
+        } else {
+            "AutoFlow".to_string()
+        };
+        let _ = w.set_title(&title);
+    }
+    log::info!("[UNANSWERED_BADGE] count={}", count);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -403,7 +508,7 @@ pub fn run() {
             let cold_guest_room = guest_room_from_argv(&boot_argv);
             // Never log argv or navigation URLs (afts cache-bust must stay out of logs).
             log::info!(
-                "[AUTOFLOW_BOOT] reachable={} shell=0.1.5 cold_guest_room={:?}",
+                "[AUTOFLOW_BOOT] reachable={} shell=0.2.1 cold_guest_room={:?}",
                 reachable,
                 cold_guest_room.as_deref()
             );
@@ -436,6 +541,7 @@ pub fn run() {
                 }
                 WindowEvent::Focused(true) => {
                     set_alert(&win_evt.app_handle(), false);
+                    let _ = win_evt.request_user_attention(None);
                 }
                 _ => {}
             });
@@ -445,7 +551,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             native_notify,
             focus_main_window,
-            play_sound
+            play_sound,
+            open_guest_room,
+            set_unanswered_badge
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

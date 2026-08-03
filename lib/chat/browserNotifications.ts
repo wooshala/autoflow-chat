@@ -39,6 +39,8 @@ export async function showBrowserNotification(params: {
   silent?: boolean;
   messageId?: string;
   source?: string;
+  /** Phase GC-Notification-Completion — Staff EXE toast activation opens this guestRoom. */
+  guestRoom?: string;
   /** Phase 2D — optional click handler (e.g. select the room). Runs after window.focus(). */
   onClick?: () => void;
 }): Promise<boolean> {
@@ -76,13 +78,16 @@ export async function showBrowserNotification(params: {
     // non-silent OS notification would add the Windows default beep on top,
     // causing the duplicate / mute-still-beeps bugs.
     const silent = params.silent ?? true;
-    const options: NotificationOptions = {
+    const options: NotificationOptions & { guestRoom?: string } = {
       body: params.body,
       requireInteraction: params.requireInteraction ?? false,
       silent
     };
     if (params.tag != null && params.tag !== '') {
       options.tag = params.tag;
+    }
+    if (params.guestRoom) {
+      options.guestRoom = String(params.guestRoom).trim();
     }
 
     const n = new Notification(params.title, options);
