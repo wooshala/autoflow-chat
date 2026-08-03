@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { roomListRowSurfaceClass, roomListTitleClass } from '../roomListSelectionStyle.ts';
+import { roomListRowSurfaceClass, roomListTitleClass, roomListTitleStyle } from '../roomListSelectionStyle.ts';
 
 describe('roomListRowSurfaceClass', () => {
   it('selected wins over unanswered tint', () => {
@@ -27,9 +27,9 @@ describe('roomListRowSurfaceClass', () => {
 });
 
 describe('roomListTitleClass', () => {
-  it('selected title is always gray-800 (no dark: light text)', () => {
+  it('selected title forces gray-800 with important', () => {
     const c = roomListTitleClass({ active: true, unanswered: true });
-    assert.match(c, /text-gray-800/);
+    assert.match(c, /!text-gray-800/);
     assert.doesNotMatch(c, /dark:text-gray-100/);
   });
 
@@ -37,5 +37,15 @@ describe('roomListTitleClass', () => {
     const c = roomListTitleClass({ active: false, unanswered: true });
     assert.match(c, /font-semibold/);
     assert.match(c, /dark:text-gray-100/);
+  });
+});
+
+describe('roomListTitleStyle', () => {
+  it('selected sets inline gray-800 hex', () => {
+    assert.deepEqual(roomListTitleStyle({ active: true }), { color: '#1f2937' });
+  });
+
+  it('non-selected has no inline color', () => {
+    assert.equal(roomListTitleStyle({ active: false }), undefined);
   });
 });

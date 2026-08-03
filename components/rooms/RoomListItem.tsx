@@ -19,7 +19,7 @@ import {
   formatUnansweredBadgeCount,
   isUnansweredStale,
 } from '@/lib/guest-spike/unansweredBadge';
-import { roomListRowSurfaceClass, roomListTitleClass } from '@/lib/rooms/roomListSelectionStyle';
+import { roomListRowSurfaceClass, roomListTitleClass, roomListTitleStyle } from '@/lib/rooms/roomListSelectionStyle';
 
 const FLAG: Record<string, string> = {
   'zh-CN': '🇨🇳',
@@ -88,6 +88,7 @@ export const RoomListItem = memo(function RoomListItem({
   // Unanswered tint only when not selected.
   const rowClass = roomListRowSurfaceClass({ active, unanswered: Boolean(unanswered) });
   const titleClass = roomListTitleClass({ active, unanswered: Boolean(unanswered) });
+  const titleStyle = roomListTitleStyle({ active });
 
   return (
     <li>
@@ -106,7 +107,9 @@ export const RoomListItem = memo(function RoomListItem({
               </span>
             ) : null}
             {icon && <span aria-hidden className={roomColorText(room.colorToken)}>{icon}</span>}
-            <span className={titleClass}>{room.title}</span>
+            <span className={titleClass} style={titleStyle}>
+              {room.title}
+            </span>
             {languageBadge && (
               <span
                 className={
