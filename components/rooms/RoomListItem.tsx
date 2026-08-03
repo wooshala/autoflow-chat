@@ -4,8 +4,8 @@
 // (customer, secondary hint); the language NAME is always in the title (§6). 'live' rooms
 // show a 실시간 badge, 'mock' rooms a DEV badge. The operations room can't be hidden.
 // Phase GC-Notification — customer rooms show unanswered count badge (not localStorage unread dot).
-// Phase GC-Selection-Style — selected row keeps ops light selection chrome + dark text so
-// guestRoom deep-link / click selection stays readable (selected > hover > unanswered).
+// Phase GC-RoomList-Contrast — titles stay dark on the always-light Room Navigation panel
+// (no dark:text-*); selected keeps ops white + blue ring (selected > hover > unanswered).
 
 import { memo } from 'react';
 
@@ -30,14 +30,14 @@ const FLAG: Record<string, string> = {
 };
 
 /**
- * Row surface priority (Phase GC-Selection-Style):
- * | State        | Background                         | Title text                          |
- * | selected     | white + blue ring (ops baseline)   | gray-800 (never light-on-light)     |
- * | hover        | white (light) / gray-900 (dark*)   | inherits                            |
- * | unanswered   | #FFF3F3 / red-950/35 (dark*)       | gray-800 / gray-100 (dark*)         |
- * | default      | transparent                        | gray-800 / gray-100 (dark*)         |
+ * Row surface priority (Phase GC-RoomList-Contrast):
+ * | State        | Background                       | Title text                         |
+ * | selected     | white + blue ring (ops baseline) | gray-800                           |
+ * | hover        | white                            | gray-900 (group-hover)             |
+ * | unanswered   | #FFF3F3                          | gray-900 semibold                  |
+ * | default      | transparent                      | gray-800                           |
+ * Sidebar is light-only — never apply dark:text-* / dark:bg-* on row or title.
  * selected always wins over hover + unanswered tint.
- * *dark: only when not selected — avoids white-on-white when OS dark mode + light selection.
  */
 
 /** Phase 1H.7 — the customer room's language badge. Channel-mapped rooms distinguish "no active
