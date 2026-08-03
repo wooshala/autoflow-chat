@@ -4,6 +4,8 @@
 // (customer, secondary hint); the language NAME is always in the title (§6). 'live' rooms
 // show a 실시간 badge, 'mock' rooms a DEV badge. The operations room can't be hidden.
 // Phase GC-Notification — customer rooms show unanswered count badge (not localStorage unread dot).
+// Phase GC-Selection-Style — selected row keeps ops light selection chrome + dark text so
+// guestRoom deep-link / click selection stays readable (selected > hover > unanswered).
 
 import { memo } from 'react';
 
@@ -17,6 +19,7 @@ import {
   formatUnansweredBadgeCount,
   isUnansweredStale,
 } from '@/lib/guest-spike/unansweredBadge';
+import { roomListRowSurfaceClass, roomListTitleClass } from '@/lib/rooms/roomListSelectionStyle';
 
 const FLAG: Record<string, string> = {
   'zh-CN': '🇨🇳',
@@ -25,6 +28,17 @@ const FLAG: Record<string, string> = {
   ru: '🇷🇺',
   ko: '🇰🇷',
 };
+
+/**
+ * Row surface priority (Phase GC-Selection-Style):
+ * | State        | Background                         | Title text                          |
+ * | selected     | white + blue ring (ops baseline)   | gray-800 (never light-on-light)     |
+ * | hover        | white (light) / gray-900 (dark*)   | inherits                            |
+ * | unanswered   | #FFF3F3 / red-950/35 (dark*)       | gray-800 / gray-100 (dark*)         |
+ * | default      | transparent                        | gray-800 / gray-100 (dark*)         |
+ * selected always wins over hover + unanswered tint.
+ * *dark: only when not selected — avoids white-on-white when OS dark mode + light selection.
+ */
 
 /** Phase 1H.7 — the customer room's language badge. Channel-mapped rooms distinguish "no active
  *  guest" (no badge) from "guest present, no language" (gray 언어 미선택) from a chosen language
@@ -70,17 +84,15 @@ export const RoomListItem = memo(function RoomListItem({
   const stale = unanswered ? isUnansweredStale(unanswered.firstUnansweredAt) : false;
   const singleDigit = badgeLabel.length === 1;
 
-  // Priority: selected > hover > unanswered tint
-  const rowTone = active
-    ? 'bg-white ring-1 ring-inset ring-blue-300'
-    : unanswered
-      ? 'bg-[#FFF3F3] dark:bg-red-950/35'
-      : '';
+  // Selected: ops baseline (white + blue ring). Pin hover to white so dark:hover cannot win.
+  // Unanswered tint only when not selected.
+  const rowClass = roomListRowSurfaceClass({ active, unanswered: Boolean(unanswered) });
+  const titleClass = roomListTitleClass({ active, unanswered: Boolean(unanswered) });
 
   return (
     <li>
       <div
-        className={`group flex items-center gap-1.5 border-b border-gray-100 px-3 py-2 hover:bg-white dark:hover:bg-gray-900 ${rowTone}`}
+        className={`group flex items-center gap-1.5 border-b border-gray-100 px-3 py-2 ${rowClass}`}
       >
         <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 flex-col text-left">
           <div className="flex items-center gap-1.5">
@@ -94,13 +106,7 @@ export const RoomListItem = memo(function RoomListItem({
               </span>
             ) : null}
             {icon && <span aria-hidden className={roomColorText(room.colorToken)}>{icon}</span>}
-            <span
-              className={`truncate text-gray-800 dark:text-gray-100 ${
-                unanswered ? 'font-semibold' : 'font-medium'
-              }`}
-            >
-              {room.title}
-            </span>
+            <span className={titleClass}>{room.title}</span>
             {languageBadge && (
               <span
                 className={
