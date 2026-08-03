@@ -16,12 +16,12 @@ import {
 } from '@/lib/chat/playNotificationTone';
 import { shouldCreateQueueItem } from '@/lib/chat/chatOpsQueue';
 import { canShowBrowserNotification, isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
+import { setStaffUnreadTitleCount } from '@/lib/chat/documentTitleBadge';
 import { log } from '@/lib/logger';
 
 const TAG = '[CHAT_NOTIFY]';
 const TOAST_TTL_MS = 4_000;
 const MAX_TOASTS = 3;
-const DOC_TITLE_BASE = 'AutoFlow 채팅';
 const DEBUG_NOTIFY = process.env.NEXT_PUBLIC_CHAT_NOTIFY_DEBUG === '1';
 const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
@@ -155,9 +155,8 @@ export function useChatNotifications({
   );
 
   const applyTitle = useCallback(() => {
-    if (typeof document === 'undefined') return;
-    const n = unreadTitleRef.current;
-    document.title = n > 0 ? `(${n}) ${DOC_TITLE_BASE}` : DOC_TITLE_BASE;
+    // Guest unanswered title (Room Nav) wins when set — see documentTitleBadge.
+    setStaffUnreadTitleCount(unreadTitleRef.current);
   }, []);
 
   const removeToast = useCallback((key: string) => {
@@ -198,7 +197,7 @@ export function useChatNotifications({
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         unreadTitleRef.current = 0;
-        document.title = DOC_TITLE_BASE;
+        setStaffUnreadTitleCount(0);
       }
     };
     document.addEventListener('visibilitychange', onVis);

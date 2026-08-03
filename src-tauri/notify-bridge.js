@@ -95,7 +95,9 @@
         // Forward the web silent flag (default true): the native toast must be
         // silent so only AutoFlow's selected sound (rodio) plays.
         silent: options.silent !== false,
-        soundKey: readSoundKey()
+        soundKey: readSoundKey(),
+        // Phase GC-Notification-Completion — toast click opens guestRoom via Rust.
+        guestRoom: options.guestRoom != null ? String(options.guestRoom) : null
       })
         .then(function () {
           if (typeof self.onshow === 'function') {
@@ -147,16 +149,28 @@
 
     // Optional explicit API for future web-side use (not required by PoC).
     window.AutoFlowNative = {
-      notify: function (title, body) {
+      notify: function (title, body, guestRoom) {
         return invoke('native_notify', {
-          id: 'api' + (++seq), title: String(title || ''), body: String(body || ''), tag: '', soundKey: readSoundKey()
+          id: 'api' + (++seq),
+          title: String(title || ''),
+          body: String(body || ''),
+          tag: '',
+          soundKey: readSoundKey(),
+          guestRoom: guestRoom != null ? String(guestRoom) : null
         });
       },
       // Play a sound natively without showing a toast (used by "테스트 재생").
       playSound: function (key) {
         return invoke('play_sound', { soundKey: String(key || readSoundKey()) });
       },
-      focus: function () { return invoke('focus_main_window', {}); }
+      focus: function () { return invoke('focus_main_window', {}); },
+      // Phase GC-Notification-Completion
+      openGuestRoom: function (room) {
+        return invoke('open_guest_room', { room: String(room || '') });
+      },
+      setUnansweredBadge: function (count) {
+        return invoke('set_unanswered_badge', { count: Number(count) || 0 });
+      }
     };
 
     // ── Connection fallback ────────────────────────────────────────────────
@@ -189,6 +203,6 @@
       });
     } catch (e) { /* ignore */ }
 
-    try { console.log('[AUTOFLOW_NATIVE_BRIDGE_READY]', { rev: 'tauri-poc-1' }); } catch (e) {}
+    try { console.log('[AUTOFLOW_NATIVE_BRIDGE_READY]', { rev: 'notify-completion-1' }); } catch (e) {}
   }
 })();
