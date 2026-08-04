@@ -855,6 +855,12 @@ function StaffChatPageInner() {
     setBrowserNotifyPermission(Notification.permission);
   }, []);
 
+  // Stabilize callback so useChatRealtime effect does not re-subscribe every render
+  // (inline onRowEvent previously changed identity each render → duplicate channel risk).
+  const onStaffRowEvent = useCallback((e: { id: string; type: 'INSERT' | 'UPDATE' }) => {
+    eventTypeByIdRef.current.set(e.id, e.type);
+  }, []);
+
   useChatRealtime({
     supabase,
     setMessages: setStaffMessages,
@@ -864,9 +870,7 @@ function StaffChatPageInner() {
     lastRealtimeInsertPushAtRef,
     reconnectToken: realtimeReconnectToken,
     onConnectionStatus: setConnectionStatus,
-    onRowEvent: (e) => {
-      eventTypeByIdRef.current.set(e.id, e.type);
-    }
+    onRowEvent: onStaffRowEvent
   });
 
   useChatWatchdog({

@@ -28,3 +28,6 @@ node_modules/
 # Phase 2B — regenerable QR artifacts (reproduce: npx tsx scripts/generate-room-qr.ts)
 qr-output/
 qr-test-*/
+
+.env.production.local
+.env*.local
