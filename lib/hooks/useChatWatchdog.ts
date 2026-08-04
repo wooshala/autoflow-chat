@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { log } from '@/lib/logger';
 import { safeParseJson } from '@/lib/utils/json';
+import {
+  decideWatchdogTick,
+  logChatPollEvent,
+  nextBackoffMs,
+} from '@/lib/chat/pollResilience';
 
 /**
- * 워치독 ↔ useChatLoader(Abort + loadSeq) 상호작용 요약
- * - 목록 요청은 새 호출 시 이전 AbortController를 abort 하며, loadSeq로 늦게 도착한 응답은 merge 하지 않음.
- * - `isLoadingRef`가 true면 가시성 복구 시 즉시 loadFull 대신 450ms·1950ms 두 번 지연 재시도(체인당 1세트, 중복 스케줄 방지).
- * - “빠른 방 전환”: 본 MVP는 단일 기본 room 목록만 list로 불러오며 RoomParticipantsPanel만 roomId 전환; 채팅 list는 동일.
- * - realtime 끊김 후: 폴링/가시성 경로가 loadFull을 호출하면 동일 abort/seq 규칙이 적용됨.
+ * Watchdog: Realtime health + visibility reconcile only.
+ * SUBSCRIBED + quiet (no INSERT) is healthy — never triggers full list fetch.
+ * CHANNEL_ERROR / TIMED_OUT / not connected → backoff resubscribe, then 1× reconcile.
  */
 
 export function useChatWatchdog({
@@ -36,115 +39,115 @@ export function useChatWatchdog({
   onRequestResubscribe?: () => Promise<boolean> | boolean;
 }) {
   const lastRestoreFullLoadAtRef = useRef(0);
-  const deferredRetryChainRef = useRef<{
-    t1: ReturnType<typeof setTimeout>;
-    t2: ReturnType<typeof setTimeout>;
-  } | null>(null);
+  const reconcileInFlightRef = useRef(false);
+  const pendingVisibleReconcileRef = useRef(false);
   const pollIntervalRef = useRef<number | null>(null);
-  const pollingStartedRef = useRef(false);
-  const lastDisconnectedPollAtRef = useRef(0);
   const tabIdRef = useRef(`tab-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   const loadFullRef = useRef(loadFull);
   loadFullRef.current = loadFull;
   const supabaseRef = useRef(supabase);
   supabaseRef.current = supabase;
-  const pollingEffectMountCountRef = useRef(0);
-  const visibilityEffectMountCountRef = useRef(0);
   const notConnectedStreakRef = useRef(0);
-  const lastRecoverAtRef = useRef(0);
-  const lastHiddenPollAtRef = useRef(0);
+  const resubscribeInFlightRef = useRef(false);
+  const nextResubscribeAtRef = useRef(0);
+  const resubscribeFailuresRef = useRef(0);
+  const lastRealtimeStatusRef = useRef<string | null>(null);
+  const wasConnectedRef = useRef(false);
 
   const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
   useEffect(() => {
-    visibilityEffectMountCountRef.current += 1;
-    console.log('[CHAT_WATCHDOG_VISIBILITY_MOUNT]', { mountCount: visibilityEffectMountCountRef.current });
-    // Visibility / BFCache restore: perform a guarded full reload only when we likely missed updates.
     const FULL_RESTORE_THROTTLE_MS = 5000;
     const RESTORE_IF_INACTIVE_MS = 20000;
-    const DEFERRED_RETRY_MS_1 = 450;
-    const DEFERRED_RETRY_MS_2 = 450 + 1500;
 
-    const requestFullReload = (source: string, reason: string) => {
+    const runVisibleReconcile = (source: string, reason: string) => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
       const now = Date.now();
       if (now - lastRestoreFullLoadAtRef.current < FULL_RESTORE_THROTTLE_MS) {
-        log.debug('[FULL_RELOAD_SKIPPED]', { source, reason: 'restore_throttle' });
+        logChatPollEvent('CHAT_RECONCILE_COALESCED', {
+          endpointKey: 'chat-list',
+          reason: 'restore_throttle',
+          source,
+        });
         return;
       }
-      if (isLoadingRef.current) {
-        log.debug('[FULL_RELOAD_SKIPPED]', { source, reason: 'already_loading' });
-        if (deferredRetryChainRef.current) {
-          return;
-        }
-        const attempt = (tag: string) => {
-          if (!isMountedRef.current) return;
-          if (isLoadingRef.current) {
-            log.debug('[FULL_RELOAD_RETRY_SKIPPED]', { source, tag, reason: 'still_loading' });
-            return;
-          }
-          const chain = deferredRetryChainRef.current;
-          if (chain) {
-            clearTimeout(chain.t1);
-            clearTimeout(chain.t2);
-            deferredRetryChainRef.current = null;
-          }
-          lastRestoreFullLoadAtRef.current = Date.now();
-          log.info('[CHAT_VISIBILITY_RESTORE]', {
-            reason: 'deferred_after_already_loading',
-            tag,
-            source
-          });
-          void loadFullRef.current(`${source}_${tag}`);
-        };
-        const t1 = setTimeout(() => attempt('deferred_450ms'), DEFERRED_RETRY_MS_1);
-        const t2 = setTimeout(() => attempt('deferred_1950ms'), DEFERRED_RETRY_MS_2);
-        deferredRetryChainRef.current = { t1, t2 };
+      if (reconcileInFlightRef.current || isLoadingRef.current) {
+        pendingVisibleReconcileRef.current = true;
+        logChatPollEvent('CHAT_RECONCILE_COALESCED', {
+          endpointKey: 'chat-list',
+          reason: 'in_flight',
+          source,
+        });
         return;
       }
+
       lastRestoreFullLoadAtRef.current = now;
-      const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
+      reconcileInFlightRef.current = true;
+      logChatPollEvent('CHAT_RECONCILE_STARTED', {
+        endpointKey: 'chat-list',
+        reason,
+        source,
+        visibilityState: document.visibilityState,
+        ms_since_activity: Date.now() - lastRealtimeActivityAtRef.current,
+      });
       log.info('[CHAT_VISIBILITY_RESTORE]', {
         reason,
-        ms_since_activity: msSinceActivity
+        ms_since_activity: Date.now() - lastRealtimeActivityAtRef.current,
       });
-      void loadFullRef.current(source);
+
+      void (async () => {
+        try {
+          await loadFullRef.current(source);
+        } finally {
+          reconcileInFlightRef.current = false;
+          if (pendingVisibleReconcileRef.current && isMountedRef.current) {
+            pendingVisibleReconcileRef.current = false;
+            // At most one follow-up after overlapping visibility/pageshow.
+            const followNow = Date.now();
+            if (followNow - lastRestoreFullLoadAtRef.current >= FULL_RESTORE_THROTTLE_MS) {
+              lastRestoreFullLoadAtRef.current = followNow;
+              logChatPollEvent('CHAT_RECONCILE_STARTED', {
+                endpointKey: 'chat-list',
+                reason: 'coalesced_followup',
+                source: `${source}_coalesced`,
+              });
+              void loadFullRef.current(`${source}_coalesced`);
+            }
+          }
+        }
+      })();
+    };
+
+    const maybeRequestVisibleReconcile = (source: string) => {
+      const pushEver = lastRealtimeInsertPushAtRef.current != null;
+      const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
+      const empty = messagesRef.current.length === 0;
+      if (!pushEver) {
+        runVisibleReconcile(source, 'push_ever_false');
+        return;
+      }
+      if (empty) {
+        runVisibleReconcile(source, 'messages_empty');
+        return;
+      }
+      if (msSinceActivity > RESTORE_IF_INACTIVE_MS) {
+        runVisibleReconcile(source, 'inactive_too_long');
+        return;
+      }
+      log.debug('[FULL_RELOAD_SKIPPED]', { source, reason: 'recently_active' });
     };
 
     const onPageShow = (e: PageTransitionEvent) => {
       if (e.persisted) {
-        const pushEver = lastRealtimeInsertPushAtRef.current != null;
-        const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
-        const empty = messagesRef.current.length === 0;
-        if (!pushEver) {
-          requestFullReload('bfcache_pageshow', 'push_ever_false');
-        } else if (empty) {
-          requestFullReload('bfcache_pageshow', 'messages_empty');
-        } else if (msSinceActivity > RESTORE_IF_INACTIVE_MS) {
-          requestFullReload('bfcache_pageshow', 'inactive_too_long');
-        } else {
-          log.debug('[FULL_RELOAD_SKIPPED]', { source: 'bfcache_pageshow', reason: 'recently_active' });
-        }
+        maybeRequestVisibleReconcile('bfcache_pageshow');
       }
     };
 
     const onVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
-      const pushEver = lastRealtimeInsertPushAtRef.current != null;
-      const msSinceActivity = Date.now() - lastRealtimeActivityAtRef.current;
-      const empty = messagesRef.current.length === 0;
-      if (!pushEver) {
-        requestFullReload('visibility_restore', 'push_ever_false');
-        return;
-      }
-      if (empty) {
-        requestFullReload('visibility_restore', 'messages_empty');
-        return;
-      }
-      if (msSinceActivity > RESTORE_IF_INACTIVE_MS) {
-        requestFullReload('visibility_restore', 'inactive_too_long');
-        return;
-      }
-      log.debug('[FULL_RELOAD_SKIPPED]', { source: 'visibility_restore', reason: 'recently_active' });
+      maybeRequestVisibleReconcile('visibility_restore');
     };
 
     window.addEventListener('pageshow', onPageShow);
@@ -152,37 +155,17 @@ export function useChatWatchdog({
     return () => {
       window.removeEventListener('pageshow', onPageShow);
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (deferredRetryChainRef.current) {
-        clearTimeout(deferredRetryChainRef.current.t1);
-        clearTimeout(deferredRetryChainRef.current.t2);
-        deferredRetryChainRef.current = null;
-      }
+      pendingVisibleReconcileRef.current = false;
     };
-    // loadFull은 loadFullRef로 최신 참조 — deps에 넣지 않아 가시성 리스너는 마운트당 1회만 구독.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ref 객체·loadFullRef는 안정, 콜백은 ref.current로 최신화
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs only
   }, []);
 
   useEffect(() => {
-    pollingEffectMountCountRef.current += 1;
-    console.log('[CHAT_WATCHDOG_POLLING_MOUNT]', { mountCount: pollingEffectMountCountRef.current });
     log.debug('[CHAT_WATCHDOG_EFFECT_MOUNT]');
-    // Watchdog polling effect (realtime stays in separate hook; this keeps polling/watchdog here).
-    const ENABLE_POLLING_WATCHDOG_DELTA = true;
-
-    log.debug('[CHAT_WATCHDOG_EFFECT_STATE]', {
-      hasSupabase: !!supabaseRef.current,
-      enabled: ENABLE_POLLING_WATCHDOG_DELTA
-    });
-
-    if (!ENABLE_POLLING_WATCHDOG_DELTA) {
-      log.debug('[CHAT_AUTO_REFRESH_DISABLED]', { feature: 'polling_watchdog_delta' });
-    }
-    if (ENABLE_POLLING_WATCHDOG_DELTA) {
-      log.debug('[CHAT_WATCHDOG_ARMED]', { enabled: true });
-    }
 
     const POLLING_LEADER_KEY = 'autoflow_polling_leader';
     const LEADER_TTL_MS = 45000;
+    const TICK_MS = 10000;
 
     const isPollingLeader = (): boolean => {
       const now = Date.now();
@@ -206,49 +189,124 @@ export function useChatWatchdog({
       return false;
     };
 
-    const TICK_MS = 10000;
-    const REALTIME_SILENCE_MS_NO_PUSH = 15000;
-    const REALTIME_SILENCE_MS_AFTER_PUSH = 90000;
-    const DISCONNECTED_POLL_MIN_MS = 30000;
-    const HIDDEN_POLL_MIN_MS = 30000;
+    const scheduleResubscribe = () => {
+      if (!onRequestResubscribe) return;
+      if (resubscribeInFlightRef.current) {
+        logChatPollEvent('CHAT_REALTIME_RESUBSCRIBE_SCHEDULED', {
+          reason: 'already_in_flight',
+          attempt: resubscribeFailuresRef.current,
+        });
+        return;
+      }
+
+      const now = Date.now();
+      if (now < nextResubscribeAtRef.current) {
+        logChatPollEvent('CHAT_POLL_BACKOFF', {
+          endpointKey: 'realtime-resubscribe',
+          reason: 'backoff_wait',
+          attempt: resubscribeFailuresRef.current,
+          delayMs: nextResubscribeAtRef.current - now,
+        });
+        return;
+      }
+
+      resubscribeInFlightRef.current = true;
+      onConnectionStatus?.('reconnecting');
+      logChatPollEvent('CHAT_REALTIME_RESUBSCRIBE_SCHEDULED', {
+        reason: 'realtime_not_subscribed',
+        attempt: resubscribeFailuresRef.current,
+      });
+
+      void (async () => {
+        try {
+          const ok = await onRequestResubscribe();
+          if (ok) {
+            resubscribeFailuresRef.current = 0;
+            nextResubscribeAtRef.current = 0;
+            logChatPollEvent('CHAT_REALTIME_RESUBSCRIBED', {
+              reason: 'resubscribe_ok',
+              attempt: 0,
+            });
+            // One reconciliation after successful resubscribe (visible only).
+            if (typeof document === 'undefined' || !document.hidden) {
+              if (!reconcileInFlightRef.current && !isLoadingRef.current) {
+                reconcileInFlightRef.current = true;
+                logChatPollEvent('CHAT_RECONCILE_STARTED', {
+                  endpointKey: 'chat-list',
+                  reason: 'post_resubscribe',
+                });
+                try {
+                  await loadFullRef.current('realtime_resubscribe_reconcile');
+                } finally {
+                  reconcileInFlightRef.current = false;
+                }
+              } else {
+                pendingVisibleReconcileRef.current = true;
+                logChatPollEvent('CHAT_RECONCILE_COALESCED', {
+                  endpointKey: 'chat-list',
+                  reason: 'post_resubscribe_inflight',
+                });
+              }
+            }
+          } else {
+            resubscribeFailuresRef.current += 1;
+            const delayMs = nextBackoffMs(resubscribeFailuresRef.current - 1);
+            nextResubscribeAtRef.current = Date.now() + delayMs;
+            logChatPollEvent('CHAT_POLL_BACKOFF', {
+              endpointKey: 'realtime-resubscribe',
+              reason: 'resubscribe_failed',
+              attempt: resubscribeFailuresRef.current,
+              delayMs,
+            });
+          }
+        } catch (e) {
+          resubscribeFailuresRef.current += 1;
+          const delayMs = nextBackoffMs(resubscribeFailuresRef.current - 1);
+          nextResubscribeAtRef.current = Date.now() + delayMs;
+          log.warn('[CHAT_CONNECTION_RESUBSCRIBE_FAILED]', { error: String(e) });
+          logChatPollEvent('CHAT_POLL_BACKOFF', {
+            endpointKey: 'realtime-resubscribe',
+            reason: 'resubscribe_throw',
+            attempt: resubscribeFailuresRef.current,
+            delayMs,
+          });
+        } finally {
+          resubscribeInFlightRef.current = false;
+        }
+      })();
+    };
 
     const tick = () => {
       log.debug('[CHAT_WATCHDOG_INTERVAL_ENTER]');
-      if (!ENABLE_POLLING_WATCHDOG_DELTA) {
-        log.debug('[CHAT_WATCHDOG_SKIP]', { reason: 'disabled' });
-        return;
-      }
       if (!isMountedRef.current) {
         log.debug('[CHAT_WATCHDOG_SKIP]', { reason: 'not_mounted' });
         return;
       }
 
-      const hidden = document.hidden;
+      void isPollingLeader();
 
-      // Core v0.1: hidden tab also polls at least every 30s to catch missed messages.
-      if (hidden) {
-        const nowHidden = Date.now();
-        if (nowHidden - lastHiddenPollAtRef.current >= HIDDEN_POLL_MIN_MS) {
-          lastHiddenPollAtRef.current = nowHidden;
-          log.info('[CHAT_WATCHDOG_HIDDEN_POLL]', { reason: 'hidden_tab_fallback' });
-          void (async () => {
-            const result = await loadFullRef.current('hidden_tab_poll');
-            log.debug('[CHAT_WATCHDOG_HIDDEN_POLL_DONE]', { ok: Boolean(result?.ok), count: result?.count ?? 0 });
-          })();
-        }
-      }
-
-      // (Leader election retained to avoid behavior drift, though we currently only use "stale" path.)
-      if (!isPollingLeader()) {
-        // keep silent (previous code logged other polling skips; this retains leader behavior without adding new logs)
-      }
-
+      const hidden = typeof document !== 'undefined' ? document.hidden : false;
       const connected = realtimeConnectedRef.current;
-      const pushEver = lastRealtimeInsertPushAtRef.current != null;
-      const silenceLimitMs = pushEver ? REALTIME_SILENCE_MS_AFTER_PUSH : REALTIME_SILENCE_MS_NO_PUSH;
-      const stale = connected && Date.now() - lastRealtimeActivityAtRef.current > silenceLimitMs;
 
-      if (!connected) {
+      if (connected !== wasConnectedRef.current) {
+        const status = connected ? 'SUBSCRIBED' : 'NOT_SUBSCRIBED';
+        if (lastRealtimeStatusRef.current !== status) {
+          lastRealtimeStatusRef.current = status;
+          logChatPollEvent('CHAT_REALTIME_STATUS', {
+            realtimeStatus: status,
+            visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+          });
+        }
+        wasConnectedRef.current = connected;
+      }
+
+      if (connected) {
+        if (notConnectedStreakRef.current > 0 && DEBUG_VERBOSE) {
+          log.info('[CHAT_CONNECTION_STATE]', { connected, not_connected_streak: 0 });
+        }
+        notConnectedStreakRef.current = 0;
+        onConnectionStatus?.('connected');
+      } else {
         notConnectedStreakRef.current += 1;
         if (DEBUG_VERBOSE) {
           log.info('[CHAT_CONNECTION_STATE]', {
@@ -258,77 +316,39 @@ export function useChatWatchdog({
           });
         }
         onConnectionStatus?.(notConnectedStreakRef.current >= 3 ? 'degraded' : 'reconnecting');
-
-        // Auto-recover: if not_connected persists, force a full reload fetch (visible or hidden).
-        const now = Date.now();
-        const RECOVER_MIN_INTERVAL_MS = 30_000;
-        if (notConnectedStreakRef.current >= 2 && now - lastRecoverAtRef.current > RECOVER_MIN_INTERVAL_MS) {
-          lastRecoverAtRef.current = now;
-          log.warn('[CHAT_CONNECTION_DEGRADED]', {
-            reason: 'not_connected_streak',
-            streak: notConnectedStreakRef.current,
-            ms_since_activity: Date.now() - lastRealtimeActivityAtRef.current
-          });
-          log.info('[CHAT_CONNECTION_RECOVER_START]', { source: 'not_connected_full_reload' });
-          void (async () => {
-            const result = await loadFullRef.current('not_connected_recover_full');
-            log.info('[CHAT_CONNECTION_RECOVER_FULL_DONE]', { ok: Boolean(result?.ok), count: result?.count ?? 0 });
-
-            if (onRequestResubscribe) {
-              log.info('[CHAT_CONNECTION_RESUBSCRIBE_START]', { reason: 'post_full_recover' });
-              try {
-                const ok = await onRequestResubscribe();
-                log.info('[CHAT_CONNECTION_RESUBSCRIBE_DONE]', { ok: Boolean(ok) });
-              } catch (e) {
-                log.warn('[CHAT_CONNECTION_RESUBSCRIBE_FAILED]', { error: String(e) });
-              }
-            }
-          })();
-        }
-
-        log.debug('[CHAT_WATCHDOG_SKIP]', { reason: 'not_connected' });
-        return;
-      } else {
-        if (notConnectedStreakRef.current > 0 && DEBUG_VERBOSE) {
-          log.info('[CHAT_CONNECTION_STATE]', { connected, not_connected_streak: 0 });
-        }
-        notConnectedStreakRef.current = 0;
-        onConnectionStatus?.('connected');
       }
-      if (!stale) {
+
+      const decision = decideWatchdogTick({
+        connected,
+        hidden,
+        now: Date.now(),
+        nextResubscribeAt: nextResubscribeAtRef.current,
+        resubscribeInFlight: resubscribeInFlightRef.current,
+      });
+
+      if (decision.action === 'none') {
+        // SUBSCRIBED + quiet → no full fetch (realtime_quiet_watchdog_full removed).
         log.debug('[CHAT_WATCHDOG_SKIP]', {
-          reason: 'not_stale',
-          silence_limit_ms: silenceLimitMs,
-          push_ever: pushEver,
-          ms_since_activity: Date.now() - lastRealtimeActivityAtRef.current
+          reason: decision.reason,
+          silence_ms: Date.now() - lastRealtimeActivityAtRef.current,
         });
         return;
       }
 
-      const since = safeSinceRef.current;
-      log.info('[CHAT_WATCHDOG_TICK]', { reason: 'realtime_stale', since: since || null });
-      void (async () => {
-        const result = await loadFullRef.current('realtime_quiet_watchdog_full');
-        log.debug('[CHAT_WATCHDOG_RESULT]', { ok: Boolean(result?.ok), count: result?.count ?? 0 });
-      })();
+      if (decision.action === 'skip_backoff') {
+        log.debug('[CHAT_WATCHDOG_SKIP]', {
+          reason: decision.reason,
+          delayMs: decision.delayMs,
+        });
+        return;
+      }
 
-      // Disconnected polling path retained (currently unused because we return above),
-      // but keep the fields to preserve behavior if re-enabled later.
-      const now = Date.now();
-      if (now - lastDisconnectedPollAtRef.current < DISCONNECTED_POLL_MIN_MS) return;
-      lastDisconnectedPollAtRef.current = now;
+      // action === 'resubscribe' — never pair with forced full list every tick.
+      scheduleResubscribe();
     };
 
-    if (ENABLE_POLLING_WATCHDOG_DELTA && !pollIntervalRef.current) {
-      log.debug('[CHAT_WATCHDOG_ARMING_NOW]');
-      pollIntervalRef.current = window.setInterval(tick, TICK_MS);
-      pollingStartedRef.current = true;
-      log.debug('[POLLING_TICK_STARTED]', {
-        interval_ms: TICK_MS,
-        realtime_silence_ms_no_push: REALTIME_SILENCE_MS_NO_PUSH,
-        realtime_silence_ms_after_push: REALTIME_SILENCE_MS_AFTER_PUSH
-      });
-    }
+    pollIntervalRef.current = window.setInterval(tick, TICK_MS);
+    log.debug('[POLLING_TICK_STARTED]', { interval_ms: TICK_MS, quiet_watchdog_full: false });
 
     return () => {
       try {
@@ -344,11 +364,10 @@ export function useChatWatchdog({
         window.clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
       }
-      pollingStartedRef.current = false;
+      resubscribeInFlightRef.current = false;
+      pendingVisibleReconcileRef.current = false;
       log.debug('[POLLING_STOP]', { reason: 'effect_cleanup' });
     };
-    // loadFull·supabase는 ref로 최신화 — 폴링 interval은 마운트당 1회만 시작.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ref 기반; interval 재시작 방지
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs only
   }, []);
 }
-

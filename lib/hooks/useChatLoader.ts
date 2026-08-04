@@ -2,11 +2,18 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 import { fetchEnvelope } from '@/lib/api/envelope';
 import { TIMEOUT_MS_CHAT_LIST } from '@/lib/api/timeouts';
 import { CHAT_LIST_URL } from '@/lib/chatApi';
+import {
+  CoalescingSingleFlight,
+  isBackoffFailure,
+  nextBackoffMs,
+} from '@/lib/chat/pollResilience';
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
 import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
 
 const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
+
+type LoadResult = { ok: boolean; count: number; maxCreatedAt: string | null };
 
 /** GET /api/chat/list 의 `data` 페이로드 */
 export type ChatListData = { messages: ChatMessage[] };
@@ -52,6 +59,9 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
   const lastLoadSourceRef = useRef<string | null>(null);
+  const listFlightRef = useRef(new CoalescingSingleFlight<LoadResult>());
+  const failureCountRef = useRef(0);
+  const nextAllowedAtRef = useRef(0);
 
   const initialRetryCountRef = useRef(0);
   const initialAttemptIdRef = useRef(0);
@@ -62,30 +72,14 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const [initialHydrationComplete, setInitialHydrationComplete] = useState(false);
   const [initialLoadStatus, setInitialLoadStatus] = useState<'loading' | 'ok' | 'error'>('loading');
 
-  const load = useCallback(
+  const executeLoad = useCallback(
     async (
-      source: string = 'manual',
-      opts?: { since?: string; mode?: 'full' | 'delta' }
-    ): Promise<{ ok: boolean; count: number; maxCreatedAt: string | null }> => {
+      source: string,
+      opts?: { since?: string; mode?: 'full' | 'delta' },
+    ): Promise<LoadResult> => {
       if (!isMountedRef.current) return { ok: false, count: 0, maxCreatedAt: null };
 
-      // Phase 4 guard: while the initial full-load is in flight and hydration has
-      // not completed, skip non-initial (watchdog hidden-poll / delta) loads so
-      // they cannot abort the initial load. Otherwise the initial CHAT_LIST_LOAD
-      // gets aborted (CHAT_LIST_LOAD_ABORT) and the timeline stays empty after
-      // app re-entry. Watchdog loads are full loads, so they still backfill once
-      // hydration is done.
-      const isInitialLoad = source === 'initial' || source === 'initial_retry';
-      if (!isInitialLoad && loadingRef.current && !initialHydrationDoneRef.current) {
-        return { ok: false, count: 0, maxCreatedAt: null };
-      }
-
       const mySeq = ++loadSeqRef.current;
-      if (loadAbortRef.current) {
-        loadAbortRef.current.abort();
-        loadAbortRef.current = null;
-      }
-
       const controller = new AbortController();
       loadAbortRef.current = controller;
       loadingRef.current = true;
@@ -303,6 +297,20 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
           });
         }
 
+        if (isBackoffFailure({ errorMessage: error?.message || String(error) })) {
+          failureCountRef.current += 1;
+          const delayMs = nextBackoffMs(failureCountRef.current - 1);
+          nextAllowedAtRef.current = Date.now() + delayMs;
+          log.info('[CHAT_POLL_BACKOFF]', {
+            endpointKey: 'chat-list',
+            reason: error?.message || String(error),
+            attempt: failureCountRef.current,
+            delayMs,
+            inFlight: false,
+            visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+          });
+        }
+
         return { ok: false, count: 0, maxCreatedAt: null };
       } finally {
         if (loadAbortRef.current === controller) {
@@ -314,6 +322,97 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
       }
     },
     [loadingRef, listTimeoutMs, initialListLimit, deltaListLimit, staffTimelineMode]
+  );
+
+  /**
+   * Single-flight /api/chat/list: overlapping callers coalesce (do not abort→restart).
+   * Initial loads join the in-flight promise so hydration is not dropped.
+   */
+  const load = useCallback(
+    async (
+      source: string = 'manual',
+      opts?: { since?: string; mode?: 'full' | 'delta' },
+    ): Promise<LoadResult> => {
+      if (!isMountedRef.current) return { ok: false, count: 0, maxCreatedAt: null };
+
+      const isInitialLoad = source === 'initial' || source === 'initial_retry';
+      const now = Date.now();
+      if (!isInitialLoad && now < nextAllowedAtRef.current) {
+        log.info('[CHAT_POLL_BACKOFF]', {
+          endpointKey: 'chat-list',
+          reason: 'wait_next_allowed',
+          attempt: failureCountRef.current,
+          delayMs: nextAllowedAtRef.current - now,
+          inFlight: listFlightRef.current.inFlight,
+          visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+        });
+        return { ok: false, count: 0, maxCreatedAt: null };
+      }
+
+      if (listFlightRef.current.inFlight) {
+        if (isInitialLoad) {
+          const joined = await listFlightRef.current.run(
+            () => executeLoad(source, opts),
+            { mode: 'join', reason: source },
+          );
+          return joined.kind === 'joined' || joined.kind === 'ran'
+            ? joined.value
+            : { ok: false, count: 0, maxCreatedAt: null };
+        }
+        log.info('[CHAT_POLL_SKIPPED_IN_FLIGHT]', {
+          endpointKey: 'chat-list',
+          reason: source,
+          attempt: failureCountRef.current,
+          inFlight: true,
+          visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+        });
+        const skipped = await listFlightRef.current.run(
+          () => executeLoad(source, opts),
+          { mode: 'coalesce', reason: source },
+        );
+        if (skipped.kind === 'skipped_in_flight') {
+          return { ok: false, count: 0, maxCreatedAt: null };
+        }
+        return skipped.value;
+      }
+
+      log.info('[CHAT_POLL_STARTED]', {
+        endpointKey: 'chat-list',
+        reason: source,
+        attempt: failureCountRef.current,
+        inFlight: false,
+        visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+      });
+
+      const { primary, drained } = await listFlightRef.current.runThenDrain(
+        () => executeLoad(source, opts),
+        { reason: source },
+      );
+
+      if (drained) {
+        log.info('[CHAT_RECONCILE_COALESCED]', {
+          endpointKey: 'chat-list',
+          reason: 'pending_after_inflight',
+        });
+      }
+
+      if (primary.kind === 'skipped_in_flight') {
+        return { ok: false, count: 0, maxCreatedAt: null };
+      }
+
+      const value = primary.value;
+      if (value.ok && failureCountRef.current > 0) {
+        log.info('[CHAT_POLL_RECOVERED]', {
+          endpointKey: 'chat-list',
+          reason: source,
+          attempt: failureCountRef.current,
+        });
+        failureCountRef.current = 0;
+        nextAllowedAtRef.current = 0;
+      }
+      return value;
+    },
+    [executeLoad],
   );
 
   const loadFull = useCallback(async (source: string) => load(source, { mode: 'full' }), [load]);
@@ -346,17 +445,11 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         isMounted: isMountedRef.current,
         attempt_id: attemptId
       });
-      if (loadAbortRef.current) {
-        loadAbortRef.current.abort();
-        loadAbortRef.current = null;
-      }
-      loadSeqRef.current += 1;
-      loadingRef.current = false;
+      // Do not abort in-flight list: join/coalesce via single-flight instead.
       await new Promise((r) => setTimeout(r, 200));
       if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
       const second = await loadFull('initial_retry');
       if (!isMountedRef.current || attemptId !== initialAttemptIdRef.current) return;
-      // Allow UI to proceed even when list failed (empty chat + error UI elsewhere).
       if (!initialHydrationDoneRef.current) {
         initialHydrationDoneRef.current = true;
         setInitialHydrationComplete(true);
@@ -367,6 +460,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
     return () => {
       isMountedRef.current = false;
       loadSeqRef.current += 1;
+      listFlightRef.current.reset();
       if (loadAbortRef.current) {
         log.warn('[CHAT_LIST_LOAD_ABORT]', { source: lastLoadSourceRef.current || 'unknown' });
         log.debug('[CHAT_LIST_ABORT_REQUESTED]', {

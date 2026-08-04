@@ -82,21 +82,50 @@ export interface GuestMessagesResult {
 }
 
 /** Full messages GET — also carries the session language + session_status (staff), so the OPEN
- *  room reuses this single poll (no separate meta poll). Read swallows errors → empty/null. */
+ *  room reuses this single poll (no separate meta poll).
+ *  Soft empty only for benign not-ok; 5xx/522/network throw so callers can back off. */
 export async function fetchGuestMessages(channelKey: string, asStaff?: boolean): Promise<GuestMessagesResult> {
+  let r: Response;
   try {
-    const r = await fetch(withStaff(endpoint(channelKey), asStaff), { cache: 'no-store', headers: staffHeaders(asStaff) });
-    const j = await r.json();
-    if (!j?.ok) return { messages: [], preferred_language: null, language_source: null, session_status: null };
-    return {
-      messages: j.messages ?? [],
-      preferred_language: j.preferred_language ?? null,
-      language_source: j.language_source ?? null,
-      session_status: j.session_status ?? null,
-    };
+    r = await fetch(withStaff(endpoint(channelKey), asStaff), { cache: 'no-store', headers: staffHeaders(asStaff) });
+  } catch (e: any) {
+    const err: any = new Error(e?.message || 'network error');
+    err.status = 0;
+    throw err;
+  }
+
+  let j: any = null;
+  try {
+    j = await r.json();
   } catch {
+    j = null;
+  }
+
+  if (!r.ok) {
+    const err: any = new Error(j?.message || j?.error || `GUEST_MESSAGES_HTTP_${r.status}`);
+    err.status = r.status;
+    throw err;
+  }
+
+  if (!j?.ok) {
+    const msg = String(j?.message || j?.error || 'GUEST_MESSAGES_NOT_OK');
+    const err: any = new Error(msg);
+    err.status = r.status;
+    // Treat ambiguous not-ok as backoff-worthy when message hints upstream failure.
+    if (
+      /pgrst003|timeout|522|500|502|503|504|upstream/i.test(msg)
+    ) {
+      throw err;
+    }
     return { messages: [], preferred_language: null, language_source: null, session_status: null };
   }
+
+  return {
+    messages: j.messages ?? [],
+    preferred_language: j.preferred_language ?? null,
+    language_source: j.language_source ?? null,
+    session_status: j.session_status ?? null,
+  };
 }
 
 export async function sendGuestMessage(
