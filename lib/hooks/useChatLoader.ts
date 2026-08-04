@@ -460,7 +460,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
     return () => {
       isMountedRef.current = false;
       loadSeqRef.current += 1;
-      listFlightRef.current.reset();
+      listFlightRef.current.clearPending();
       if (loadAbortRef.current) {
         log.warn('[CHAT_LIST_LOAD_ABORT]', { source: lastLoadSourceRef.current || 'unknown' });
         log.debug('[CHAT_LIST_ABORT_REQUESTED]', {

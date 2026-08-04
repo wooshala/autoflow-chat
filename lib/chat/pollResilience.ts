@@ -52,11 +52,14 @@ export function isBackoffFailure(input: {
     || msg.includes('network')
     || msg.includes('failed to fetch')
     || msg.includes('522')
+    || msg.includes('upstream')
+    || msg.includes('guest_chat_upstream')
   ) {
     return true;
   }
   const rt = (input.realtimeStatus ?? '').toUpperCase();
-  if (rt === 'CHANNEL_ERROR' || rt === 'TIMED_OUT' || rt === 'CLOSED') return true;
+  // CLOSED alone is often normal cleanup — do not classify as backoff failure.
+  if (rt === 'CHANNEL_ERROR' || rt === 'TIMED_OUT') return true;
   return false;
 }
 
@@ -76,6 +79,9 @@ export type WatchdogTickDecision =
 /**
  * Decide watchdog tick action. Never schedules full-list for quiet SUBSCRIBED.
  * Hidden tabs do not schedule list polls here (visibility reconcile is separate).
+ *
+ * Resubscribe only after sustained disconnect (streak) so brief CLOSED during
+ * intentional channel remount does not immediately bump reconnectToken again.
  */
 export function decideWatchdogTick(input: {
   connected: boolean;
@@ -83,6 +89,9 @@ export function decideWatchdogTick(input: {
   now: number;
   nextResubscribeAt: number;
   resubscribeInFlight: boolean;
+  /** Consecutive not-connected ticks; require >= minNotConnectedStreak */
+  notConnectedStreak?: number;
+  minNotConnectedStreak?: number;
 }): WatchdogTickDecision {
   if (input.hidden) {
     return { action: 'none', reason: 'hidden' };
@@ -99,6 +108,11 @@ export function decideWatchdogTick(input: {
       reason: 'backoff_wait',
       delayMs: input.nextResubscribeAt - input.now,
     };
+  }
+  const streak = input.notConnectedStreak ?? 0;
+  const minStreak = input.minNotConnectedStreak ?? 2;
+  if (streak < minStreak) {
+    return { action: 'none', reason: 'disconnect_grace' };
   }
   return { action: 'resubscribe', reason: 'realtime_not_subscribed' };
 }
@@ -185,10 +199,18 @@ export class CoalescingSingleFlight<T> {
     return { primary: follow.kind === 'ran' || follow.kind === 'joined' ? follow : primary, drained: true };
   }
 
-  reset(): void {
-    this.inflight = null;
+  /** Clear pending only — never drop an in-flight Promise pointer (avoids dual runners). */
+  clearPending(): void {
     this.pending = false;
     this.pendingReason = null;
+  }
+
+  reset(): void {
+    this.clearPending();
+    // Only clear inflight when idle. Prefer clearPending on unmount.
+    if (!this.inflight) {
+      this.inflight = null;
+    }
   }
 }
 

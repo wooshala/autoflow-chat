@@ -93,9 +93,15 @@ export function usePollingMessages(
     });
 
     let failedWithBackoff = false;
+    const requestedChannel = channelKeyRef.current;
+    const requestedAsStaff = asStaffRef.current;
     try {
-      const next = await fetchGuestMessages(channelKeyRef.current, asStaffRef.current);
+      const next = await fetchGuestMessages(requestedChannel, requestedAsStaff);
       if (!mountedRef.current) return;
+      // Drop stale responses after channel switch.
+      if (channelKeyRef.current !== requestedChannel || asStaffRef.current !== requestedAsStaff) {
+        return;
+      }
       setState(next);
       if (failureCountRef.current > 0) {
         logChatPollEvent('CHAT_POLL_RECOVERED', {

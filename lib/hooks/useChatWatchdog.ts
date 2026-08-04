@@ -222,31 +222,19 @@ export function useChatWatchdog({
           const ok = await onRequestResubscribe();
           if (ok) {
             resubscribeFailuresRef.current = 0;
-            nextResubscribeAtRef.current = 0;
+            // Grace: wait for SUBSCRIBED after remount; avoid immediate re-bump of reconnectToken.
+            nextResubscribeAtRef.current = Date.now() + 15_000;
             logChatPollEvent('CHAT_REALTIME_RESUBSCRIBED', {
               reason: 'resubscribe_ok',
               attempt: 0,
             });
-            // One reconciliation after successful resubscribe (visible only).
+            // Exactly one reconciliation; loader single-flight coalesces if list already in flight.
             if (typeof document === 'undefined' || !document.hidden) {
-              if (!reconcileInFlightRef.current && !isLoadingRef.current) {
-                reconcileInFlightRef.current = true;
-                logChatPollEvent('CHAT_RECONCILE_STARTED', {
-                  endpointKey: 'chat-list',
-                  reason: 'post_resubscribe',
-                });
-                try {
-                  await loadFullRef.current('realtime_resubscribe_reconcile');
-                } finally {
-                  reconcileInFlightRef.current = false;
-                }
-              } else {
-                pendingVisibleReconcileRef.current = true;
-                logChatPollEvent('CHAT_RECONCILE_COALESCED', {
-                  endpointKey: 'chat-list',
-                  reason: 'post_resubscribe_inflight',
-                });
-              }
+              logChatPollEvent('CHAT_RECONCILE_STARTED', {
+                endpointKey: 'chat-list',
+                reason: 'post_resubscribe',
+              });
+              await loadFullRef.current('realtime_resubscribe_reconcile');
             }
           } else {
             resubscribeFailuresRef.current += 1;
@@ -324,6 +312,8 @@ export function useChatWatchdog({
         now: Date.now(),
         nextResubscribeAt: nextResubscribeAtRef.current,
         resubscribeInFlight: resubscribeInFlightRef.current,
+        notConnectedStreak: notConnectedStreakRef.current,
+        minNotConnectedStreak: 2,
       });
 
       if (decision.action === 'none') {

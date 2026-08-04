@@ -56,15 +56,30 @@ describe('C1 Quiet Realtime — SUBSCRIBED + no INSERT is healthy', () => {
 });
 
 describe('C2 Real connection failure → backoff resubscribe', () => {
-  it('schedules resubscribe when not connected and backoff elapsed', () => {
+  it('schedules resubscribe when not connected after streak and backoff elapsed', () => {
     const d = decideWatchdogTick({
       connected: false,
       hidden: false,
       now: 1000,
       nextResubscribeAt: 500,
       resubscribeInFlight: false,
+      notConnectedStreak: 2,
     });
     assert.equal(d.action, 'resubscribe');
+  });
+
+  it('waits disconnect grace before first resubscribe', () => {
+    const d = decideWatchdogTick({
+      connected: false,
+      hidden: false,
+      now: 10_000,
+      nextResubscribeAt: 0,
+      resubscribeInFlight: false,
+      notConnectedStreak: 1,
+      minNotConnectedStreak: 2,
+    });
+    assert.equal(d.action, 'none');
+    assert.equal(d.reason, 'disconnect_grace');
   });
 
   it('single-flight: skips while resubscribe in flight', () => {
@@ -74,6 +89,7 @@ describe('C2 Real connection failure → backoff resubscribe', () => {
       now: 10_000,
       nextResubscribeAt: 0,
       resubscribeInFlight: true,
+      notConnectedStreak: 5,
     });
     assert.equal(d.action, 'skip_backoff');
     assert.equal(d.reason, 'resubscribe_in_flight');
@@ -86,9 +102,15 @@ describe('C2 Real connection failure → backoff resubscribe', () => {
       now: 1000,
       nextResubscribeAt: 5000,
       resubscribeInFlight: false,
+      notConnectedStreak: 5,
     });
     assert.equal(d.action, 'skip_backoff');
     assert.equal(d.reason, 'backoff_wait');
+  });
+
+  it('does not treat CLOSED realtime status as backoff failure', () => {
+    assert.equal(isBackoffFailure({ realtimeStatus: 'CLOSED' }), false);
+    assert.equal(isBackoffFailure({ realtimeStatus: 'CHANNEL_ERROR' }), true);
   });
 });
 
@@ -212,9 +234,14 @@ describe('C5 Backoff + jitter', () => {
     assert.equal(isHttpBackoffStatus(500), true);
     assert.equal(isHttpBackoffStatus(522), true);
     assert.equal(isHttpBackoffStatus(200), false);
+    assert.equal(isHttpBackoffStatus(401), false);
+    assert.equal(isHttpBackoffStatus(403), false);
     assert.equal(isBackoffFailure({ errorMessage: 'PGRST003 statement timeout' }), true);
+    assert.equal(isBackoffFailure({ errorMessage: 'guest_chat_upstream_timeout' }), true);
+    assert.equal(isBackoffFailure({ errorMessage: 'GUEST_MESSAGES_HTTP_401', httpStatus: 401 }), false);
     assert.equal(isBackoffFailure({ realtimeStatus: 'CHANNEL_ERROR' }), true);
     assert.equal(isBackoffFailure({ realtimeStatus: 'TIMED_OUT' }), true);
+    assert.equal(isBackoffFailure({ realtimeStatus: 'CLOSED' }), false);
   });
 });
 
@@ -251,10 +278,13 @@ describe('C7 Unmount cleanup helpers', () => {
       return 1;
     });
     await flight.run(async () => 2, { mode: 'coalesce' });
+    flight.clearPending();
+    assert.equal(flight.hasPending, false);
+    // in-flight pointer retained until runner finishes (unmount-safe)
+    assert.equal(flight.inFlight, true);
+    await p;
     flight.reset();
     assert.equal(flight.inFlight, false);
-    assert.equal(flight.hasPending, false);
-    await p.catch(() => {});
   });
 });
 

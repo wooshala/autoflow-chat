@@ -102,8 +102,15 @@ export async function fetchGuestMessages(channelKey: string, asStaff?: boolean):
   }
 
   if (!r.ok) {
-    const err: any = new Error(j?.message || j?.error || `GUEST_MESSAGES_HTTP_${r.status}`);
+    const bodyHint = typeof j?.message === 'string'
+      ? j.message
+      : typeof j?.error === 'string'
+        ? j.error
+        : '';
+    // Prefer body hints so Cloudflare/HTML 522 wrapped as 500/504 still classifies.
+    const err: any = new Error(bodyHint || `GUEST_MESSAGES_HTTP_${r.status}`);
     err.status = r.status;
+    // Permanent client errors: throw but callers must not treat as backoff-worthy via status alone.
     throw err;
   }
 
