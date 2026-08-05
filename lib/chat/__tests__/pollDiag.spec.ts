@@ -478,3 +478,37 @@ describe('recordDiagEvent (no-request reasons)', () => {
     }));
   });
 });
+
+// ── Regression: why the Preview registry was undefined ───────────────────────
+//
+// First Preview attempt: window.__AUTOFLOW_CHAT_POLL_DIAG__ was undefined. The bundle
+// contained every diag string, so it was not tree shaking. Two real defects:
+//   1) the env flag was read as process.env[CONST] — Next only inlines literal
+//      process.env.NEXT_PUBLIC_* access, so that path was dead in the browser
+//   2) the registry (and the global) was created lazily by the first hook mount, which
+//      happens only after staff login — so the console showed undefined beforehand
+
+describe('diag enablement regression', () => {
+  test('the query flag alone enables it', () => {
+    assert.equal(resolveDiagEnabled({ search: '?pollDiag=1' }), true);
+  });
+
+  test('a sticky flag survives a redirect that drops the query', () => {
+    // /chat?pollDiag=1 → router.replace('/login') → /chat  (query gone)
+    assert.equal(resolveDiagEnabled({ search: '' }), false);
+    assert.equal(resolveDiagEnabled({ search: '', sticky: '1' }), true);
+  });
+
+  test('sticky only counts when it is exactly "1"', () => {
+    for (const v of [null, undefined, '', '0', 'true']) {
+      assert.equal(resolveDiagEnabled({ search: '', sticky: v as string | null }), false, String(v));
+    }
+  });
+
+  test('all three signals are independent', () => {
+    assert.equal(resolveDiagEnabled({ envFlag: '1' }), true);
+    assert.equal(resolveDiagEnabled({ search: '?pollDiag=1' }), true);
+    assert.equal(resolveDiagEnabled({ sticky: '1' }), true);
+    assert.equal(resolveDiagEnabled({ search: '?x=1', envFlag: '0', sticky: '0' }), false);
+  });
+});

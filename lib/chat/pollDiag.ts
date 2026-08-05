@@ -79,6 +79,8 @@ export type RealtimeStatus = (typeof REALTIME_STATUSES)[number];
 export interface DiagEnv {
   search?: string;
   envFlag?: string | undefined;
+  /** Sticky flag from a previous page in this tab — see `isChatPollDiagEnabled`. */
+  sticky?: string | null;
 }
 
 /**
@@ -87,20 +89,41 @@ export interface DiagEnv {
  */
 export function resolveDiagEnabled(env: DiagEnv): boolean {
   if (env.envFlag === '1') return true;
+  if (env.sticky === '1') return true;
   if (!env.search) return false;
   const q = new URLSearchParams(env.search.startsWith('?') ? env.search.slice(1) : env.search);
   return q.get(DIAG_QUERY_PARAM) === '1';
 }
+
+/** Survives the /chat → /login → /chat redirect, which drops the query string. */
+const DIAG_STICKY_KEY = 'autoflow_chat_poll_diag_on';
 
 let cachedEnabled: boolean | null = null;
 
 export function isChatPollDiagEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   if (cachedEnabled === null) {
+    let sticky: string | null = null;
+    try {
+      sticky = window.sessionStorage.getItem(DIAG_STICKY_KEY);
+    } catch {
+      /* storage blocked — query/env still work */
+    }
     cachedEnabled = resolveDiagEnabled({
       search: window.location?.search,
-      envFlag: process.env[DIAG_ENV_FLAG],
+      // MUST be a literal member access: Next only inlines `process.env.NEXT_PUBLIC_*`
+      // when it can see the property name statically. `process.env[SOME_CONST]` is left
+      // alone and evaluates to undefined in the browser, silently killing the env path.
+      envFlag: process.env.NEXT_PUBLIC_CHAT_POLL_DIAG,
+      sticky,
     });
+    if (cachedEnabled) {
+      try {
+        window.sessionStorage.setItem(DIAG_STICKY_KEY, '1');
+      } catch {
+        /* best effort */
+      }
+    }
   }
   return cachedEnabled;
 }
@@ -322,6 +345,23 @@ export function getDiagRegistry(): PollDiagRegistry | null {
 
 export function __resetDiagRegistry(): void {
   registry = null;
+}
+
+// Eager init on module load.
+//
+// Without this the registry — and therefore `window.__AUTOFLOW_CHAT_POLL_DIAG__` — only
+// appears once an instrumented hook mounts. The chat hooks mount after staff login, so an
+// operator who opens the page and checks the console immediately sees `undefined` and
+// concludes the instrumentation is dead. It is not: it just has not been touched yet.
+//
+// Creating it at load costs one object and one sessionStorage read, and only when the flag
+// is already on. With the flag off this is a single boolean check and nothing is defined.
+if (typeof window !== 'undefined') {
+  try {
+    getDiagRegistry();
+  } catch {
+    /* diagnostics must never break page load */
+  }
 }
 
 // ── request headers ──────────────────────────────────────────────────────────
