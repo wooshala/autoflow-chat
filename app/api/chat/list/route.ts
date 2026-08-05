@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
 import { listChatMessages, listChatMessagesByTicket, listChatMessagesSince } from '@/lib/services/chat';
 import { supabaseAdmin } from '@/lib/supabase';
+import { withDiagRequestLog } from '@/lib/chat/pollDiagServer';
 
 // supabase-js uses fetch internally; without these, Next.js Data Cache caches the
 // list query per URL (limit-keyed) and can serve a stale window (e.g. limit=500
@@ -47,6 +48,11 @@ function getAdminChosenUrlHost(): string | null {
 }
 
 export async function GET(req: NextRequest) {
+  // P0-B: pass-through unless CHAT_POLL_DIAG_SERVER=1 AND valid diag headers are present.
+  return withDiagRequestLog(req, () => handleGet(req));
+}
+
+async function handleGet(req: NextRequest) {
   try {
     logSupabaseEnvCtx('[DIAG_SUPABASE_CTX_LIST]');
     const { searchParams } = new URL(req.url);

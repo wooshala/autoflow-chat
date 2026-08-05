@@ -10,6 +10,34 @@ import {
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
 import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
+// P0-B: no-ops unless the diag flag is on.
+import {
+  buildDiagHeaders,
+  newClientInstanceId,
+  recordDiagEvent,
+  recordHookMount,
+  recordHookUnmount,
+  type RequestReason,
+} from '@/lib/chat/pollDiag';
+
+const HOOK_NAME = 'useChatLoader';
+
+/**
+ * /api/chat/list is not interval-driven, so the caller's `source` is the only record of
+ * WHY the request happened. Map it onto the fixed vocabulary.
+ */
+function toDiagReason(source: string): RequestReason {
+  if (source === 'initial') return 'loader_initial';
+  if (source === 'initial_retry' || source === 'backoff_retry') return 'loader_retry';
+  if (source.startsWith('realtime_resubscribe')) return 'realtime_recover';
+  if (source.startsWith('realtime')) return 'realtime_insert';
+  if (source.includes('visibility')) return 'visible_resume';
+  if (source.includes('pageshow')) return 'pageshow';
+  if (source.includes('online')) return 'online_recover';
+  if (source.includes('watchdog') || source.includes('deferred')) return 'watchdog';
+  if (source === 'manual') return 'manual_retry';
+  return 'loader_refresh';
+}
 
 const DEBUG_VERBOSE = process.env.NEXT_PUBLIC_CHAT_DEBUG_VERBOSE === '1';
 
@@ -56,6 +84,8 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
   const staffTimelineMode = options?.staffTimelineMode ?? false;
 
   const isMountedRef = useRef(false);
+  const clientInstanceIdRef = useRef<string>('');
+  if (!clientInstanceIdRef.current) clientInstanceIdRef.current = newClientInstanceId();
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
   const lastLoadSourceRef = useRef<string | null>(null);
@@ -99,10 +129,18 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         params.set('limit', String(opts?.since ? deltaListLimit : initialListLimit));
         if (opts?.since) params.set('since', opts.since);
         const listUrl = `${CHAT_LIST_URL}?${params.toString()}`;
+        // Diag headers ride on this ONE call, not on fetchEnvelope globally —
+        // FetchEnvelopeInit already extends RequestInit, so no shared code changes and
+        // every other fetchEnvelope caller is byte-identical. {} when the flag is off.
         const result = await fetchEnvelope<ChatListData>(listUrl, {
           cache: 'no-store',
           signal: controller.signal,
-          timeoutMs: listTimeoutMs
+          timeoutMs: listTimeoutMs,
+          headers: buildDiagHeaders({
+            reason: toDiagReason(source),
+            hookName: HOOK_NAME,
+            clientInstanceId: clientInstanceIdRef.current,
+          })
         });
 
         if (!result.ok) {
@@ -268,6 +306,12 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         };
       } catch (error: any) {
         if (error?.name === 'AbortError') {
+          recordDiagEvent({
+            reason: 'load_abort',
+            hookName: HOOK_NAME,
+            clientInstanceId: clientInstanceIdRef.current,
+            detail: { source },
+          });
           if (source === 'initial' || source === 'initial_retry') {
             log.warn('[CHAT_LIST_LOAD_ABORT]', { source });
             log.debug('[CHAT_INITIAL_ABORT]', {
@@ -351,6 +395,12 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
 
       if (listFlightRef.current.inFlight) {
         if (isInitialLoad) {
+          recordDiagEvent({
+            reason: 'coalesce_join',
+            hookName: HOOK_NAME,
+            clientInstanceId: clientInstanceIdRef.current,
+            detail: { source, mode: 'join' },
+          });
           const joined = await listFlightRef.current.run(
             () => executeLoad(source, opts),
             { mode: 'join', reason: source },
@@ -365,6 +415,12 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
           attempt: failureCountRef.current,
           inFlight: true,
           visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
+        });
+        recordDiagEvent({
+          reason: 'coalesce_join',
+          hookName: HOOK_NAME,
+          clientInstanceId: clientInstanceIdRef.current,
+          detail: { source, mode: 'coalesce' },
         });
         const skipped = await listFlightRef.current.run(
           () => executeLoad(source, opts),
@@ -383,6 +439,12 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         inFlight: false,
         visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
       });
+      recordDiagEvent({
+        reason: toDiagReason(source),
+        hookName: HOOK_NAME,
+        clientInstanceId: clientInstanceIdRef.current,
+        detail: { source, attempt: failureCountRef.current },
+      });
 
       const { primary, drained } = await listFlightRef.current.runThenDrain(
         () => executeLoad(source, opts),
@@ -393,6 +455,12 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
         log.info('[CHAT_RECONCILE_COALESCED]', {
           endpointKey: 'chat-list',
           reason: 'pending_after_inflight',
+        });
+        recordDiagEvent({
+          reason: 'pending_drain',
+          hookName: HOOK_NAME,
+          clientInstanceId: clientInstanceIdRef.current,
+          detail: { source },
         });
       }
 
@@ -419,6 +487,11 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
 
   useEffect(() => {
     isMountedRef.current = true;
+    recordHookMount({
+      clientInstanceId: clientInstanceIdRef.current,
+      hookName: HOOK_NAME,
+      componentName: HOOK_NAME,
+    });
 
     initialAttemptIdRef.current += 1;
     initialRetryCountRef.current = 0;
@@ -459,6 +532,7 @@ export function useChatLoader(options?: UseChatLoaderOptions) {
 
     return () => {
       isMountedRef.current = false;
+      recordHookUnmount({ clientInstanceId: clientInstanceIdRef.current, hookName: HOOK_NAME });
       loadSeqRef.current += 1;
       listFlightRef.current.clearPending();
       if (loadAbortRef.current) {

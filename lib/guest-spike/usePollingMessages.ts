@@ -11,6 +11,30 @@ import {
   logChatPollEvent,
   nextBackoffMs,
 } from '@/lib/chat/pollResilience';
+// P0-B: diag flag 가 꺼져 있으면 전부 no-op.
+import {
+  createInstrumentedInterval,
+  newClientInstanceId,
+  recordHookMount,
+  recordHookUnmount,
+  type RequestReason,
+} from '@/lib/chat/pollDiag';
+
+const HOOK_NAME = 'usePollingMessages';
+
+function toDiagReason(reason: string): RequestReason {
+  switch (reason) {
+    case 'initial': return 'initial';
+    case 'interval': return 'interval';
+    case 'hidden_poll': return 'hidden_interval';
+    case 'visibility_restore': return 'visible_resume';
+    case 'post_send': return 'send_reconcile';
+    case 'backoff_retry': return 'manual_retry';
+    case 'coalesced_followup': return 'pending_drain';
+    case 'manual': return 'manual_retry';
+    default: return 'other';
+  }
+}
 
 const EMPTY: GuestMessagesResult = {
   messages: [],
@@ -31,7 +55,9 @@ export function usePollingMessages(
   const mountedRef = useRef(true);
   const failureCountRef = useRef(0);
   const nextAllowedAtRef = useRef(0);
-  const intervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const instrumentedRef = useRef<{ clear: () => void } | null>(null);
+  const clientInstanceIdRef = useRef<string>('');
+  if (!clientInstanceIdRef.current) clientInstanceIdRef.current = newClientInstanceId();
   const backoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelKeyRef = useRef(channelKey);
   channelKeyRef.current = channelKey;
@@ -42,9 +68,9 @@ export function usePollingMessages(
   const armIntervalRef = useRef<() => void>(() => {});
 
   const clearIntervalOnly = () => {
-    if (intervalIdRef.current) {
-      clearInterval(intervalIdRef.current);
-      intervalIdRef.current = null;
+    if (instrumentedRef.current) {
+      instrumentedRef.current.clear();
+      instrumentedRef.current = null;
     }
   };
 
@@ -96,7 +122,11 @@ export function usePollingMessages(
     const requestedChannel = channelKeyRef.current;
     const requestedAsStaff = asStaffRef.current;
     try {
-      const next = await fetchGuestMessages(requestedChannel, requestedAsStaff);
+      const next = await fetchGuestMessages(requestedChannel, requestedAsStaff, {
+        reason: toDiagReason(reason),
+        hookName: HOOK_NAME,
+        clientInstanceId: clientInstanceIdRef.current,
+      });
       if (!mountedRef.current) return;
       // Drop stale responses after channel switch.
       if (channelKeyRef.current !== requestedChannel || asStaffRef.current !== requestedAsStaff) {
@@ -171,11 +201,21 @@ export function usePollingMessages(
       if (Date.now() < nextAllowedAtRef.current) return;
       const hidden = typeof document !== 'undefined' && document.hidden;
       const ms = hidden ? GUEST_MESSAGES_HIDDEN_INTERVAL_MS : intervalMsRef.current;
-      intervalIdRef.current = setInterval(() => {
-        void reload(hidden ? 'hidden_poll' : 'interval');
-      }, ms);
+      instrumentedRef.current = createInstrumentedInterval({
+        hookName: HOOK_NAME,
+        componentName: HOOK_NAME,
+        clientInstanceId: clientInstanceIdRef.current,
+        intervalMs: ms,
+        callback: () => { void reload(hidden ? 'hidden_poll' : 'interval'); },
+      });
     };
     armIntervalRef.current = armInterval;
+
+    recordHookMount({
+      clientInstanceId: clientInstanceIdRef.current,
+      hookName: HOOK_NAME,
+      componentName: HOOK_NAME,
+    });
 
     void reload('initial');
     armInterval();
@@ -195,6 +235,7 @@ export function usePollingMessages(
       clearAllTimers();
       pendingRefreshRef.current = false;
       document.removeEventListener('visibilitychange', onVisibility);
+      recordHookUnmount({ clientInstanceId: clientInstanceIdRef.current, hookName: HOOK_NAME });
     };
   }, [channelKey, asStaff, intervalMs, reload]);
 

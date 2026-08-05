@@ -13,6 +13,29 @@ import {
   logChatPollEvent,
   nextBackoffMs,
 } from '@/lib/chat/pollResilience';
+// P0-B: 아래 helper 는 diag flag 가 꺼져 있으면 전부 no-op 이다.
+import {
+  createInstrumentedInterval,
+  newClientInstanceId,
+  recordHookMount,
+  recordHookUnmount,
+  type RequestReason,
+} from '@/lib/chat/pollDiag';
+
+const HOOK_NAME = 'useGuestChannelSummaries';
+
+/** Internal poll reasons → the fixed diagnostic vocabulary. */
+function toDiagReason(reason: string): RequestReason {
+  switch (reason) {
+    case 'initial': return 'initial';
+    case 'interval': return 'interval';
+    case 'hidden_poll': return 'hidden_interval';
+    case 'visibility_restore': return 'visible_resume';
+    case 'backoff_retry': return 'manual_retry';
+    case 'coalesced_followup': return 'pending_drain';
+    default: return 'other';
+  }
+}
 
 export type GuestChannelSummaryMap = Record<string, GuestChannelSummary>;
 
@@ -24,16 +47,18 @@ export function useGuestChannelSummaries(
   const pending = useRef(false);
   const failureCount = useRef(0);
   const nextAllowedAt = useRef(0);
-  const intervalId = useRef<ReturnType<typeof setInterval> | null>(null);
+  const instrumented = useRef<{ clear: () => void } | null>(null);
+  const clientInstanceId = useRef<string>('');
+  if (!clientInstanceId.current) clientInstanceId.current = newClientInstanceId();
   const backoffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let alive = true;
 
     const clearTimers = () => {
-      if (intervalId.current) {
-        clearInterval(intervalId.current);
-        intervalId.current = null;
+      if (instrumented.current) {
+        instrumented.current.clear();
+        instrumented.current = null;
       }
       if (backoffTimer.current) {
         clearTimeout(backoffTimer.current);
@@ -42,17 +67,21 @@ export function useGuestChannelSummaries(
     };
 
     const armInterval = () => {
-      if (intervalId.current) {
-        clearInterval(intervalId.current);
-        intervalId.current = null;
+      if (instrumented.current) {
+        instrumented.current.clear();
+        instrumented.current = null;
       }
       if (!alive) return;
       if (Date.now() < nextAllowedAt.current) return;
       const hidden = typeof document !== 'undefined' && document.hidden;
       const ms = hidden ? GUEST_SUMMARY_HIDDEN_INTERVAL_MS : intervalMs;
-      intervalId.current = setInterval(() => {
-        void load(hidden ? 'hidden_poll' : 'interval');
-      }, ms);
+      instrumented.current = createInstrumentedInterval({
+        hookName: HOOK_NAME,
+        componentName: HOOK_NAME,
+        clientInstanceId: clientInstanceId.current,
+        intervalMs: ms,
+        callback: () => { void load(hidden ? 'hidden_poll' : 'interval'); },
+      });
     };
 
     const load = async (reason: string) => {
@@ -88,7 +117,11 @@ export function useGuestChannelSummaries(
 
       let failedWithBackoff = false;
       try {
-        const channels = await fetchGuestChannelSummaries();
+        const channels = await fetchGuestChannelSummaries({
+          reason: toDiagReason(reason),
+          hookName: HOOK_NAME,
+          clientInstanceId: clientInstanceId.current,
+        });
         if (!alive) return;
         if (channels === null) {
           failedWithBackoff = true;
@@ -101,9 +134,9 @@ export function useGuestChannelSummaries(
             attempt: failureCount.current,
             delayMs,
           });
-          if (intervalId.current) {
-            clearInterval(intervalId.current);
-            intervalId.current = null;
+          if (instrumented.current) {
+            instrumented.current.clear();
+            instrumented.current = null;
           }
           if (backoffTimer.current) clearTimeout(backoffTimer.current);
           backoffTimer.current = setTimeout(() => {
@@ -138,9 +171,9 @@ export function useGuestChannelSummaries(
             attempt: failureCount.current,
             delayMs,
           });
-          if (intervalId.current) {
-            clearInterval(intervalId.current);
-            intervalId.current = null;
+          if (instrumented.current) {
+            instrumented.current.clear();
+            instrumented.current = null;
           }
           if (backoffTimer.current) clearTimeout(backoffTimer.current);
           backoffTimer.current = setTimeout(() => {
@@ -160,6 +193,12 @@ export function useGuestChannelSummaries(
       }
     };
 
+    recordHookMount({
+      clientInstanceId: clientInstanceId.current,
+      hookName: HOOK_NAME,
+      componentName: HOOK_NAME,
+    });
+
     void load('initial');
     armInterval();
 
@@ -178,6 +217,7 @@ export function useGuestChannelSummaries(
       clearTimers();
       pending.current = false;
       document.removeEventListener('visibilitychange', onVisible);
+      recordHookUnmount({ clientInstanceId: clientInstanceId.current, hookName: HOOK_NAME });
     };
   }, [intervalMs]);
 

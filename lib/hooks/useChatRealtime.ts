@@ -1,9 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ChatMessage } from '@/lib/types';
 import { log } from '@/lib/logger';
 import { mergeChatMessageRow, normalizeChatMessageFields } from '@/lib/chat/normalizeChatMessage';
 import { logRealtimeReceived } from '@/lib/chat/sendTrace';
 import { latRealtimeReceived } from '@/lib/chat/latencyTrace';
+// P0-B: no-ops unless the diag flag is on.
+import {
+  newClientInstanceId,
+  recordDiagEvent,
+  recordHookMount,
+  recordHookUnmount,
+  recordRealtimeTransition,
+} from '@/lib/chat/pollDiag';
+
+const HOOK_NAME = 'useChatRealtime';
 
 function sortMessagesAsc(items: ChatMessage[]): ChatMessage[] {
   return [...items].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
@@ -31,8 +41,17 @@ export function useChatRealtime({
   /** Diagnostics: notified per realtime row event so callers can label INSERT vs UPDATE. */
   onRowEvent?: (e: { id: string; type: 'INSERT' | 'UPDATE' }) => void;
 }) {
+  const clientInstanceIdRef = useRef<string>('');
+  if (!clientInstanceIdRef.current) clientInstanceIdRef.current = newClientInstanceId();
+  const lastStatusRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!supabase) return;
+    recordHookMount({
+      clientInstanceId: clientInstanceIdRef.current,
+      hookName: HOOK_NAME,
+      componentName: HOOK_NAME,
+    });
 
     const logUpsertDebug = (...args: unknown[]) => {
       if (process.env.NODE_ENV === 'development') {
@@ -119,6 +138,11 @@ export function useChatRealtime({
           created_at: (row as any)?.created_at ?? null
         });
         onRowEvent?.({ id: String(row.id), type: 'INSERT' });
+        recordDiagEvent({
+          reason: 'realtime_insert',
+          hookName: HOOK_NAME,
+          clientInstanceId: clientInstanceIdRef.current,
+        });
         upsertMessageRow(normalizeChatMessageFields(row));
       })
       .on('postgres_changes', PG_UPDATE_FILTER, (payload: any) => {
@@ -127,6 +151,11 @@ export function useChatRealtime({
         lastRealtimeActivityAtRef.current = Date.now();
         log.info('[CHAT_REALTIME_EVENT]', { type: 'UPDATE', messageId: row.id });
         onRowEvent?.({ id: String(row.id), type: 'UPDATE' });
+        recordDiagEvent({
+          reason: 'realtime_update',
+          hookName: HOOK_NAME,
+          clientInstanceId: clientInstanceIdRef.current,
+        });
         upsertMessageRow(normalizeChatMessageFields(row));
       })
       .subscribe((status: string, err?: Error) => {
@@ -139,6 +168,15 @@ export function useChatRealtime({
         }
         realtimeConnectedRef.current = status === 'SUBSCRIBED';
         log.info('[CHAT_REALTIME_STATUS]', { status, connected: realtimeConnectedRef.current });
+        // Transitions only — a quiet channel repeating SUBSCRIBED must not produce log lines.
+        recordRealtimeTransition({
+          clientInstanceId: clientInstanceIdRef.current,
+          channelName: 'chat-messages',
+          previousStatus: lastStatusRef.current,
+          nextStatus: status,
+          resubscribeAttempt: reconnectToken ?? 0,
+        });
+        lastStatusRef.current = status;
         if (realtimeConnectedRef.current) {
           lastRealtimeActivityAtRef.current = Date.now();
           onConnectionStatus?.('connected');
@@ -148,6 +186,7 @@ export function useChatRealtime({
       });
 
     return () => {
+      recordHookUnmount({ clientInstanceId: clientInstanceIdRef.current, hookName: HOOK_NAME });
       try {
         supabase.removeChannel(channel);
       } catch {
