@@ -23,6 +23,7 @@ import { isGuestLang, resolveOriginalLang, type GuestLang } from '@/lib/guest-sp
 import { channelCookieName } from '@/lib/guest-spike/sessionCookie';
 import { requireStaff } from '@/lib/guest-spike/staffAuth';
 import type { CustomerLang } from '@/lib/customer-service/translationLangs';
+import { withDiagRequestLog } from '@/lib/chat/pollDiagServer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,7 +72,12 @@ function sessionLanguage(session: GuestSession | null): { preferred: GuestLang |
   return { preferred, source: session?.language_source ?? null };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { channel_key: string } }) {
+export async function GET(req: NextRequest, ctx: { params: { channel_key: string } }) {
+  // P0-B: pass-through unless CHAT_POLL_DIAG_SERVER=1 AND valid diag headers are present.
+  return withDiagRequestLog(req, () => handleGet(req, ctx));
+}
+
+async function handleGet(req: NextRequest, { params }: { params: { channel_key: string } }) {
   const channelKey = params.channel_key;
   const meta = req.nextUrl.searchParams.get('meta') === '1';
   // Phase 1H.7 — staff-resolved responses carry session_status so the staff UI can tell

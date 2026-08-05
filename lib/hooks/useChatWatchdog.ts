@@ -6,6 +6,16 @@ import {
   logChatPollEvent,
   nextBackoffMs,
 } from '@/lib/chat/pollResilience';
+// P0-B: no-ops unless the diag flag is on.
+import {
+  createInstrumentedInterval,
+  newClientInstanceId,
+  recordDiagEvent,
+  recordHookMount,
+  recordHookUnmount,
+} from '@/lib/chat/pollDiag';
+
+const HOOK_NAME = 'useChatWatchdog';
 
 /**
  * Watchdog: Realtime health + visibility reconcile only.
@@ -40,6 +50,9 @@ export function useChatWatchdog({
 }) {
   const lastRestoreFullLoadAtRef = useRef(0);
   const reconcileInFlightRef = useRef(false);
+  const clientInstanceIdRef = useRef<string>('');
+  if (!clientInstanceIdRef.current) clientInstanceIdRef.current = newClientInstanceId();
+  const watchdogIntervalRef = useRef<{ clear: () => void } | null>(null);
   const pendingVisibleReconcileRef = useRef(false);
   const pollIntervalRef = useRef<number | null>(null);
   const tabIdRef = useRef(`tab-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -234,6 +247,11 @@ export function useChatWatchdog({
                 endpointKey: 'chat-list',
                 reason: 'post_resubscribe',
               });
+              recordDiagEvent({
+                reason: 'watchdog_reconcile',
+                hookName: HOOK_NAME,
+                clientInstanceId: clientInstanceIdRef.current,
+              });
               await loadFullRef.current('realtime_resubscribe_reconcile');
             }
           } else {
@@ -266,6 +284,11 @@ export function useChatWatchdog({
 
     const tick = () => {
       log.debug('[CHAT_WATCHDOG_INTERVAL_ENTER]');
+      recordDiagEvent({
+        reason: 'watchdog_tick',
+        hookName: HOOK_NAME,
+        clientInstanceId: clientInstanceIdRef.current,
+      });
       if (!isMountedRef.current) {
         log.debug('[CHAT_WATCHDOG_SKIP]', { reason: 'not_mounted' });
         return;
@@ -322,6 +345,12 @@ export function useChatWatchdog({
           reason: decision.reason,
           silence_ms: Date.now() - lastRealtimeActivityAtRef.current,
         });
+        recordDiagEvent({
+          reason: 'watchdog_quiet',
+          hookName: HOOK_NAME,
+          clientInstanceId: clientInstanceIdRef.current,
+          detail: { decision: decision.reason },
+        });
         return;
       }
 
@@ -330,6 +359,12 @@ export function useChatWatchdog({
           reason: decision.reason,
           delayMs: decision.delayMs,
         });
+        recordDiagEvent({
+          reason: 'backoff_start',
+          hookName: HOOK_NAME,
+          clientInstanceId: clientInstanceIdRef.current,
+          detail: { delay_ms: decision.delayMs },
+        });
         return;
       }
 
@@ -337,7 +372,20 @@ export function useChatWatchdog({
       scheduleResubscribe();
     };
 
-    pollIntervalRef.current = window.setInterval(tick, TICK_MS);
+    recordHookMount({
+      clientInstanceId: clientInstanceIdRef.current,
+      hookName: HOOK_NAME,
+      componentName: HOOK_NAME,
+    });
+    watchdogIntervalRef.current = createInstrumentedInterval({
+      hookName: HOOK_NAME,
+      componentName: HOOK_NAME,
+      clientInstanceId: clientInstanceIdRef.current,
+      intervalMs: TICK_MS,
+      callback: tick,
+      setIntervalFn: (cb, ms) => window.setInterval(cb, ms),
+      clearIntervalFn: (h) => window.clearInterval(h as number),
+    });
     log.debug('[POLLING_TICK_STARTED]', { interval_ms: TICK_MS, quiet_watchdog_full: false });
 
     return () => {
@@ -350,10 +398,11 @@ export function useChatWatchdog({
           localStorage.removeItem(POLLING_LEADER_KEY);
         }
       } catch {}
-      if (pollIntervalRef.current) {
-        window.clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
+      if (watchdogIntervalRef.current) {
+        watchdogIntervalRef.current.clear();
+        watchdogIntervalRef.current = null;
       }
+      recordHookUnmount({ clientInstanceId: clientInstanceIdRef.current, hookName: HOOK_NAME });
       resubscribeInFlightRef.current = false;
       pendingVisibleReconcileRef.current = false;
       log.debug('[POLLING_STOP]', { reason: 'effect_cleanup' });

@@ -12,6 +12,8 @@ import {
   CLOSE_SESSION_FAILED_USER_MESSAGE,
   parseCloseSessionHttpResult,
 } from './closeSessionResponse';
+// P0-B diagnostics: returns {} unless the diag flag is on, so production traffic is unchanged.
+import { buildDiagHeaders, type DiagHeaderInput } from '@/lib/chat/pollDiag';
 
 export type { GuestSpikeMsg };
 export type { GuestChannelSummary };
@@ -84,10 +86,17 @@ export interface GuestMessagesResult {
 /** Full messages GET — also carries the session language + session_status (staff), so the OPEN
  *  room reuses this single poll (no separate meta poll).
  *  Soft empty only for benign not-ok; 5xx/522/network throw so callers can back off. */
-export async function fetchGuestMessages(channelKey: string, asStaff?: boolean): Promise<GuestMessagesResult> {
+export async function fetchGuestMessages(
+  channelKey: string,
+  asStaff?: boolean,
+  diag?: DiagHeaderInput,
+): Promise<GuestMessagesResult> {
   let r: Response;
   try {
-    r = await fetch(withStaff(endpoint(channelKey), asStaff), { cache: 'no-store', headers: staffHeaders(asStaff) });
+    r = await fetch(withStaff(endpoint(channelKey), asStaff), {
+      cache: 'no-store',
+      headers: { ...staffHeaders(asStaff), ...(diag ? buildDiagHeaders(diag) : {}) },
+    });
   } catch (e: any) {
     const err: any = new Error(e?.message || 'network error');
     err.status = 0;
@@ -177,9 +186,14 @@ export async function fetchChannelMeta(channelKey: string, asStaff?: boolean): P
  * good summary (never crashes Room Navigation). Returns null (not []) on failure to distinguish
  * "no open channels" from "request failed".
  */
-export async function fetchGuestChannelSummaries(): Promise<GuestChannelSummary[] | null> {
+export async function fetchGuestChannelSummaries(
+  diag?: DiagHeaderInput,
+): Promise<GuestChannelSummary[] | null> {
   try {
-    const r = await fetch('/api/guest/channels/summary', { cache: 'no-store', headers: staffSessionAuthHeaders() });
+    const r = await fetch('/api/guest/channels/summary', {
+      cache: 'no-store',
+      headers: { ...staffSessionAuthHeaders(), ...(diag ? buildDiagHeaders(diag) : {}) },
+    });
     const j = await r.json();
     if (!r.ok || !j?.ok || !Array.isArray(j.channels)) return null;
     return j.channels as GuestChannelSummary[];
