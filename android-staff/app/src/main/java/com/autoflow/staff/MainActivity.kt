@@ -248,7 +248,8 @@ class MainActivity : Activity() {
         }
     }
 
-    /** <input accept> 가 video/* 만 요구하는지. 사진 경로 판정은 바꾸지 않는다. */
+    // <input accept> 가 video 타입만 요구하는지. 사진 경로 판정은 바꾸지 않는다.
+    // (KDoc 블록 주석 안에 "video/" + "*" 를 쓰면 Kotlin 의 중첩 주석으로 해석되므로 줄 주석을 쓴다.)
     private fun requestsVideo(params: WebChromeClient.FileChooserParams?): Boolean {
         val types = params?.acceptTypes ?: return false
         val meaningful = types.filter { it.isNotBlank() }
