@@ -131,7 +131,8 @@ class MainActivity : Activity() {
                 callback.onReceiveValue(null)
                 return
             }
-            // 갤러리 선택은 data.data 로, 카메라 촬영은 data 없이 EXTRA_OUTPUT(capturedUri)에 저장된다.
+            // 갤러리 선택과 동영상 촬영(ACTION_VIDEO_CAPTURE)은 data.data 로 돌아오고,
+            // 사진 촬영(ACTION_IMAGE_CAPTURE)은 data 없이 EXTRA_OUTPUT(capturedUri)에 저장된다.
             val fromPicker = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
             val results: Array<Uri>? = when {
                 fromPicker != null && fromPicker.isNotEmpty() -> fromPicker
@@ -192,19 +193,26 @@ class MainActivity : Activity() {
         val callback = filePathCallback
         if (callback == null) return false
 
+        // <input accept="video/*"> 이면 동영상 촬영, 그 외에는 기존 사진 경로 그대로.
+        val wantsVideo = requestsVideo(params)
+
         val galleryIntent = try {
-            params?.createIntent() ?: defaultImagePickIntent()
+            params?.createIntent() ?: defaultPickIntent(wantsVideo)
         } catch (e: Exception) {
             Log.w(TAG, "FileChooserParams.createIntent failed; using fallback picker", e)
-            defaultImagePickIntent()
+            defaultPickIntent(wantsVideo)
         }
 
         // capture 요청(<input capture>) + 카메라 권한이 있으면 촬영 인텐트를 chooser에 추가.
         cameraPhotoUri = null
         val cameraIntent =
-            if (params?.isCaptureEnabled == true && hasCameraPermission()) buildCameraCaptureIntent() else null
+            if (params?.isCaptureEnabled == true && hasCameraPermission()) {
+                if (wantsVideo) buildVideoCaptureIntent() else buildCameraCaptureIntent()
+            } else {
+                null
+            }
 
-        val chooser = Intent.createChooser(galleryIntent, "사진").apply {
+        val chooser = Intent.createChooser(galleryIntent, if (wantsVideo) "동영상" else "사진").apply {
             if (cameraIntent != null) {
                 putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
             }
@@ -240,11 +248,34 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun defaultImagePickIntent(): Intent {
+    /** <input accept> 가 video/* 만 요구하는지. 사진 경로 판정은 바꾸지 않는다. */
+    private fun requestsVideo(params: WebChromeClient.FileChooserParams?): Boolean {
+        val types = params?.acceptTypes ?: return false
+        val meaningful = types.filter { it.isNotBlank() }
+        if (meaningful.isEmpty()) return false
+        return meaningful.all { it.startsWith("video/") }
+    }
+
+    /** ACTION_VIDEO_CAPTURE 인텐트. 결과 동영상 Uri 는 onActivityResult 의 data.data 로 돌아온다. */
+    private fun buildVideoCaptureIntent(): Intent? {
+        return try {
+            Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
+                // 1차 운영 목표는 짧은 시설 점검 영상. 서버 상한(4MB)에 맞춰 저화질·짧은 길이로 유도한다.
+                putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0)
+                putExtra(MediaStore.EXTRA_DURATION_LIMIT, VIDEO_DURATION_LIMIT_SEC)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "buildVideoCaptureIntent failed", e)
+            null
+        }
+    }
+
+    private fun defaultPickIntent(wantsVideo: Boolean): Intent {
+        val mime = if (wantsVideo) "video/*" else "image/*"
         return Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "image/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*"))
+            type = mime
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(mime))
         }
     }
 
@@ -385,5 +416,11 @@ class MainActivity : Activity() {
         private const val REQUEST_CAMERA_WEBVIEW = 1004
         private const val REQUEST_READ_MEDIA = 1005
         private const val SESSION_POLL_INTERVAL_MS = 3000L
+
+        /**
+         * 동영상 촬영 길이 상한(초). 서버 업로드 상한 4MB 안에 들어오도록 짧게 잡는다.
+         * (EXTRA_DURATION_LIMIT 은 기기/카메라 앱에 따라 무시될 수 있어 서버 검증이 최종 관문이다.)
+         */
+        private const val VIDEO_DURATION_LIMIT_SEC = 30
     }
 }

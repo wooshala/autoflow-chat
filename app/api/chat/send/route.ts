@@ -5,6 +5,7 @@ import { parseSendPriority } from '@/lib/chat/messagePriority';
 import { emitLatency } from '@/lib/chat/latencyTrace';
 import { waitUntil } from '@vercel/functions';
 import { jsonOk, jsonErr } from '@/lib/api/envelope';
+import { type ChatMediaKind, messageTypeFor, validateChatMedia } from '@/lib/chat/media';
 import { createChatMessage, listChatMessages, updateChatMessage } from '@/lib/services/chat';
 import { assertStaffInviteCanSend } from '@/lib/services/staffInvites';
 import { uploadImage } from '@/lib/services/upload';
@@ -500,15 +501,22 @@ export async function POST(req: NextRequest) {
     let image_url: string | null = null;
     let image_storage_path: string | null = null;
     let storageUploadMs: number | null = null;
+    // 사진/동영상 공용. 파일이 없으면 null → message_type 은 'text'.
+    let mediaKind: ChatMediaKind | null = null;
 
-    // 파일이 있으면 업로드 (단일 업로드 플로우)
+    // 파일이 있으면 업로드 (단일 업로드 플로우 — 사진/동영상 공용)
     if (image instanceof File) {
-      if (!image.type.startsWith('image/')) {
-        return jsonErr('INVALID_IMAGE_TYPE', '이미지 파일만 업로드할 수 있습니다.', 400);
+      const mediaCheck = validateChatMedia({ type: image.type, size: image.size });
+      if (!mediaCheck.ok) {
+        const { code, message: reason } = mediaCheck.rejection;
+        console.log('[CHAT_MEDIA_REJECTED]', {
+          code,
+          type: image.type || null,
+          size: image.size
+        });
+        return jsonErr(code, reason, 400);
       }
-      if (image.size > 10 * 1024 * 1024) {
-        return jsonErr('FILE_TOO_LARGE', '10MB 이하만 가능합니다.', 400);
-      }
+      mediaKind = mediaCheck.kind;
 
       try {
         const uploadStarted = Date.now();
@@ -592,7 +600,7 @@ export async function POST(req: NextRequest) {
       phrase_key,
       sender_name,
       token_id,
-      message_type: image instanceof File ? 'image' : 'text',
+      message_type: mediaKind ? messageTypeFor(mediaKind) : 'text',
       image_url: image_url || null,
       image_storage_path: image_storage_path || null,
       original_lang: '',
