@@ -1,6 +1,7 @@
 export type UserRole = 'admin' | 'front' | 'cleaning';
 export type UserLanguage = 'ko' | 'vi' | 'ru' | 'en';
-export type MessageType = 'text' | 'image' | 'maintenance';
+// DB 컬럼은 CHECK/enum 없는 text 이므로 'video' 추가에 migration 이 필요 없다.
+export type MessageType = 'text' | 'image' | 'video' | 'maintenance';
 export type SenderSide = 'pc' | 'mobile';
 export type AiAction =
   | 'ticket_created'

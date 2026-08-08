@@ -11,6 +11,8 @@ import { isUrgentMessage } from "@/lib/chat/messagePriority";
 import MessageOverflowMenu from "@/components/chat/MessageOverflowMenu";
 import ChatPhotoOpsAction from "@/components/chat/ChatPhotoOpsAction";
 import { ChatPhotoThumb } from "@/components/chat/ChatPhotoLightbox";
+import { ChatVideoPlayer } from "@/components/chat/ChatVideoPlayer";
+import { isVideoMessage } from "@/lib/chat/media";
 import type { LostFoundMessageLink } from "@/lib/ops-events/lostFoundUi";
 
 type Props = {
@@ -346,17 +348,24 @@ export default function ChatMessages({
                   ) : msg.image_url ? (
                     <>
                       {isImageOnly ? (
-                        <div className="mb-1 text-xs opacity-80">[사진 메시지]</div>
+                        <div className="mb-1 text-xs opacity-80">
+                          {isVideoMessage(msg) ? '[동영상 메시지]' : '[사진 메시지]'}
+                        </div>
                       ) : null}
-                      <div className="relative group/photo mt-1">
-                        <ChatPhotoThumb
-                          src={msg.image_url}
-                          alt="업로드"
-                          className="w-full"
-                          imgClassName="h-40 w-full rounded-xl object-cover"
-                        />
-                      </div>
-                      {showPhotoOpsAction ? (
+                      {isVideoMessage(msg) ? (
+                        <ChatVideoPlayer src={msg.image_url} className="mt-1 w-full" />
+                      ) : (
+                        <div className="relative group/photo mt-1">
+                          <ChatPhotoThumb
+                            src={msg.image_url}
+                            alt="업로드"
+                            className="w-full"
+                            imgClassName="h-40 w-full rounded-xl object-cover"
+                          />
+                        </div>
+                      )}
+                      {/* 사진 전용 운영 액션(분실물/유지보수 등록)은 동영상에 붙이지 않는다 */}
+                      {showPhotoOpsAction && !isVideoMessage(msg) ? (
                         <ChatPhotoOpsAction
                           msg={msg}
                           lostFoundLink={lostFoundLink}

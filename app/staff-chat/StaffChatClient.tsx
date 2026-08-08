@@ -85,6 +85,8 @@ import {
 } from '@/lib/chat/staffChatSelfMessage';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
 import { ChatPhotoLightboxProvider, ChatPhotoThumb } from '@/components/chat/ChatPhotoLightbox';
+import { ChatVideoPlayer } from '@/components/chat/ChatVideoPlayer';
+import { isVideoMessage } from '@/lib/chat/media';
 import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
@@ -1975,12 +1977,20 @@ function StaffChatPageInner() {
                       ) : null}
                     </div>
                     {m.image_url ? (
-                      <ChatPhotoThumb
-                        src={m.image_url}
-                        alt=""
-                        className="mt-1"
-                        imgClassName="max-h-40 rounded-lg object-cover"
-                      />
+                      isVideoMessage(m) ? (
+                        <ChatVideoPlayer
+                          src={m.image_url}
+                          className="mt-1"
+                          videoClassName="max-h-40 w-full rounded-lg bg-black object-contain"
+                        />
+                      ) : (
+                        <ChatPhotoThumb
+                          src={m.image_url}
+                          alt=""
+                          className="mt-1"
+                          imgClassName="max-h-40 rounded-lg object-cover"
+                        />
+                      )
                     ) : null}
                     {primary ? (
                       <div
