@@ -90,6 +90,7 @@ import {
   IMAGE_ACCEPT,
   VIDEO_ACCEPT,
   type ChatMediaKind,
+  detectChatMediaKind,
   isVideoMessage,
   validateChatMedia
 } from '@/lib/chat/media';
@@ -1277,7 +1278,10 @@ function StaffChatPageInner() {
         const fd = new FormData();
         fd.append('user_id', chatSendUserId);
         fd.append('actor_name', actorName);
-        fd.append('message', msg || (image ? (r ? `${r}호 사진` : '사진') : ''));
+        // 캡션이 비어 있을 때의 기본 문구. 동영상인데 "사진"으로 저장되면
+        // 운영 콘솔·알림·검색에서 잘못 표기되므로 미디어 종류로 분기한다.
+        const mediaLabel = image && detectChatMediaKind(image.type) === 'video' ? '동영상' : '사진';
+        fd.append('message', msg || (image ? (r ? `${r}호 ${mediaLabel}` : mediaLabel) : ''));
         fd.append('sender_side', 'mobile');
         fd.append('sender_name', actorName);
         if (inviteSession?.inviteId) fd.append('token_id', inviteSession.inviteId);
@@ -2164,11 +2168,17 @@ function StaffChatPageInner() {
                   type="button"
                   aria-label="첨부 메뉴 닫기"
                   onClick={() => setAttachMenuOpen(false)}
-                  className="fixed inset-0 z-10 cursor-default"
+                  className="fixed inset-0 z-[55] cursor-default"
                 />
+                {/*
+                  composer 컨테이너가 overflow-y-auto 라 absolute 메뉴는 잘린다.
+                  position:fixed 로 그 클리핑을 벗어나고, composer 전체 높이 위로 띄워
+                  객실/상태 선택 바와 겹치지 않게 한다. (부모에 transform 이 없어 fixed 가 뷰포트 기준으로 동작)
+                */}
                 <div
                   role="menu"
-                  className="absolute bottom-14 left-0 z-20 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
+                  style={{ bottom: composerHeight + keyboardOffset + 8, left: 12 }}
+                  className="fixed z-[60] w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
                 >
                   {(
                     [

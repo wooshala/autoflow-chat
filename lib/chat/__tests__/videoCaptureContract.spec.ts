@@ -134,6 +134,14 @@ describe('직원 채팅(/staff-chat) 첨부 UI — 촬영/선택 4경로', () =>
     expect(STAFF).toContain('validateChatMedia({ type: file.type, size: file.size })');
   });
 
+  it('캡션 기본 문구가 미디어 종류에 따라 갈린다', () => {
+    // 동영상인데 "사진"으로 저장되면 운영 콘솔·알림·검색에서 오표기된다.
+    expect(STAFF).toContain("detectChatMediaKind(image.type) === 'video' ? '동영상' : '사진'");
+    expect(STAFF).toContain('`${r}호 ${mediaLabel}`');
+    // 사진 기본 문구는 그대로 유지
+    expect(STAFF).not.toContain("`${r}호 사진`");
+  });
+
   it('동영상 첨부는 확인 패널에서 재생 가능한 미리보기로 보인다', () => {
     expect(STAFF).toContain('mediaKind={pendingKind}');
     const panel = readFileSync(join(ROOT, 'components/staff-chat/PhotoConfirmPanel.tsx'), 'utf8');
