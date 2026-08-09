@@ -163,7 +163,9 @@ export default function ChatPage() {
   /** soft delete 진행 중 message id — 중복 요청 방지 */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const photoPickRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const videoPickRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
   /** Phase 1.4: 좌·우 패널 드래그 크기 조절(독립 flag, 기본 OFF). OFF면 기존 고정폭 레이아웃 그대로. */
@@ -1090,34 +1092,39 @@ export default function ChatPage() {
                 onClick={() => setAttachMenuOpen(false)}
                 className="fixed inset-0 z-10 cursor-default"
               />
+              {/*
+                촬영과 기존 파일 선택을 네 경로로 명시한다. OS chooser 가 갤러리를
+                함께 보여줄 것이라고 기대하지 않는다 — 기기에 따라 촬영으로 직행해
+                기존 영상을 고를 방법이 사라진다.
+              */}
               <div
                 role="menu"
-                className="absolute bottom-12 left-0 z-20 w-40 overflow-hidden rounded-xl border border-gray-600 bg-gray-800 shadow-lg"
+                className="absolute bottom-12 left-0 z-20 w-44 overflow-hidden rounded-xl border border-gray-600 bg-gray-800 shadow-lg"
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid="attach-photo"
-                  onClick={() => {
-                    setAttachMenuOpen(false);
-                    fileRef.current?.click();
-                  }}
-                  className="block w-full px-3 py-3 text-left text-sm text-white hover:bg-gray-700"
-                >
-                  📷 사진 촬영
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid="attach-video"
-                  onClick={() => {
-                    setAttachMenuOpen(false);
-                    videoRef.current?.click();
-                  }}
-                  className="block w-full border-t border-gray-700 px-3 py-3 text-left text-sm text-white hover:bg-gray-700"
-                >
-                  🎥 동영상 촬영
-                </button>
+                {(
+                  [
+                    { id: 'attach-photo', label: '📷 사진 촬영', ref: fileRef },
+                    { id: 'attach-photo-pick', label: '🖼 사진 선택', ref: photoPickRef },
+                    { id: 'attach-video', label: '🎥 동영상 촬영', ref: videoRef },
+                    { id: 'attach-video-pick', label: '🎞 동영상 선택', ref: videoPickRef },
+                  ] as const
+                ).map((item, i) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="menuitem"
+                    data-testid={item.id}
+                    onClick={() => {
+                      setAttachMenuOpen(false);
+                      item.ref.current?.click();
+                    }}
+                    className={`block w-full px-3 py-3 text-left text-sm text-white hover:bg-gray-700 ${
+                      i > 0 ? 'border-t border-gray-700' : ''
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
             </>
           )}
@@ -1208,6 +1215,33 @@ export default function ChatPage() {
           accept={VIDEO_ACCEPT}
           capture="environment"
           data-testid="video-capture-input"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            void acceptMediaFile(file);
+          }}
+        />
+        {/* 기존 파일 선택 — capture 를 붙이지 않아야 갤러리/문서 선택기가 열린다. */}
+        <input
+          ref={photoPickRef}
+          type="file"
+          accept={IMAGE_ACCEPT}
+          data-testid="photo-pick-input"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            void acceptMediaFile(file);
+          }}
+        />
+        <input
+          ref={videoPickRef}
+          type="file"
+          accept={VIDEO_ACCEPT}
+          data-testid="video-pick-input"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];

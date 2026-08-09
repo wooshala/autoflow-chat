@@ -189,37 +189,59 @@ class MainActivity : Activity() {
         return checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED
     }
 
+    /**
+     * 네 경로를 섞지 않는다. accept(미디어 종류) x capture(촬영 의도)의 조합으로만 분기한다.
+     *
+     *   image + capture  -> ACTION_IMAGE_CAPTURE  (기존 동작 유지)
+     *   image + pick     -> GET_CONTENT image/    (기존 동작 유지)
+     *   video + capture  -> ACTION_VIDEO_CAPTURE
+     *   video + pick     -> GET_CONTENT video/
+     *
+     * capture 여부는 WebView 가 넘기는 isCaptureEnabled 에 의존하므로, 기기별 실제 값을
+     * [FILE_CHOOSER] 로그로 남겨 추측 없이 확인할 수 있게 한다.
+     */
     private fun launchFileChooser(params: WebChromeClient.FileChooserParams?): Boolean {
         val callback = filePathCallback
         if (callback == null) return false
 
-        // <input accept="video/*"> 이면 동영상 촬영, 그 외에는 기존 사진 경로 그대로.
         val wantsVideo = requestsVideo(params)
+        val wantsCapture = params?.isCaptureEnabled == true
+        val hasCamera = hasCameraPermission()
 
-        val galleryIntent = try {
+        val pickIntent = try {
             params?.createIntent() ?: defaultPickIntent(wantsVideo)
         } catch (e: Exception) {
             Log.w(TAG, "FileChooserParams.createIntent failed; using fallback picker", e)
             defaultPickIntent(wantsVideo)
         }
 
-        // capture 요청(<input capture>) + 카메라 권한이 있으면 촬영 인텐트를 chooser에 추가.
         cameraPhotoUri = null
-        val cameraIntent =
-            if (params?.isCaptureEnabled == true && hasCameraPermission()) {
+        val captureIntent =
+            if (wantsCapture && hasCamera) {
                 if (wantsVideo) buildVideoCaptureIntent() else buildCameraCaptureIntent()
             } else {
                 null
             }
 
-        val chooser = Intent.createChooser(galleryIntent, if (wantsVideo) "동영상" else "사진").apply {
-            if (cameraIntent != null) {
-                putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
-            }
-        }
+        // 촬영 의도가 명확하면 촬영 액티비티로 직행한다. chooser 를 거치면 운영자가
+        // 매번 한 단계를 더 눌러야 하고, 기기에 따라 촬영 항목이 뒤로 밀린다.
+        // 촬영 인텐트를 만들지 못한 경우에만 선택기로 폴백한다.
+        val target = captureIntent ?: Intent.createChooser(
+            pickIntent,
+            if (wantsVideo) "동영상 선택" else "사진 선택",
+        )
+
+        Log.i(
+            TAG,
+            "[FILE_CHOOSER] acceptTypes=${params?.acceptTypes?.joinToString(",") ?: "null"}" +
+                " capture=$wantsCapture wantsVideo=$wantsVideo hasCameraPermission=$hasCamera" +
+                " captureIntentBuilt=${captureIntent != null}" +
+                " action=${target.action ?: "chooser"}" +
+                " pickType=${pickIntent.type ?: "null"}",
+        )
 
         return try {
-            startActivityForResult(chooser, REQUEST_FILE_CHOOSER)
+            startActivityForResult(target, REQUEST_FILE_CHOOSER)
             true
         } catch (e: ActivityNotFoundException) {
             Log.e(TAG, "No activity found for staff-chat file chooser", e)

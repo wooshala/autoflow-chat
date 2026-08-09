@@ -19,20 +19,49 @@ const MAIN_ACTIVITY = read(
   'android-staff/app/src/main/java/com/autoflow/staff/MainActivity.kt',
 );
 
-describe('운영 채팅 첨부 UI', () => {
-  it('사진 촬영 input 이 존재한다 (accept=image/*, capture)', () => {
-    expect(CHAT_PAGE).toContain('data-testid="photo-capture-input"');
-    expect(CHAT_PAGE).toContain('accept={IMAGE_ACCEPT}');
+/**
+ * 특정 data-testid 를 가진 <input> 태그 원문을 뽑는다.
+ * onChange={(e) => …} 안에 '>' 가 들어 있어 정규식 [^>]* 로는 잘리므로,
+ * testid 위치에서 앞뒤로 <input … /> 경계를 직접 찾는다.
+ */
+function inputTag(testId: string): string {
+  const at = CHAT_PAGE.indexOf(`data-testid="${testId}"`);
+  if (at < 0) return '';
+  const start = CHAT_PAGE.lastIndexOf('<input', at);
+  const end = CHAT_PAGE.indexOf('/>', at);
+  if (start < 0 || end < 0) return '';
+  return CHAT_PAGE.slice(start, end + 2);
+}
+
+describe('운영 채팅 첨부 UI — 촬영/선택 4경로', () => {
+  const FOUR = [
+    { id: 'photo-capture-input', accept: 'IMAGE_ACCEPT', capture: true },
+    { id: 'photo-pick-input', accept: 'IMAGE_ACCEPT', capture: false },
+    { id: 'video-capture-input', accept: 'VIDEO_ACCEPT', capture: true },
+    { id: 'video-pick-input', accept: 'VIDEO_ACCEPT', capture: false },
+  ] as const;
+
+  it.each(FOUR)('$id 이 존재하고 accept=$accept', ({ id, accept }) => {
+    const tag = inputTag(id);
+    expect(tag).not.toBe('');
+    expect(tag).toContain(`accept={${accept}}`);
   });
 
-  it('동영상 촬영 input 이 별도로 존재한다 (accept=video/*, capture)', () => {
-    expect(CHAT_PAGE).toContain('data-testid="video-capture-input"');
-    expect(CHAT_PAGE).toContain('accept={VIDEO_ACCEPT}');
+  it.each(FOUR)('$id 의 capture 유무가 계약대로다 (capture=$capture)', ({ id, capture }) => {
+    const tag = inputTag(id);
+    // 선택 경로에 capture 가 붙으면 갤러리 대신 카메라가 열려 기존 파일을 못 고른다.
+    expect(tag.includes('capture="environment"')).toBe(capture);
   });
 
-  it('두 input 모두 capture="environment" 로 촬영을 요청한다', () => {
-    const captures = CHAT_PAGE.match(/capture="environment"/g) ?? [];
-    expect(captures.length).toBeGreaterThanOrEqual(2);
+  it('첨부 메뉴에 네 항목이 모두 있다', () => {
+    for (const id of ['attach-photo', 'attach-photo-pick', 'attach-video', 'attach-video-pick']) {
+      expect(CHAT_PAGE).toContain(`data-testid={item.id}`);
+      expect(CHAT_PAGE).toContain(`'${id}'`);
+    }
+    expect(CHAT_PAGE).toContain('사진 촬영');
+    expect(CHAT_PAGE).toContain('사진 선택');
+    expect(CHAT_PAGE).toContain('동영상 촬영');
+    expect(CHAT_PAGE).toContain('동영상 선택');
   });
 
   it('사진 input 의 accept 를 video 와 합치지 않는다', () => {
@@ -49,12 +78,6 @@ describe('운영 채팅 첨부 UI', () => {
     }
   });
 
-  it('첨부 메뉴에 사진 촬영과 동영상 촬영 항목이 있다', () => {
-    expect(CHAT_PAGE).toContain('data-testid="attach-photo"');
-    expect(CHAT_PAGE).toContain('data-testid="attach-video"');
-    expect(CHAT_PAGE).toContain('사진 촬영');
-    expect(CHAT_PAGE).toContain('동영상 촬영');
-  });
 });
 
 describe('Android WebView 촬영 Intent', () => {
@@ -66,10 +89,30 @@ describe('Android WebView 촬영 Intent', () => {
     expect(MAIN_ACTIVITY).toContain('MediaStore.ACTION_VIDEO_CAPTURE');
   });
 
-  it('accept 가 video/* 일 때만 동영상 촬영으로 분기한다', () => {
+  it('accept 가 video 일 때만 동영상 촬영으로 분기한다', () => {
     expect(MAIN_ACTIVITY).toContain('requestsVideo');
     expect(MAIN_ACTIVITY).toContain('it.startsWith("video/")');
     expect(MAIN_ACTIVITY).toContain('if (wantsVideo) buildVideoCaptureIntent() else buildCameraCaptureIntent()');
+  });
+
+  it('capture 여부(isCaptureEnabled)로 촬영과 선택을 가른다', () => {
+    // capture 가 없으면 촬영 인텐트를 만들지 않고 선택기로 간다 — 네 경로가 섞이지 않는다.
+    expect(MAIN_ACTIVITY).toContain('val wantsCapture = params?.isCaptureEnabled == true');
+    expect(MAIN_ACTIVITY).toContain('if (wantsCapture && hasCamera)');
+  });
+
+  it('선택 경로는 accept 에 맞는 MIME 으로 GET_CONTENT 를 연다', () => {
+    expect(MAIN_ACTIVITY).toContain('defaultPickIntent');
+    expect(MAIN_ACTIVITY).toContain('Intent.ACTION_GET_CONTENT');
+    expect(MAIN_ACTIVITY).toContain('val mime = if (wantsVideo) "video/*" else "image/*"');
+  });
+
+  it('기기 실측용 [FILE_CHOOSER] 진단 로그가 있다', () => {
+    // 추측 대신 acceptTypes/capture/선택된 action 을 기기에서 직접 읽을 수 있어야 한다.
+    expect(MAIN_ACTIVITY).toContain('[FILE_CHOOSER]');
+    for (const field of ['acceptTypes=', 'capture=', 'wantsVideo=', 'action=', 'pickType=']) {
+      expect(MAIN_ACTIVITY).toContain(field);
+    }
   });
 
   it('촬영 길이 상한을 걸어 서버 상한을 넘기 어렵게 한다', () => {
