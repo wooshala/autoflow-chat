@@ -6,6 +6,8 @@ import type { StaffLocale } from '@/lib/i18n/messages';
 
 type Props = {
   previewUrl: string;
+  /** 'video' 면 재생 가능한 미리보기로 바꾼다. 기본값은 기존 동작(사진). */
+  mediaKind?: 'image' | 'video';
   photoRoom: string;
   selectedStatusText: string;
   locale: StaffLocale;
@@ -22,6 +24,7 @@ type Props = {
 
 export default function PhotoConfirmPanel({
   previewUrl,
+  mediaKind = 'image',
   photoRoom,
   selectedStatusText,
   locale,
@@ -38,11 +41,22 @@ export default function PhotoConfirmPanel({
   return (
     <div className="border-t border-orange-200 bg-orange-50/80 px-2 py-2">
       <div className="mx-auto max-w-md space-y-2">
-        <img
-          src={previewUrl}
-          alt=""
-          className="max-h-32 w-full rounded-xl border border-orange-200 object-contain bg-white sm:max-h-40"
-        />
+        {mediaKind === 'video' ? (
+          <video
+            src={previewUrl}
+            controls
+            playsInline
+            preload="metadata"
+            data-testid="staff-composer-video-preview"
+            className="max-h-32 w-full rounded-xl border border-orange-200 bg-black object-contain sm:max-h-40"
+          />
+        ) : (
+          <img
+            src={previewUrl}
+            alt=""
+            className="max-h-32 w-full rounded-xl border border-orange-200 object-contain bg-white sm:max-h-40"
+          />
+        )}
         {selectedStatusText ? (
           <p className="rounded-lg bg-white px-3 py-2 text-center text-base font-semibold text-gray-800">
             {photoRoom ? `${photoRoom}${locale === 'ko' ? '호 ' : ' '}` : ''}

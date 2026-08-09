@@ -85,6 +85,15 @@ import {
 } from '@/lib/chat/staffChatSelfMessage';
 import QuickPhraseBar from '@/components/staff-chat/QuickPhraseBar';
 import { ChatPhotoLightboxProvider, ChatPhotoThumb } from '@/components/chat/ChatPhotoLightbox';
+import { ChatVideoPlayer } from '@/components/chat/ChatVideoPlayer';
+import {
+  IMAGE_ACCEPT,
+  VIDEO_ACCEPT,
+  type ChatMediaKind,
+  detectChatMediaKind,
+  isVideoMessage,
+  validateChatMedia
+} from '@/lib/chat/media';
 import MobileQuickPhraseEditor from '@/components/staff-chat/MobileQuickPhraseEditor';
 import PhotoConfirmPanel from '@/components/staff-chat/PhotoConfirmPanel';
 import RoomSelectorBar from '@/components/staff-chat/RoomSelectorBar';
@@ -182,6 +191,9 @@ function StaffChatPageInner() {
   const [listError, setListError] = useState<string | null>(null);
   const [pendingPhraseKey, setPendingPhraseKey] = useState<string | null>(null);
   const [pendingPhoto, setPendingPhoto] = useState<{ file: File; previewUrl: string } | null>(null);
+  /** 첨부 대기 파일이 사진인지 동영상인지 — 확인 패널 미리보기 분기용 */
+  const [pendingKind, setPendingKind] = useState<ChatMediaKind>('image');
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [photoRoom, setPhotoRoom] = useState('');
   const [photoStatusText, setPhotoStatusText] = useState('');
   const [photoPhraseKey, setPhotoPhraseKey] = useState<string | null>(null);
@@ -251,6 +263,9 @@ function StaffChatPageInner() {
   const composerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const photoPickInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
+  const videoPickInputRef = useRef<HTMLInputElement | null>(null);
   const notifyHandledIdsRef = useRef<Set<string>>(new Set());
   const ttsCompletedIdsRef = useRef<Set<string>>(new Set());
   const ttsFailedIdsRef = useRef<Set<string>>(new Set());
@@ -1263,7 +1278,10 @@ function StaffChatPageInner() {
         const fd = new FormData();
         fd.append('user_id', chatSendUserId);
         fd.append('actor_name', actorName);
-        fd.append('message', msg || (image ? (r ? `${r}호 사진` : '사진') : ''));
+        // 캡션이 비어 있을 때의 기본 문구. 동영상인데 "사진"으로 저장되면
+        // 운영 콘솔·알림·검색에서 잘못 표기되므로 미디어 종류로 분기한다.
+        const mediaLabel = image && detectChatMediaKind(image.type) === 'video' ? '동영상' : '사진';
+        fd.append('message', msg || (image ? (r ? `${r}호 ${mediaLabel}` : mediaLabel) : ''));
         fd.append('sender_side', 'mobile');
         fd.append('sender_name', actorName);
         if (inviteSession?.inviteId) fd.append('token_id', inviteSession.inviteId);
@@ -1374,6 +1392,7 @@ function StaffChatPageInner() {
       }
     }
     setPendingPhoto(null);
+    setPendingKind('image');
     setPhotoRoom('');
     setPhotoStatusText('');
     setPhotoPhraseKey(null);
@@ -1541,16 +1560,29 @@ function StaffChatPageInner() {
   }
 
   function handlePhotoClick() {
-    photoInputRef.current?.click();
+    // 카메라 아이콘은 촬영으로 직행하지 않고 4경로 메뉴를 연다.
+    setAttachMenuOpen((v) => !v);
   }
 
   function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    const check = validateChatMedia({ type: file.type, size: file.size });
+    if (!check.ok) {
+      console.log('[STAFF_CHAT_MEDIA_REJECTED]', {
+        code: check.rejection.code,
+        mime_type: file.type || null,
+        file_size: file.size
+      });
+      setToast({ kind: 'error', msg: check.rejection.message });
+      return;
+    }
+    setPendingKind(check.kind);
     console.log('[STAFF_CHAT_PHOTO_SELECTED]', {
       file_size: file.size,
       mime_type: file.type,
+      media_kind: check.kind,
       last_modified: file.lastModified,
       has_preview: true
     });
@@ -1975,12 +2007,20 @@ function StaffChatPageInner() {
                       ) : null}
                     </div>
                     {m.image_url ? (
-                      <ChatPhotoThumb
-                        src={m.image_url}
-                        alt=""
-                        className="mt-1"
-                        imgClassName="max-h-40 rounded-lg object-cover"
-                      />
+                      isVideoMessage(m) ? (
+                        <ChatVideoPlayer
+                          src={m.image_url}
+                          className="mt-1"
+                          videoClassName="max-h-40 w-full rounded-lg bg-black object-contain"
+                        />
+                      ) : (
+                        <ChatPhotoThumb
+                          src={m.image_url}
+                          alt=""
+                          className="mt-1"
+                          imgClassName="max-h-40 rounded-lg object-cover"
+                        />
+                      )
                     ) : null}
                     {primary ? (
                       <div
@@ -2047,6 +2087,7 @@ function StaffChatPageInner() {
         {pendingPhoto ? (
           <PhotoConfirmPanel
             previewUrl={pendingPhoto.previewUrl}
+            mediaKind={pendingKind}
             photoRoom={photoRoom}
             selectedStatusText={photoStatusText}
             locale={locale}
@@ -2082,23 +2123,102 @@ function StaffChatPageInner() {
           onEditClick={() => setShowPhraseEditor(true)}
         />
         <div className="mx-auto flex max-w-md items-center gap-1.5 px-2 py-2">
+          {/*
+            촬영과 기존 파일 선택을 네 경로로 분리한다. accept 를 합치거나 선택 경로에
+            capture 를 붙이면 Android 가 카메라로 직행해 갤러리를 고를 수 없게 된다.
+          */}
           <input
             ref={photoInputRef}
             type="file"
-            accept="image/*"
+            accept={IMAGE_ACCEPT}
             capture="environment"
+            data-testid="staff-photo-capture-input"
             className="hidden"
             onChange={handlePhotoSelected}
           />
-          <button
-            type="button"
-            onClick={handlePhotoClick}
-            disabled={sending}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-2xl active:bg-gray-200 disabled:opacity-40"
-            aria-label="사진"
-          >
-            📷
-          </button>
+          <input
+            ref={photoPickInputRef}
+            type="file"
+            accept={IMAGE_ACCEPT}
+            data-testid="staff-photo-pick-input"
+            className="hidden"
+            onChange={handlePhotoSelected}
+          />
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept={VIDEO_ACCEPT}
+            capture="environment"
+            data-testid="staff-video-capture-input"
+            className="hidden"
+            onChange={handlePhotoSelected}
+          />
+          <input
+            ref={videoPickInputRef}
+            type="file"
+            accept={VIDEO_ACCEPT}
+            data-testid="staff-video-pick-input"
+            className="hidden"
+            onChange={handlePhotoSelected}
+          />
+          <div className="relative shrink-0">
+            {attachMenuOpen ? (
+              <>
+                <button
+                  type="button"
+                  aria-label="첨부 메뉴 닫기"
+                  onClick={() => setAttachMenuOpen(false)}
+                  className="fixed inset-0 z-[55] cursor-default"
+                />
+                {/*
+                  composer 컨테이너가 overflow-y-auto 라 absolute 메뉴는 잘린다.
+                  position:fixed 로 그 클리핑을 벗어나고, composer 전체 높이 위로 띄워
+                  객실/상태 선택 바와 겹치지 않게 한다. (부모에 transform 이 없어 fixed 가 뷰포트 기준으로 동작)
+                */}
+                <div
+                  role="menu"
+                  style={{ bottom: composerHeight + keyboardOffset + 8, left: 12 }}
+                  className="fixed z-[60] w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
+                >
+                  {(
+                    [
+                      { id: 'staff-attach-photo', label: '📷 사진 촬영', ref: photoInputRef },
+                      { id: 'staff-attach-photo-pick', label: '🖼 사진 선택', ref: photoPickInputRef },
+                      { id: 'staff-attach-video', label: '🎥 동영상 촬영', ref: videoInputRef },
+                      { id: 'staff-attach-video-pick', label: '🎞 동영상 선택', ref: videoPickInputRef }
+                    ] as const
+                  ).map((item, i) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="menuitem"
+                      data-testid={item.id}
+                      onClick={() => {
+                        setAttachMenuOpen(false);
+                        item.ref.current?.click();
+                      }}
+                      className={`block w-full px-3 py-3 text-left text-base text-gray-900 active:bg-gray-100 ${
+                        i > 0 ? 'border-t border-gray-100' : ''
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            <button
+              type="button"
+              onClick={handlePhotoClick}
+              disabled={sending}
+              aria-haspopup="menu"
+              aria-expanded={attachMenuOpen}
+              className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-2xl active:bg-gray-200 disabled:opacity-40"
+              aria-label="첨부"
+            >
+              📷
+            </button>
+          </div>
           {stt.available ? (
             <button
               type="button"

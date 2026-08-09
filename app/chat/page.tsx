@@ -20,6 +20,14 @@ import { useChatRealtime } from '@/lib/hooks/useChatRealtime';
 import { useChatWatchdog } from '@/lib/hooks/useChatWatchdog';
 import { isBrowserNotificationSupported, showBrowserNotification } from '@/lib/chat/browserNotifications';
 import {
+  IMAGE_ACCEPT,
+  VIDEO_ACCEPT,
+  type ChatMediaKind,
+  isVideoMessage,
+  messageTypeFor,
+  validateChatMedia
+} from '@/lib/chat/media';
+import {
   createClientNonce,
   logSendApiResponded,
   logSendClick,
@@ -130,6 +138,9 @@ export default function ChatPage() {
   const [keypadNum, setKeypadNum] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  /** 첨부된 파일이 사진인지 동영상인지 — 미리보기·전송 표시에 사용 */
+  const [attachKind, setAttachKind] = useState<ChatMediaKind | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [issueType, setIssueType] = useState<IssueType>('설비');
@@ -152,6 +163,9 @@ export default function ChatPage() {
   /** soft delete 진행 중 message id — 중복 요청 방지 */
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const photoPickRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
+  const videoPickRef = useRef<HTMLInputElement>(null);
   const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'dev-local';
   const lostFoundEnabled = process.env.NEXT_PUBLIC_OPS_LOST_FOUND_ENABLED === '1';
   /** Phase 1.4: 좌·우 패널 드래그 크기 조절(독립 flag, 기본 OFF). OFF면 기존 고정폭 레이아웃 그대로. */
@@ -480,7 +494,7 @@ export default function ChatPage() {
       id: optimisticId,
       user_id: chatSendUserId,
       message: text.trim(),
-      message_type: photo ? 'image' : 'text',
+      message_type: photo && attachKind ? messageTypeFor(attachKind) : 'text',
       sender_side: getDeviceSide(),
       priority: urgentMode ? 'urgent' : 'normal',
       room_no: roomNo || null,
@@ -865,15 +879,40 @@ export default function ChatPage() {
     } catch {}
     setPhoto(null);
     setPreview(null);
+    setAttachKind(null);
   }
 
   function resetComposer() {
     setText('');
     setPhoto(null);
     setPreview(null);
+    setAttachKind(null);
     setRoomNo('');
     setKeypadNum('');
     setShowMaintenance(false);
+  }
+
+  /**
+   * 사진/동영상 input 공용 핸들러. 서버가 다시 검증하지만, 업로드 전에 걸러
+   * 4MB 초과 동영상으로 요청을 낭비하지 않고 사용자에게 즉시 이유를 알린다.
+   */
+  function acceptMediaFile(file: File) {
+    const check = validateChatMedia({ type: file.type, size: file.size });
+    if (!check.ok) {
+      log.warn('[CHAT_MEDIA_CLIENT_REJECTED]', {
+        code: check.rejection.code,
+        type: file.type || null,
+        size: file.size
+      });
+      alert(check.rejection.message);
+      return;
+    }
+    try {
+      if (preview) URL.revokeObjectURL(preview);
+    } catch {}
+    setPhoto(file);
+    setAttachKind(check.kind);
+    setPreview(URL.createObjectURL(file));
   }
 
   const logDeleteClientDebug = (...args: unknown[]) => {
@@ -928,7 +967,8 @@ export default function ChatPage() {
   const consoleParticipants = useMemo(() => buildParticipantsFromMessages(messages), [messages]);
   const consoleRooms = useMemo(() => buildRoomsFromMessages(messages), [messages]);
   const recentPhotoMessage = useMemo(() => {
-    const list = messages.filter((m) => m.image_url && !m.is_deleted);
+    // 운영 콘솔의 사진 액션(분실물/유지보수 등록)은 사진 전용 — 동영상은 제외한다.
+    const list = messages.filter((m) => m.image_url && !m.is_deleted && !isVideoMessage(m));
     const filtered = consoleRoomNo ? list.filter((m) => m.room_no === consoleRoomNo) : list;
     return filtered.length > 0 ? filtered[filtered.length - 1]! : null;
   }, [messages, consoleRoomNo]);
@@ -1015,7 +1055,9 @@ export default function ChatPage() {
           </button>
         )}
         {photo && (
-          <span className="rounded-full bg-emerald-900/40 px-2 py-1 text-xs text-emerald-400">사진 선택됨</span>
+          <span className="rounded-full bg-emerald-900/40 px-2 py-1 text-xs text-emerald-400">
+            {attachKind === 'video' ? '동영상 선택됨' : '사진 선택됨'}
+          </span>
         )}
         {!showMaintenance && (roomNo || photo) && (
           <button
@@ -1026,11 +1068,77 @@ export default function ChatPage() {
           </button>
         )}
       </div>
-      {preview && <img src={preview} alt="preview" className="mb-2 h-20 w-20 rounded-xl object-cover" />}
+      {preview &&
+        (attachKind === 'video' ? (
+          <video
+            src={preview}
+            controls
+            playsInline
+            preload="metadata"
+            data-testid="composer-video-preview"
+            className="mb-2 h-24 w-32 rounded-xl bg-black object-contain"
+          />
+        ) : (
+          <img src={preview} alt="preview" className="mb-2 h-20 w-20 rounded-xl object-cover" />
+        ))}
       <div className="flex items-end gap-2">
-        <button type="button" onClick={() => fileRef.current?.click()} className="h-11 w-11 shrink-0 rounded-full bg-gray-700 text-xl">
-          📷
-        </button>
+        <div className="relative shrink-0">
+          {attachMenuOpen && (
+            <>
+              {/* 바깥 클릭으로 닫기 */}
+              <button
+                type="button"
+                aria-label="첨부 메뉴 닫기"
+                onClick={() => setAttachMenuOpen(false)}
+                className="fixed inset-0 z-10 cursor-default"
+              />
+              {/*
+                촬영과 기존 파일 선택을 네 경로로 명시한다. OS chooser 가 갤러리를
+                함께 보여줄 것이라고 기대하지 않는다 — 기기에 따라 촬영으로 직행해
+                기존 영상을 고를 방법이 사라진다.
+              */}
+              <div
+                role="menu"
+                className="absolute bottom-12 left-0 z-20 w-44 overflow-hidden rounded-xl border border-gray-600 bg-gray-800 shadow-lg"
+              >
+                {(
+                  [
+                    { id: 'attach-photo', label: '📷 사진 촬영', ref: fileRef },
+                    { id: 'attach-photo-pick', label: '🖼 사진 선택', ref: photoPickRef },
+                    { id: 'attach-video', label: '🎥 동영상 촬영', ref: videoRef },
+                    { id: 'attach-video-pick', label: '🎞 동영상 선택', ref: videoPickRef },
+                  ] as const
+                ).map((item, i) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="menuitem"
+                    data-testid={item.id}
+                    onClick={() => {
+                      setAttachMenuOpen(false);
+                      item.ref.current?.click();
+                    }}
+                    className={`block w-full px-3 py-3 text-left text-sm text-white hover:bg-gray-700 ${
+                      i > 0 ? 'border-t border-gray-700' : ''
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          <button
+            type="button"
+            aria-label="첨부"
+            aria-haspopup="menu"
+            aria-expanded={attachMenuOpen}
+            onClick={() => setAttachMenuOpen((v) => !v)}
+            className="h-11 w-11 rounded-full bg-gray-700 text-xl"
+          >
+            📷
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => setShowEmojiPicker((v) => !v)}
@@ -1083,17 +1191,63 @@ export default function ChatPage() {
         >
           {submitting ? '…' : '▶'}
         </button>
+        {/*
+          사진/동영상 input 은 반드시 분리한다. accept 를 "image/*,video/*" 로 합치면
+          Android 가 카메라로 직행하지 않고 선택기를 띄워 기존 사진 촬영 UX 가 느려진다.
+        */}
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_ACCEPT}
           capture="environment"
+          data-testid="photo-capture-input"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
+            e.target.value = '';
             if (!file) return;
-            setPhoto(file);
-            setPreview(URL.createObjectURL(file));
+            void acceptMediaFile(file);
+          }}
+        />
+        <input
+          ref={videoRef}
+          type="file"
+          accept={VIDEO_ACCEPT}
+          capture="environment"
+          data-testid="video-capture-input"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            void acceptMediaFile(file);
+          }}
+        />
+        {/* 기존 파일 선택 — capture 를 붙이지 않아야 갤러리/문서 선택기가 열린다. */}
+        <input
+          ref={photoPickRef}
+          type="file"
+          accept={IMAGE_ACCEPT}
+          data-testid="photo-pick-input"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            void acceptMediaFile(file);
+          }}
+        />
+        <input
+          ref={videoPickRef}
+          type="file"
+          accept={VIDEO_ACCEPT}
+          data-testid="video-pick-input"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            void acceptMediaFile(file);
           }}
         />
       </div>
