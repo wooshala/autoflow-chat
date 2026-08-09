@@ -109,6 +109,38 @@ fn focus_main(app: &tauri::AppHandle) {
     set_alert(app, false);
 }
 
+/// Focus the shell and re-navigate `/chat` so a duplicate launch picks up a
+/// newly deployed frontend.
+///
+/// X hides to tray instead of quitting, and single-instance kills the second
+/// process and only focuses the existing window — so the WebView can keep
+/// running a frontend from days ago even after the operator "restarts" the app.
+/// The same cache-bust query used at cold start is reused here.
+///
+/// Only for a duplicate EXE launch. Tray clicks, plain focus and foreground
+/// restores must NOT reload — that would discard a half-typed message.
+/// Offline is left alone for the same reason: replacing a usable (if stale)
+/// screen with an error page is worse than staying stale.
+fn focus_main_and_refresh(app: &tauri::AppHandle) {
+    focus_main(app);
+
+    if !server_reachable() {
+        log::info!("[RELAUNCH_REFRESH_SKIP] reason=unreachable");
+        return;
+    }
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    // Never log the URL — it carries the afts cache-bust value.
+    match chat_url_with_optional_guest_room(None).parse::<url::Url>() {
+        Ok(u) => match w.navigate(u) {
+            Ok(()) => log::info!("[RELAUNCH_REFRESH] ok"),
+            Err(e) => log::warn!("[RELAUNCH_REFRESH_ERR] {}", e),
+        },
+        Err(e) => log::warn!("[RELAUNCH_REFRESH_PARSE_ERR] {}", e),
+    }
+}
+
 /// Parse `guestRoom` from `autoflow://chat?guestRoom=201` (digits, 3–4 chars).
 fn parse_guest_room_from_deep_link(url_str: &str) -> Option<String> {
     let url = url::Url::parse(url_str.trim()).ok()?;
@@ -426,9 +458,11 @@ pub fn run() {
                 room.as_deref()
             );
             if let Some(room) = room {
+                // Deep link already navigates (with cache-bust) to the target
+                // room — keep that destination, do not overwrite with /chat.
                 open_guest_room_in_shell(app, &room);
             } else {
-                focus_main(app);
+                focus_main_and_refresh(app);
             }
         }));
     }
