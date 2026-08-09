@@ -80,6 +80,69 @@ describe('운영 채팅 첨부 UI — 촬영/선택 4경로', () => {
 
 });
 
+/**
+ * Android 직원 앱이 실제로 로드하는 화면은 /staff-chat 이다.
+ * /chat 에만 4경로가 있으면 실기기에서는 여전히 카메라로 직행한다.
+ */
+describe('직원 채팅(/staff-chat) 첨부 UI — 촬영/선택 4경로', () => {
+  const STAFF = readFileSync(join(ROOT, 'app/staff-chat/StaffChatClient.tsx'), 'utf8');
+
+  function staffInputTag(testId: string): string {
+    const at = STAFF.indexOf(`data-testid="${testId}"`);
+    if (at < 0) return '';
+    const start = STAFF.lastIndexOf('<input', at);
+    const end = STAFF.indexOf('/>', at);
+    if (start < 0 || end < 0) return '';
+    return STAFF.slice(start, end + 2);
+  }
+
+  const FOUR = [
+    { id: 'staff-photo-capture-input', accept: 'IMAGE_ACCEPT', capture: true },
+    { id: 'staff-photo-pick-input', accept: 'IMAGE_ACCEPT', capture: false },
+    { id: 'staff-video-capture-input', accept: 'VIDEO_ACCEPT', capture: true },
+    { id: 'staff-video-pick-input', accept: 'VIDEO_ACCEPT', capture: false },
+  ] as const;
+
+  it.each(FOUR)('$id 이 존재하고 accept=$accept', ({ id, accept }) => {
+    const tag = staffInputTag(id);
+    expect(tag).not.toBe('');
+    expect(tag).toContain(`accept={${accept}}`);
+  });
+
+  it.each(FOUR)('$id 의 capture 유무가 계약대로다 (capture=$capture)', ({ id, capture }) => {
+    expect(staffInputTag(id).includes('capture="environment"')).toBe(capture);
+  });
+
+  it('카메라 버튼이 input 을 직접 클릭하지 않고 메뉴를 연다', () => {
+    // 회귀 방지: photoInputRef.current?.click() 직행이 되살아나면 실기기에서 메뉴가 사라진다.
+    expect(STAFF).toContain('setAttachMenuOpen((v) => !v)');
+    expect(STAFF).not.toMatch(/function handlePhotoClick\(\)\s*\{\s*photoInputRef\.current\?\.click\(\);/);
+  });
+
+  it('메뉴에 네 항목이 모두 있다', () => {
+    for (const id of [
+      'staff-attach-photo',
+      'staff-attach-photo-pick',
+      'staff-attach-video',
+      'staff-attach-video-pick',
+    ]) {
+      expect(STAFF).toContain(`'${id}'`);
+    }
+  });
+
+  it('선택된 파일을 서버 정책으로 먼저 검증한다', () => {
+    expect(STAFF).toContain('validateChatMedia({ type: file.type, size: file.size })');
+  });
+
+  it('동영상 첨부는 확인 패널에서 재생 가능한 미리보기로 보인다', () => {
+    expect(STAFF).toContain('mediaKind={pendingKind}');
+    const panel = readFileSync(join(ROOT, 'components/staff-chat/PhotoConfirmPanel.tsx'), 'utf8');
+    expect(panel).toContain("mediaKind === 'video'");
+    expect(panel).toContain('data-testid="staff-composer-video-preview"');
+    expect(panel).toContain('<img'); // 기존 사진 미리보기 유지
+  });
+});
+
 describe('Android WebView 촬영 Intent', () => {
   it('기존 사진 촬영(ACTION_IMAGE_CAPTURE)이 유지된다', () => {
     expect(MAIN_ACTIVITY).toContain('MediaStore.ACTION_IMAGE_CAPTURE');
