@@ -582,7 +582,7 @@ pub fn run() {
             let cold_guest_room = guest_room_from_argv(&boot_argv);
             // Never log argv or navigation URLs (afts cache-bust must stay out of logs).
             log::info!(
-                "[AUTOFLOW_BOOT] reachable={} shell=0.2.2 cold_guest_room={:?}",
+                "[AUTOFLOW_BOOT] reachable={} shell=0.2.3 cold_guest_room={:?}",
                 reachable,
                 cold_guest_room.as_deref()
             );
