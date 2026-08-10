@@ -44,19 +44,37 @@ describe('single-instance 재실행 분기', () => {
   });
 });
 
+/** 함수 경계(열 0 의 닫는 중괄호)까지만 잘라 다음 함수를 오검출하지 않는다. */
+function fnBody(signature: string): string {
+  const start = LIB_RS.indexOf(signature);
+  expect(start).toBeGreaterThan(-1);
+  const end = LIB_RS.indexOf('\n}\n', start);
+  expect(end).toBeGreaterThan(start);
+  return LIB_RS.slice(start, end);
+}
+
 describe('재탐색 안전 조건', () => {
-  const fn = LIB_RS.slice(
-    LIB_RS.indexOf('fn focus_main_and_refresh'),
-    LIB_RS.indexOf('fn focus_main_and_refresh') + 1200,
-  );
+  const fn = fnBody('fn focus_main_and_refresh');
 
   it('서버에 도달 못 하면 재탐색하지 않는다 (오류 페이지로 화면을 파괴하지 않음)', () => {
     expect(fn).toContain('if !server_reachable()');
     expect(fn).toContain('return;');
   });
 
-  it('콜드 스타트와 같은 캐시버스트 URL 헬퍼를 재사용한다', () => {
-    expect(fn).toContain('chat_url_with_optional_guest_room(None)');
+  it('현재 화면을 버리지 않는다 — 기본 URL 을 새로 만드는 대신 현재 URL 을 갱신한다', () => {
+    // 재탐색의 목적은 최신 프런트엔드 반영이지 보던 객실을 닫는 게 아니다.
+    expect(fn).toContain('w.url()');
+    expect(fn).toContain('with_fresh_cache_bust(&u, cache_bust_ts())');
+  });
+
+  it('현재 URL 을 쓸 수 없을 때만 기본 URL 로 내려간다', () => {
+    expect(fn).toContain('[RELAUNCH_REFRESH_FALLBACK]');
+    // 기본 URL 은 fallback 안에서만 등장해야 한다.
+    const fallbackArm = fn.slice(fn.indexOf('[RELAUNCH_REFRESH_FALLBACK]'));
+    expect(fallbackArm).toContain('chat_url_with_optional_guest_room(None)');
+    expect(fn.slice(0, fn.indexOf('[RELAUNCH_REFRESH_FALLBACK]'))).not.toContain(
+      'chat_url_with_optional_guest_room',
+    );
   });
 
   it('URL 을 로그에 남기지 않는다 (afts 값 노출 금지)', () => {
@@ -73,6 +91,39 @@ describe('재탐색 안전 조건', () => {
   it('쿠키·localStorage·캐시를 삭제하지 않는다', () => {
     for (const forbidden of ['clear_all_browsing_data', 'clear_cache', 'delete_cookie', 'localStorage']) {
       expect(fn).not.toContain(forbidden);
+    }
+  });
+});
+
+/**
+ * URL 재작성 자체는 Rust 순수 함수라 `cargo test --lib` 이 진짜 계약 테스트다.
+ * 여기서는 그 테스트가 사라지지 않았는지, 그리고 origin 검증·afts 교체가
+ * 헬퍼 안에 남아 있는지만 지킨다.
+ */
+describe('캐시버스트 URL 헬퍼', () => {
+  const helper = fnBody('fn with_fresh_cache_bust');
+
+  it('운영 origin 인지 먼저 검증한다', () => {
+    expect(helper).toContain('current.origin() != expected.origin()');
+    expect(helper).toContain('return None');
+  });
+
+  it('기존 afts 를 제거한 뒤 하나만 다시 붙인다 (중복 금지)', () => {
+    expect(helper).toContain(".filter(|(k, _)| k != \"afts\")");
+    expect(helper.match(/append_pair\("afts"/g) ?? []).toHaveLength(1);
+  });
+
+  it('Rust 계약 테스트가 존재한다', () => {
+    for (const name of [
+      'adds_cache_bust_when_absent',
+      'keeps_guest_room_so_relaunch_does_not_reset_the_screen',
+      'replaces_an_existing_cache_bust_instead_of_appending',
+      'keeps_other_query_parameters',
+      'keeps_the_fragment',
+      'rejects_a_foreign_origin',
+      'rejects_non_http_urls',
+    ]) {
+      expect(LIB_RS).toContain(`fn ${name}()`);
     }
   });
 });

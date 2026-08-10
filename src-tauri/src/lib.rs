@@ -109,8 +109,36 @@ fn focus_main(app: &tauri::AppHandle) {
     set_alert(app, false);
 }
 
-/// Focus the shell and re-navigate `/chat` so a duplicate launch picks up a
-/// newly deployed frontend.
+/// Rebuild `current` with a fresh cache-bust, keeping path, the other query
+/// parameters and the fragment. `None` when the URL is not our own origin.
+///
+/// Re-navigating is meant to pick up a new frontend, not to reset what the
+/// operator is looking at — so `?guestRoom=201` must survive the reload. An
+/// existing `afts` is replaced, never appended twice.
+fn with_fresh_cache_bust(current: &url::Url, ts: u64) -> Option<url::Url> {
+    let expected = url::Url::parse(REMOTE_CHAT_URL).ok()?;
+    if current.origin() != expected.origin() {
+        return None;
+    }
+    let mut out = current.clone();
+    let kept: Vec<(String, String)> = current
+        .query_pairs()
+        .filter(|(k, _)| k != "afts")
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    {
+        let mut q = out.query_pairs_mut();
+        q.clear();
+        for (k, v) in &kept {
+            q.append_pair(k, v);
+        }
+        q.append_pair("afts", &ts.to_string());
+    }
+    Some(out)
+}
+
+/// Focus the shell and re-navigate so a duplicate launch picks up a newly
+/// deployed frontend, without moving the operator off the current screen.
 ///
 /// X hides to tray instead of quitting, and single-instance kills the second
 /// process and only focuses the existing window — so the WebView can keep
@@ -131,13 +159,25 @@ fn focus_main_and_refresh(app: &tauri::AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
         return;
     };
-    // Never log the URL — it carries the afts cache-bust value.
-    match chat_url_with_optional_guest_room(None).parse::<url::Url>() {
-        Ok(u) => match w.navigate(u) {
-            Ok(()) => log::info!("[RELAUNCH_REFRESH] ok"),
-            Err(e) => log::warn!("[RELAUNCH_REFRESH_ERR] {}", e),
-        },
-        Err(e) => log::warn!("[RELAUNCH_REFRESH_PARSE_ERR] {}", e),
+    // Never log a URL — it carries the afts cache-bust value.
+    let target = match w.url().ok().and_then(|u| with_fresh_cache_bust(&u, cache_bust_ts())) {
+        Some(u) => u,
+        None => {
+            // Unreadable URL, or an origin we did not put there — do not reload
+            // a foreign page; fall back to the known-good chat URL.
+            log::info!("[RELAUNCH_REFRESH_FALLBACK] reason=url_unusable");
+            match chat_url_with_optional_guest_room(None).parse::<url::Url>() {
+                Ok(u) => u,
+                Err(e) => {
+                    log::warn!("[RELAUNCH_REFRESH_PARSE_ERR] {}", e);
+                    return;
+                }
+            }
+        }
+    };
+    match w.navigate(target) {
+        Ok(()) => log::info!("[RELAUNCH_REFRESH] ok"),
+        Err(e) => log::warn!("[RELAUNCH_REFRESH_ERR] {}", e),
     }
 }
 
@@ -591,4 +631,111 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn u(s: &str) -> url::Url {
+        url::Url::parse(s).expect("test url")
+    }
+
+    /// afts 하나만 뽑는다. 중복이면 개수로 드러난다.
+    fn afts(url: &url::Url) -> Vec<String> {
+        url.query_pairs()
+            .filter(|(k, _)| k == "afts")
+            .map(|(_, v)| v.into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn adds_cache_bust_when_absent() {
+        let out = with_fresh_cache_bust(&u("https://autoflow-mvp.vercel.app/chat"), 111).unwrap();
+        assert_eq!(out.path(), "/chat");
+        assert_eq!(afts(&out), vec!["111"]);
+    }
+
+    #[test]
+    fn keeps_guest_room_so_relaunch_does_not_reset_the_screen() {
+        let out = with_fresh_cache_bust(
+            &u("https://autoflow-mvp.vercel.app/chat?guestRoom=201"),
+            222,
+        )
+        .unwrap();
+        assert_eq!(out.path(), "/chat");
+        assert_eq!(
+            out.query_pairs()
+                .find(|(k, _)| k == "guestRoom")
+                .map(|(_, v)| v.into_owned()),
+            Some("201".to_string())
+        );
+        assert_eq!(afts(&out), vec!["222"]);
+    }
+
+    #[test]
+    fn replaces_an_existing_cache_bust_instead_of_appending() {
+        let out = with_fresh_cache_bust(
+            &u("https://autoflow-mvp.vercel.app/chat?guestRoom=201&afts=1000"),
+            333,
+        )
+        .unwrap();
+        // 중복되면 매 재실행마다 URL 이 길어지고 서버 로그가 오염된다.
+        assert_eq!(afts(&out), vec!["333"]);
+    }
+
+    #[test]
+    fn keeps_other_query_parameters() {
+        let out = with_fresh_cache_bust(
+            &u("https://autoflow-mvp.vercel.app/chat?guestRoom=201&lang=ko&afts=9"),
+            444,
+        )
+        .unwrap();
+        let kept: Vec<(String, String)> = out
+            .query_pairs()
+            .filter(|(k, _)| k != "afts")
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert_eq!(
+            kept,
+            vec![
+                ("guestRoom".to_string(), "201".to_string()),
+                ("lang".to_string(), "ko".to_string())
+            ]
+        );
+        assert_eq!(afts(&out), vec!["444"]);
+    }
+
+    #[test]
+    fn keeps_the_fragment() {
+        let out = with_fresh_cache_bust(
+            &u("https://autoflow-mvp.vercel.app/chat?guestRoom=201#thread-7"),
+            555,
+        )
+        .unwrap();
+        assert_eq!(out.fragment(), Some("thread-7"));
+    }
+
+    #[test]
+    fn keeps_a_non_chat_path_on_our_own_origin() {
+        let out = with_fresh_cache_bust(&u("https://autoflow-mvp.vercel.app/staff-chat"), 666)
+            .unwrap();
+        assert_eq!(out.path(), "/staff-chat");
+        assert_eq!(afts(&out), vec!["666"]);
+    }
+
+    #[test]
+    fn rejects_a_foreign_origin() {
+        // 예상 못 한 origin 을 그대로 재탐색하면 외부 페이지를 새로 띄우게 된다.
+        assert!(with_fresh_cache_bust(&u("https://evil.example.com/chat"), 777).is_none());
+        assert!(with_fresh_cache_bust(&u("http://autoflow-mvp.vercel.app/chat"), 777).is_none());
+        assert!(with_fresh_cache_bust(&u("https://autoflow-mvp.vercel.app.evil.com/chat"), 777)
+            .is_none());
+    }
+
+    #[test]
+    fn rejects_non_http_urls() {
+        assert!(with_fresh_cache_bust(&u("about:blank"), 888).is_none());
+        assert!(with_fresh_cache_bust(&u("file:///C:/tmp/x.html"), 888).is_none());
+    }
 }
