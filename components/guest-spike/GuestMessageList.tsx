@@ -6,7 +6,7 @@
 //
 // TODO(canonical-namespace): MessageBubble → GuestMessageBubble, guest-spike → guest-chat.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { buildMessageViewModel } from '@/lib/guest-spike/messageViewModel';
 import type { GuestSpikeMsg } from '@/lib/guest-spike/api';
@@ -21,6 +21,8 @@ export function GuestMessageList({
   ownLabel,
   otherLabel,
   emptyText,
+  onDeleteMessage,
+  canDeleteMessage,
 }: {
   messages: GuestSpikeMsg[];
   viewerLang: string;
@@ -29,8 +31,13 @@ export function GuestMessageList({
   ownLabel: string;
   otherLabel: string;
   emptyText: string;
+  onDeleteMessage?: (msg: GuestSpikeMsg) => void | Promise<void>;
+  /** Extra gate (e.g. admin can delete others). Default: own + not deleted. */
+  canDeleteMessage?: (msg: GuestSpikeMsg) => boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   useEffect(() => {
     ref.current?.scrollTo({ top: ref.current.scrollHeight });
   }, [messages.length]);
@@ -45,6 +52,12 @@ export function GuestMessageList({
       )}
       {messages.map((m) => {
         const own = m.sender === ownSender; // layout only — NOT text selection
+        const deleted = Boolean(m.is_deleted);
+        const canDelete =
+          !deleted &&
+          typeof onDeleteMessage === 'function' &&
+          (canDeleteMessage ? canDeleteMessage(m) : own);
+
         return (
           <MessageBubble
             key={m.id}
@@ -52,7 +65,22 @@ export function GuestMessageList({
             align={own ? 'right' : 'left'}
             own={own}
             label={own ? ownLabel : otherLabel}
-            time={formatKSTShort(m.created_at)} // same MM/DD HH:mm formatter as the staff ops chat
+            time={formatKSTShort(m.created_at)}
+            canDelete={canDelete}
+            deleteBusy={deletingId === m.id}
+            onDelete={
+              canDelete
+                ? async () => {
+                    if (!confirm('삭제하시겠습니까?')) return;
+                    setDeletingId(m.id);
+                    try {
+                      await onDeleteMessage!(m);
+                    } finally {
+                      setDeletingId(null);
+                    }
+                  }
+                : undefined
+            }
           />
         );
       })}

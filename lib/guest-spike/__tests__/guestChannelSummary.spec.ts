@@ -121,6 +121,27 @@ describe('unanswered_count (ledger-identical)', () => {
     ]);
     assert.equal(u.unanswered_count, 0);
   });
+
+  it('deleted latest guest falls back to prior alive unanswered', () => {
+    const [s] = buildChannelSummaries(
+      [S('s', 'room-201')],
+      [
+        M('g1', 's', 'guest', '2026-08-01T10:00:00.000Z'),
+        { ...M('g2', 's', 'guest', '2026-08-01T10:10:00.000Z'), is_deleted: true },
+      ],
+    );
+    assert.equal(s.latest_guest_message_at, '2026-08-01T10:00:00.000Z');
+    assert.equal(s.unanswered_count, 1);
+    assert.equal(s.first_unanswered_at, '2026-08-01T10:00:00.000Z');
+  });
+
+  it('deleted-only guest clears unanswered_count', () => {
+    const u = computeUnansweredForSession([
+      { ...M('g1', 's', 'guest', '2026-08-01T10:00:00.000Z'), is_deleted: true },
+    ]);
+    assert.equal(u.unanswered_count, 0);
+    assert.equal(u.first_unanswered_at, null);
+  });
 });
 
 describe('badge format + stale', () => {

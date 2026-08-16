@@ -48,6 +48,8 @@ export interface UnansweredMessageRow {
   created_at: string; // ISO 8601 — lexicographic order matches chronological order
   original_text?: string | null;
   translated_json?: Record<string, string> | null;
+  /** Soft-deleted rows are excluded from latest/pending/unanswered (recalculate on alive only). */
+  is_deleted?: boolean | null;
 }
 
 /**
@@ -69,6 +71,7 @@ export function buildUnansweredSummary(
   const bySession = new Map<string, UnansweredMessageRow[]>();
   for (const m of messages) {
     if (!m.session_id) continue; // legacy row: not part of any open session
+    if (m.is_deleted) continue; // soft-deleted: ignore for unanswered / fallback to prior alive
     const arr = bySession.get(m.session_id);
     if (arr) arr.push(m);
     else bySession.set(m.session_id, [m]);
@@ -94,7 +97,7 @@ export function buildUnansweredSummary(
       }
     }
 
-    if (!latestGuestAt || !latestGuest) continue; // no guest message
+    if (!latestGuestAt || !latestGuest) continue; // no alive guest message → unanswered clears
     // Tie → answered (staff wins), hence `<=` rather than `<`.
     if (latestStaffAt && latestGuestAt <= latestStaffAt) continue;
 

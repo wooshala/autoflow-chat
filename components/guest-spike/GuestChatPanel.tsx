@@ -14,10 +14,11 @@
 //
 // TODO(canonical-namespace): guest-spike → guest-chat (later refactor step).
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { usePollingMessages } from '@/lib/guest-spike/usePollingMessages';
-import { sendGuestMessage } from '@/lib/guest-spike/api';
+import { deleteGuestMessage, sendGuestMessage, type GuestSpikeMsg } from '@/lib/guest-spike/api';
+import { loadStoredSessionMeta } from '@/lib/auth/staffAccountSession';
 import { GuestMessageList } from './GuestMessageList';
 import { GuestMessageInput } from './GuestMessageInput';
 
@@ -55,46 +56,110 @@ export function GuestChatPanel({
     preferred_language: string | null;
     language_source: string | null;
     session_status: 'open' | 'none' | null;
-    /** Phase 1H.11 — created_at of the newest GUEST message in the loaded list (for read-marking). */
+    /** Phase 1H.11 — created_at of the newest alive GUEST message (for read-marking). */
     latest_guest_message_at: string | null;
   }) => void;
 }) {
-  const { messages, preferred_language, language_source, session_status, reload } = usePollingMessages(channelKey, asStaff);
+  const { messages, preferred_language, language_source, session_status, reload } = usePollingMessages(
+    channelKey,
+    asStaff,
+  );
+  const [localMessages, setLocalMessages] = useState<GuestSpikeMsg[] | null>(null);
 
-  // Newest guest message timestamp from the LOADED messages (asc-ordered → scan from the end).
-  const latestGuestMessageAt = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].sender === 'guest') return messages[i].created_at;
-    return null;
+  const displayMessages = localMessages ?? messages;
+  useEffect(() => {
+    // Server poll is source of truth; clear optimistic overlay when poll updates.
+    setLocalMessages(null);
   }, [messages]);
 
+  // Newest non-deleted guest message (unanswered / unread must recalculate after delete).
+  const latestGuestMessageAt = useMemo(() => {
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const m = displayMessages[i];
+      if (m.sender === 'guest' && !m.is_deleted) return m.created_at;
+    }
+    return null;
+  }, [displayMessages]);
+
   useEffect(() => {
-    onChannelMeta?.({ preferred_language, language_source, session_status, latest_guest_message_at: latestGuestMessageAt });
+    onChannelMeta?.({
+      preferred_language,
+      language_source,
+      session_status,
+      latest_guest_message_at: latestGuestMessageAt,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferred_language, language_source, session_status, latestGuestMessageAt]);
 
   const handleSend = useCallback(
     async (text: string) => {
-      // The server decides language: guest → LLM detect+translate→ko; staff → ko→preferred.
-      // The panel only forwards the text (a 409/failed send throws → the input keeps the draft).
       await sendGuestMessage(channelKey, { text, sender: ownSender }, asStaff);
       await reload();
     },
     [channelKey, ownSender, asStaff, reload],
   );
 
+  const canDeleteMessage = useCallback(
+    (msg: GuestSpikeMsg) => {
+      if (msg.is_deleted) return false;
+      if (msg.sender !== ownSender) return false;
+      if (ownSender === 'guest') return true;
+      // staff: only messages stamped with this staff userId (legacy null → no client delete button)
+      const meta = loadStoredSessionMeta();
+      if (!meta?.userId || !msg.staff_user_id) return false;
+      return String(msg.staff_user_id) === String(meta.userId);
+    },
+    [ownSender],
+  );
+
+  const handleDelete = useCallback(
+    async (msg: GuestSpikeMsg) => {
+      setLocalMessages((prev) => {
+        const base = prev ?? messages;
+        return base.map((m) =>
+          m.id === msg.id ? { ...m, is_deleted: true, deleted_at: new Date().toISOString() } : m,
+        );
+      });
+      try {
+        const updated = await deleteGuestMessage(channelKey, msg.id, asStaff);
+        setLocalMessages((prev) => {
+          const base = prev ?? messages;
+          return base.map((m) => (m.id === updated.id ? { ...m, ...updated } : m));
+        });
+      } catch {
+        setLocalMessages(null);
+        await reload();
+        alert('메시지 삭제에 실패했습니다.');
+      }
+    },
+    [channelKey, asStaff, messages, reload],
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <GuestMessageList
-        messages={messages}
+        messages={displayMessages}
         viewerLang={viewerLang}
         counterpartLang={counterpartLang}
         ownSender={ownSender}
         ownLabel={ownLabel}
         otherLabel={otherLabel}
         emptyText={emptyText}
+        onDeleteMessage={handleDelete}
+        canDeleteMessage={canDeleteMessage}
       />
       {disabledNotice ? (
-        <div style={{ padding: 14, background: '#fff', borderTop: '1px solid #e5e7eb', color: '#6b7280', fontSize: 13, textAlign: 'center', lineHeight: 1.5 }}>
+        <div
+          style={{
+            padding: 14,
+            background: '#fff',
+            borderTop: '1px solid #e5e7eb',
+            color: '#6b7280',
+            fontSize: 13,
+            textAlign: 'center',
+            lineHeight: 1.5,
+          }}
+        >
           {disabledNotice}
         </div>
       ) : (

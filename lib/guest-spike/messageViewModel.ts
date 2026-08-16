@@ -20,6 +20,7 @@ export interface ViewMessage {
   original: string;
   original_lang: string;
   translated: Record<string, string>;
+  is_deleted?: boolean;
 }
 
 export interface MessageViewModel {
@@ -29,6 +30,8 @@ export interface MessageViewModel {
   originalText: string;
   /** showSecondary — secondary exists AND differs from primary. */
   showOriginal: boolean;
+  /** Soft-deleted: renderer must not show original/translation lines. */
+  isDeleted: boolean;
 }
 
 /** Resolve the message in a given language: the original if it is already that language,
@@ -42,11 +45,20 @@ export function buildMessageViewModel(
   viewerLang: string,
   counterpartLang: string,
 ): MessageViewModel {
+  if (message.is_deleted) {
+    return {
+      displayText: '삭제된 메시지입니다',
+      originalText: '',
+      showOriginal: false,
+      isDeleted: true,
+    };
+  }
   const primary = inLang(message, viewerLang) ?? message.original; // fallback: never blank
   const secondary = inLang(message, counterpartLang);
   return {
     displayText: primary,
     originalText: secondary ?? '',
     showOriginal: secondary != null && secondary !== primary,
+    isDeleted: false,
   };
 }

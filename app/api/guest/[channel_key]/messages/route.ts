@@ -116,6 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
 
   let session: GuestSession;
   let sender: 'guest' | 'staff';
+  let staffUserId: string | null = null;
   try {
     const r = await resolveSession(req, channelKey);
     if (!r.ok) {
@@ -128,6 +129,11 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
     // resolveSession() already enforced requireStaff() for the ?as=staff branch, so reaching here
     // with as=staff proves a valid staff Bearer. A cookie-only guest can never take this branch.
     sender = req.nextUrl.searchParams.get('as') === 'staff' ? 'staff' : 'guest';
+    if (sender === 'staff') {
+      const staff = await requireStaff(req);
+      if (!staff) return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 });
+      staffUserId = staff.userId;
+    }
   } catch (e) {
     return dbError(e);
   }
@@ -162,7 +168,15 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
   }
 
   try {
-    const message = await appendMessage({ channelKey, sessionId: session.id, sender, original: text, original_lang: originalLang, translated });
+    const message = await appendMessage({
+      channelKey,
+      sessionId: session.id,
+      sender,
+      original: text,
+      original_lang: originalLang,
+      translated,
+      staff_user_id: staffUserId,
+    });
     return NextResponse.json({ ok: true, message }, { status: 201 });
   } catch (e) {
     return dbError(e);
