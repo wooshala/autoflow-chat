@@ -251,3 +251,44 @@ test('an open session with only staff messages is not unanswered', () => {
   );
   assert.equal(r.totalRooms, 0);
 });
+
+// ── soft-delete: exclude deleted from unanswered + alive fallback ─────
+test('deleted latest guest falls back to prior alive unanswered guest', () => {
+  const r = buildUnansweredSummary(
+    [S('s1', 'room-802')],
+    [
+      M('m1', 's1', 'guest', '2026-08-01T10:00:00.000Z', 'first', { ko: '첫번째' }),
+      { ...M('m2', 's1', 'guest', '2026-08-01T10:10:00.000Z', 'second', { ko: '두번째' }), is_deleted: true },
+    ],
+    AT,
+  );
+  assert.equal(r.totalRooms, 1);
+  assert.equal(r.rooms[0]!.guestMessageCount, 1);
+  assert.equal(r.rooms[0]!.latestGuestMessageAt, '2026-08-01T10:00:00.000Z');
+  assert.equal(r.rooms[0]!.latestGuestMessagePreview, '첫번째');
+  assert.equal(r.rooms[0]!.firstUnansweredAt, '2026-08-01T10:00:00.000Z');
+});
+
+test('deleted-only guest messages clear unanswered', () => {
+  const r = buildUnansweredSummary(
+    [S('s1', 'room-802')],
+    [{ ...M('m1', 's1', 'guest', '2026-08-01T10:00:00.000Z'), is_deleted: true }],
+    AT,
+  );
+  assert.equal(r.totalRooms, 0);
+  assert.equal(r.totalMessages, 0);
+});
+
+test('deleted staff does not count as a reply (guest stays unanswered)', () => {
+  const r = buildUnansweredSummary(
+    [S('s1', 'room-802')],
+    [
+      M('m1', 's1', 'guest', '2026-08-01T10:00:00.000Z'),
+      { ...M('m2', 's1', 'staff', '2026-08-01T10:05:00.000Z'), is_deleted: true },
+    ],
+    AT,
+  );
+  assert.equal(r.totalRooms, 1);
+  assert.equal(r.rooms[0]!.latestStaffMessageAt, null);
+  assert.equal(r.rooms[0]!.guestMessageCount, 1);
+});

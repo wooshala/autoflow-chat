@@ -11,6 +11,11 @@ export interface GuestSpikeMsg {
   original_lang: string;
   translated: Record<string, string>; // BCP-47 keyed
   created_at: string; // ISO
+  /** Soft-delete — when true UI shows placeholder; original/translated must not be shown. */
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+  /** Staff sender users.id when sender=staff (for delete ownership). */
+  staff_user_id?: string | null;
 }
 
 /** Insert payload — id + created_at are assigned by the DB, never by the app. */
@@ -19,4 +24,6 @@ export interface NewGuestMsg {
   original: string;
   original_lang: string;
   translated: Record<string, string>;
+  /** Required for staff sends after soft-delete migration (ownership). */
+  staff_user_id?: string | null;
 }

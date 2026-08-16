@@ -148,6 +148,31 @@ export async function sendGuestMessage(
   if (!res.ok) throw new Error(`SEND_FAILED_${res.status}`); // caller keeps the draft (incl. 401/409)
 }
 
+/** Soft-delete a message in this channel. Throws on non-2xx. */
+export async function deleteGuestMessage(
+  channelKey: string,
+  messageId: string,
+  asStaff?: boolean,
+): Promise<GuestSpikeMsg> {
+  const url = withStaff(
+    `${endpoint(channelKey)}/${encodeURIComponent(messageId)}/delete`,
+    asStaff,
+  );
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...staffHeaders(asStaff) },
+    body: '{}',
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.ok || !j.message) {
+    const err = new Error(`DELETE_FAILED_${res.status}`) as Error & { status?: number; code?: string };
+    err.status = res.status;
+    err.code = j?.error ?? undefined;
+    throw err;
+  }
+  return j.message as GuestSpikeMsg;
+}
+
 export interface ChannelMeta {
   preferred_language: string | null;
   language_source: string | null;

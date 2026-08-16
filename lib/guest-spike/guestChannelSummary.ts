@@ -48,6 +48,8 @@ export interface SummaryMessageRow {
   created_at: string; // ISO 8601 (lexicographically ordered)
   original_text?: string | null;
   translated_json?: Record<string, string> | null;
+  /** Soft-deleted rows are excluded from latest / latest-guest / unread / unanswered. */
+  is_deleted?: boolean | null;
 }
 
 const PREVIEW_MAX = 60;
@@ -64,9 +66,10 @@ export function computeUnansweredForSession(messages: readonly SummaryMessageRow
   unanswered_count: number;
   first_unanswered_at: string | null;
 } {
+  const alive = messages.filter((m) => !m.is_deleted);
   let latestGuestAt: string | null = null;
   let latestStaffAt: string | null = null;
-  for (const m of messages) {
+  for (const m of alive) {
     if (m.sender === 'guest') {
       if (!latestGuestAt || m.created_at > latestGuestAt) latestGuestAt = m.created_at;
     } else if (m.sender === 'staff') {
@@ -78,7 +81,7 @@ export function computeUnansweredForSession(messages: readonly SummaryMessageRow
   if (latestStaffAt && latestGuestAt <= latestStaffAt) {
     return { unanswered_count: 0, first_unanswered_at: null };
   }
-  const pending = messages.filter(
+  const pending = alive.filter(
     (m) => m.sender === 'guest' && (!latestStaffAt || m.created_at > latestStaffAt),
   );
   if (pending.length === 0) return { unanswered_count: 0, first_unanswered_at: null };
@@ -103,6 +106,7 @@ export function buildChannelSummaries(
     let latest: SummaryMessageRow | null = null;
     let latestGuest: SummaryMessageRow | null = null;
     for (const m of sessionMessages) {
+      if (m.is_deleted) continue; // recalculate latest* on alive messages only
       if (!latest || m.created_at > latest.created_at) latest = m;
       if (m.sender === 'guest' && (!latestGuest || m.created_at > latestGuest.created_at)) latestGuest = m;
     }

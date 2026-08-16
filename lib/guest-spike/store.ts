@@ -14,11 +14,17 @@ import { isOneOpenConflict } from './sessionConflict';
 import type { OpenSessionRow, SummaryMessageRow } from './guestChannelSummary';
 import type { UnansweredMessageRow, UnansweredSessionRow } from './unansweredSummary';
 import type { GuestSpikeMsg, NewGuestMsg } from './types';
+import {
+  decideGuestMessageDelete,
+  type GuestDeleteActor,
+  type GuestMessageDeleteRow,
+} from './guestMessageDelete';
 
 export type { GuestSpikeMsg, NewGuestMsg };
 
 const TABLE = 'guest_chat_messages';
-const COLS = 'id, sender, original_text, original_lang, translated_json, created_at';
+const COLS =
+  'id, sender, original_text, original_lang, translated_json, created_at, is_deleted, deleted_at, staff_user_id';
 
 interface Row {
   id: string;
@@ -27,6 +33,9 @@ interface Row {
   original_lang: string;
   translated_json: Record<string, string> | null;
   created_at: string;
+  is_deleted?: boolean | null;
+  deleted_at?: string | null;
+  staff_user_id?: string | null;
 }
 
 function rowToMsg(r: Row): GuestSpikeMsg {
@@ -37,6 +46,9 @@ function rowToMsg(r: Row): GuestSpikeMsg {
     original_lang: r.original_lang,
     translated: r.translated_json ?? {},
     created_at: r.created_at,
+    is_deleted: Boolean(r.is_deleted),
+    deleted_at: r.deleted_at ?? null,
+    staff_user_id: r.staff_user_id ?? null,
   };
 }
 
@@ -71,6 +83,7 @@ export async function appendMessage(
       original_text: input.original,
       original_lang: input.original_lang,
       translated_json: input.translated,
+      staff_user_id: input.sender === 'staff' ? input.staff_user_id ?? null : null,
     })
     .select(COLS)
     .single();
@@ -197,10 +210,63 @@ export async function listOpenChannelSummaryData(): Promise<{
     .from(TABLE)
     // Phase 2D — include text so the summary carries the latest GUEST message preview for the staff
     // Windows notification (buildChannelSummaries exposes only the latest guest message).
-    .select('id, session_id, sender, created_at, original_text, translated_json')
+    // Soft-deleted rows are still fetched then excluded in buildChannelSummaries (recalculate latest*).
+    .select('id, session_id, sender, created_at, original_text, translated_json, is_deleted')
     .in('session_id', ids);
   if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
   return { sessions: rows, messages: (messages ?? []) as SummaryMessageRow[] };
+}
+
+export type SoftDeleteGuestMessageResult =
+  | { ok: true; message: GuestSpikeMsg }
+  | { ok: false; error: 'NOT_FOUND' | 'CHANNEL_MISMATCH' | 'FORBIDDEN' | 'NO_SESSION' };
+
+/**
+ * Soft-delete a guest_chat_messages row. Does NOT call ops-chat softDeleteChatMessage.
+ * Semantics: is_deleted=true, deleted_at=now(), keep original_text; idempotent when already deleted.
+ */
+export async function softDeleteGuestChatMessage(input: {
+  messageId: string;
+  channelKey: string;
+  actor: GuestDeleteActor;
+}): Promise<SoftDeleteGuestMessageResult> {
+  const { messageId, channelKey, actor } = input;
+  if (!messageId || !channelKey) return { ok: false, error: 'NOT_FOUND' };
+
+  const { data: existing, error: fetchErr } = await db()
+    .from(TABLE)
+    .select('id, channel_key, session_id, sender, is_deleted, staff_user_id')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (fetchErr) throw new Error(`DB_ERROR: ${fetchErr.message}`);
+
+  const row = existing as GuestMessageDeleteRow | null;
+  const decision = decideGuestMessageDelete({ message: row, channelKey, actor });
+  if (!decision.ok) return { ok: false, error: decision.error };
+
+  if (decision.alreadyDeleted) {
+    const { data: full, error: fullErr } = await db().from(TABLE).select(COLS).eq('id', messageId).single();
+    if (fullErr) throw new Error(`DB_ERROR: ${fullErr.message}`);
+    return { ok: true, message: rowToMsg(full as Row) };
+  }
+
+  const deletedAt = new Date().toISOString();
+  const deletedBy =
+    actor.kind === 'guest' ? `guest:${actor.sessionId}` : `staff:${actor.userId}`;
+
+  const { data, error } = await db()
+    .from(TABLE)
+    .update({
+      is_deleted: true,
+      deleted_at: deletedAt,
+      deleted_by: deletedBy,
+      deleted_reason: decision.reason,
+    })
+    .eq('id', messageId)
+    .select(COLS)
+    .single();
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  return { ok: true, message: rowToMsg(data as Row) };
 }
 
 export type CloseActiveSessionResult = {
@@ -288,7 +354,7 @@ export async function listUnansweredSummaryData(): Promise<{
   if (ids.length === 0) return { sessions: rows, messages: [] };
   const { data: messages, error: mErr } = await db()
     .from(TABLE)
-    .select('id, session_id, sender, created_at, original_text, translated_json')
+    .select('id, session_id, sender, created_at, original_text, translated_json, is_deleted')
     .in('session_id', ids);
   if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
   return { sessions: rows, messages: (messages ?? []) as UnansweredMessageRow[] };
