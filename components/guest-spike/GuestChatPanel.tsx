@@ -92,8 +92,8 @@ export function GuestChatPanel({
   }, [preferred_language, language_source, session_status, latestGuestMessageAt]);
 
   const handleSend = useCallback(
-    async (text: string) => {
-      await sendGuestMessage(channelKey, { text, sender: ownSender }, asStaff);
+    async (text: string, image?: File) => {
+      await sendGuestMessage(channelKey, { text, sender: ownSender, image }, asStaff);
       await reload();
     },
     [channelKey, ownSender, asStaff, reload],
@@ -163,7 +163,12 @@ export function GuestChatPanel({
           {disabledNotice}
         </div>
       ) : (
-        <GuestMessageInput onSend={handleSend} placeholder={inputPlaceholder} sendLabel={sendLabel} />
+        <GuestMessageInput
+          onSend={handleSend}
+          placeholder={inputPlaceholder}
+          sendLabel={sendLabel}
+          enableImages={ownSender === 'guest' && !asStaff}
+        />
       )}
     </div>
   );

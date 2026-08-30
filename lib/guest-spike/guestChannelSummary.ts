@@ -50,14 +50,19 @@ export interface SummaryMessageRow {
   translated_json?: Record<string, string> | null;
   /** Soft-deleted rows are excluded from latest / latest-guest / unread / unanswered. */
   is_deleted?: boolean | null;
+  /** IMAGE-CHAT-01A — used for image-only preview when original_text is empty. */
+  has_attachments?: boolean;
 }
 
 const PREVIEW_MAX = 60;
+const PREVIEW_IMAGE = '📷 사진';
 
 /** Staff-facing preview of a guest message: Korean translation if present, else the original. */
 function guestPreview(m: SummaryMessageRow): string {
   const ko = m.translated_json?.ko;
-  const text = ((ko && ko.trim()) || (m.original_text ?? '').trim()).replace(/\s+/g, ' ');
+  const orig = (m.original_text ?? '').trim();
+  const text = ((ko && ko.trim()) || orig).replace(/\s+/g, ' ');
+  if (!text && m.has_attachments) return PREVIEW_IMAGE;
   return text.length > PREVIEW_MAX ? `${text.slice(0, PREVIEW_MAX)}…` : text;
 }
 
