@@ -15,6 +15,7 @@ import {
   parseGuestMessagePostBody,
   validateGuestMessagePostContent,
 } from '../guestMessagePost.ts';
+import { isPendingUploadExpired, GUEST_PENDING_UPLOAD_TTL_MS } from '../guestPendingUploadTtl.ts';
 import {
   buildGuestAttachmentStoragePath,
   detectGuestImageMime,
@@ -250,6 +251,46 @@ test('upload route rejects staff uploads in Phase A', () => {
     'utf8',
   );
   assert.match(uploadRoute, /as.*staff.*FORBIDDEN|FORBIDDEN.*staff/s);
+});
+
+test('token expiration TTL is 60 minutes', () => {
+  assert.equal(GUEST_PENDING_UPLOAD_TTL_MS, 60 * 60 * 1000);
+});
+
+test('expired pending upload detected', () => {
+  const old = new Date(Date.now() - GUEST_PENDING_UPLOAD_TTL_MS - 1000).toISOString();
+  assert.equal(isPendingUploadExpired(old), true);
+  const fresh = new Date().toISOString();
+  assert.equal(isPendingUploadExpired(fresh), false);
+});
+
+test('validatePendingGuestUploads checks EXPIRED (store source)', () => {
+  const storeSrc = readFileSync(
+    fileURLToPath(new URL('../store.ts', import.meta.url)),
+    'utf8',
+  );
+  assert.match(storeSrc, /isPendingUploadExpired/);
+  assert.match(storeSrc, /EXPIRED/);
+});
+
+test('atomic claim before message insert (concurrent-safe consume)', () => {
+  const storeSrc = readFileSync(
+    fileURLToPath(new URL('../store.ts', import.meta.url)),
+    'utf8',
+  );
+  assert.match(storeSrc, /claimPendingGuestUploads/);
+  assert.match(storeSrc, /\.is\('consumed_at', null\)/);
+  assert.match(storeSrc, /rollbackGuestMessageInsert/);
+  assert.match(storeSrc, /releasePendingGuestUploads/);
+});
+
+test('sequential token replay returns ALREADY_USED (route maps 409)', () => {
+  const storeSrc = readFileSync(
+    fileURLToPath(new URL('../store.ts', import.meta.url)),
+    'utf8',
+  );
+  assert.match(storeSrc, /if \(row\.consumed_at\) return \{ ok: false, error: 'ALREADY_USED' \}/);
+  assert.match(messagesRoute, /ALREADY_USED/);
 });
 
 test('image-only preview in guestChannelSummary guestPreview path', async () => {

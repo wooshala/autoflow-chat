@@ -228,12 +228,16 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
         const status =
           validated.error === 'CROSS_SESSION' || validated.error === 'FORGED_PATH'
             ? 403
-            : validated.error === 'MISSING_OBJECT' || validated.error === 'INVALID_TOKEN'
+            : validated.error === 'MISSING_OBJECT' ||
+                validated.error === 'INVALID_TOKEN' ||
+                validated.error === 'EXPIRED'
               ? 400
               : 409;
         return NextResponse.json({ ok: false, error: validated.error }, { status });
       }
-      const message = await appendGuestMessageWithAttachments({
+      let message: Awaited<ReturnType<typeof appendGuestMessageWithAttachments>>;
+      try {
+        message = await appendGuestMessageWithAttachments({
         channelKey,
         sessionId: session.id,
         sender,
@@ -242,7 +246,14 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
         translated,
         staff_user_id: staffUserId,
         pending: validated.pending,
-      });
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '';
+        if (msg === 'PENDING_ALREADY_USED') {
+          return NextResponse.json({ ok: false, error: 'ALREADY_USED' }, { status: 409 });
+        }
+        throw e;
+      }
       return NextResponse.json({ ok: true, message }, { status: 201 });
     }
 
