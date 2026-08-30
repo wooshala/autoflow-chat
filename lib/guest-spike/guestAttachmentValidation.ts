@@ -2,8 +2,9 @@
 
 export const GUEST_CHAT_ATTACHMENTS_BUCKET = 'guest-chat';
 
-export const GUEST_ATTACHMENT_MAX_COUNT = 5;
-export const GUEST_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+/** Aligned with guestAttachmentLimits.ts — duplicated here for import-free node --test. */
+export const GUEST_ATTACHMENT_MAX_COUNT = 1;
+export const GUEST_ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
 
 export const GUEST_ATTACHMENT_ALLOWED_MIMES = [
   'image/jpeg',
@@ -135,6 +136,6 @@ export function isGuestAttachmentStoragePathForSession(storagePath: string, sess
 }
 
 export function normalizeAttachmentCount(count: number): { ok: true } | { ok: false; error: 'TOO_MANY' } {
-  if (count < 1 || count > GUEST_ATTACHMENT_MAX_COUNT) return { ok: false, error: 'TOO_MANY' };
+  if (count !== 1) return { ok: false, error: 'TOO_MANY' };
   return { ok: true };
 }

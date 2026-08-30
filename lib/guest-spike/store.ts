@@ -15,11 +15,8 @@ import type { OpenSessionRow, SummaryMessageRow } from './guestChannelSummary';
 import type { UnansweredMessageRow, UnansweredSessionRow } from './unansweredSummary';
 import {
   createGuestAttachmentSignedUrl,
-  guestAttachmentObjectExists,
 } from './guestAttachmentStorage';
-import { isGuestAttachmentStoragePathForSession } from './guestAttachmentValidation';
-import { isPendingUploadExpired, GUEST_PENDING_UPLOAD_TTL_MS } from './guestPendingUploadTtl';
-import { parseGuestAttachmentRpcError } from './guestAttachmentRpc';
+import type { GuestAttachmentInsert } from './guestMessagePost';
 import type { GuestSpikeAttachment, GuestSpikeMsg, NewGuestMsg } from './types';
 import {
   decideGuestMessageDelete,
@@ -30,7 +27,6 @@ import {
 export type { GuestSpikeMsg, NewGuestMsg };
 
 const TABLE = 'guest_chat_messages';
-const PENDING_UPLOADS = 'guest_chat_pending_uploads';
 const ATTACHMENTS = 'guest_chat_attachments';
 const COLS =
   'id, sender, original_text, original_lang, translated_json, created_at, is_deleted, deleted_at, staff_user_id';
@@ -44,18 +40,6 @@ interface AttachmentRow {
   size_bytes: number;
   sort_order: number;
   created_at: string;
-}
-
-interface PendingUploadRow {
-  id: string;
-  session_id: string;
-  channel_key: string;
-  storage_path: string;
-  mime_type: string;
-  size_bytes: number;
-  created_at: string;
-  consumed_at: string | null;
-  message_id?: string | null;
 }
 
 async function attachmentRowsToClient(
@@ -177,69 +161,6 @@ export async function appendMessage(
   return rowToMsg(data as Row);
 }
 
-export async function insertPendingGuestUpload(input: {
-  sessionId: string;
-  channelKey: string;
-  storagePath: string;
-  mimeType: string;
-  sizeBytes: number;
-}): Promise<{ uploadToken: string }> {
-  const { data, error } = await db()
-    .from(PENDING_UPLOADS)
-    .insert({
-      session_id: input.sessionId,
-      channel_key: input.channelKey,
-      storage_path: input.storagePath,
-      mime_type: input.mimeType,
-      size_bytes: input.sizeBytes,
-    })
-    .select('id')
-    .single();
-  if (error) throw new Error(`DB_ERROR: ${error.message}`);
-  return { uploadToken: String((data as { id: string }).id) };
-}
-
-export type ValidatePendingUploadsResult =
-  | {
-      ok: true;
-      pending: PendingUploadRow[];
-    }
-  | { ok: false; error: 'INVALID_TOKEN' | 'ALREADY_USED' | 'CROSS_SESSION' | 'MISSING_OBJECT' | 'FORGED_PATH' | 'EXPIRED' };
-
-export async function validatePendingGuestUploads(input: {
-  sessionId: string;
-  channelKey: string;
-  uploadTokens: string[];
-}): Promise<ValidatePendingUploadsResult> {
-  const unique = [...new Set(input.uploadTokens)];
-  if (unique.length !== input.uploadTokens.length) {
-    return { ok: false, error: 'INVALID_TOKEN' };
-  }
-  const { data, error } = await db()
-    .from(PENDING_UPLOADS)
-    .select('id, session_id, channel_key, storage_path, mime_type, size_bytes, created_at, consumed_at, message_id')
-    .in('id', unique);
-  if (error) throw new Error(`DB_ERROR: ${error.message}`);
-  const rows = (data as PendingUploadRow[] | null) ?? [];
-  if (rows.length !== unique.length) return { ok: false, error: 'INVALID_TOKEN' };
-  for (const row of rows) {
-    if (row.consumed_at) return { ok: false, error: 'ALREADY_USED' };
-    if (isPendingUploadExpired(row.created_at)) return { ok: false, error: 'EXPIRED' };
-    if (row.session_id !== input.sessionId || row.channel_key !== input.channelKey) {
-      return { ok: false, error: 'CROSS_SESSION' };
-    }
-    if (!isGuestAttachmentStoragePathForSession(row.storage_path, input.sessionId)) {
-      return { ok: false, error: 'FORGED_PATH' };
-    }
-    const exists = await guestAttachmentObjectExists(row.storage_path);
-    if (!exists) return { ok: false, error: 'MISSING_OBJECT' };
-  }
-  rows.sort(
-    (a, b) => unique.indexOf(a.id) - unique.indexOf(b.id),
-  );
-  return { ok: true, pending: rows };
-}
-
 interface GuestMessageRpcResult {
   message: {
     id: string;
@@ -265,12 +186,9 @@ export async function appendGuestMessageWithAttachments(
   input: NewGuestMsg & {
     channelKey: string;
     sessionId: string;
-    pending: PendingUploadRow[];
+    attachments: GuestAttachmentInsert[];
   },
 ): Promise<GuestSpikeMsg> {
-  const tokenIds = input.pending.map((p) => p.id);
-  const ttlMinutes = Math.floor(GUEST_PENDING_UPLOAD_TTL_MS / 60_000);
-
   const { data, error } = await db().rpc('create_guest_message_with_attachments', {
     p_channel_key: input.channelKey,
     p_session_id: input.sessionId,
@@ -279,16 +197,10 @@ export async function appendGuestMessageWithAttachments(
     p_original_lang: input.original_lang,
     p_translated_json: input.translated,
     p_staff_user_id: input.sender === 'staff' ? input.staff_user_id ?? null : null,
-    p_upload_token_ids: tokenIds,
-    p_ttl_minutes: ttlMinutes,
+    p_attachments: input.attachments,
   });
 
-  if (error) {
-    const code = parseGuestAttachmentRpcError(error);
-    if (code === 'ALREADY_USED') throw new Error('PENDING_ALREADY_USED');
-    if (code) throw new Error(`PENDING_${code}`);
-    throw new Error(`DB_ERROR: ${error.message}`);
-  }
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
 
   const payload = data as GuestMessageRpcResult | null;
   if (!payload?.message?.id) throw new Error('DB_ERROR: empty RPC result');

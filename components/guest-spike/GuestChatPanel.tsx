@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { usePollingMessages } from '@/lib/guest-spike/usePollingMessages';
-import { deleteGuestMessage, sendGuestMessage, uploadGuestAttachments, type GuestSpikeMsg } from '@/lib/guest-spike/api';
+import { deleteGuestMessage, sendGuestMessage, type GuestSpikeMsg } from '@/lib/guest-spike/api';
 import { loadStoredSessionMeta } from '@/lib/auth/staffAccountSession';
 import { GuestMessageList } from './GuestMessageList';
 import { GuestMessageInput } from './GuestMessageInput';
@@ -92,17 +92,8 @@ export function GuestChatPanel({
   }, [preferred_language, language_source, session_status, latestGuestMessageAt]);
 
   const handleSend = useCallback(
-    async (text: string, files: File[] = []) => {
-      let attachmentTokens: { upload_token: string }[] | undefined;
-      if (files.length > 0) {
-        const uploads = await uploadGuestAttachments(channelKey, files);
-        attachmentTokens = uploads.map((u) => ({ upload_token: u.upload_token }));
-      }
-      await sendGuestMessage(
-        channelKey,
-        { text, sender: ownSender, attachments: attachmentTokens },
-        asStaff,
-      );
+    async (text: string, image?: File) => {
+      await sendGuestMessage(channelKey, { text, sender: ownSender, image }, asStaff);
       await reload();
     },
     [channelKey, ownSender, asStaff, reload],

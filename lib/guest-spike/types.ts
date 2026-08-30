@@ -28,13 +28,6 @@ export interface GuestSpikeMsg {
   attachments?: GuestSpikeAttachment[];
 }
 
-/** Opaque upload descriptor from POST .../attachments/upload */
-export interface GuestUploadDescriptor {
-  upload_token: string;
-  mime_type: string;
-  size_bytes: number;
-}
-
 /** Insert payload — id + created_at are assigned by the DB, never by the app. */
 export interface NewGuestMsg {
   sender: 'guest' | 'staff';

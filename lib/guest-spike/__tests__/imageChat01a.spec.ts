@@ -1,9 +1,9 @@
-// IMAGE-CHAT-01A — regression, attachment validation, and security contract tests.
+// IMAGE-CHAT-01A-SIMPLIFY — regression, attachment validation, and security contract tests.
 // Run: node --test lib/guest-spike/__tests__/imageChat01a.spec.ts
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -12,10 +12,9 @@ import {
 } from '../guestMessagePreview.ts';
 import {
   imageOnlyOriginalLang,
-  parseGuestMessagePostBody,
-  validateGuestMessagePostContent,
+  validateGuestMessageContent,
 } from '../guestMessagePost.ts';
-import { isPendingUploadExpired, GUEST_PENDING_UPLOAD_TTL_MS } from '../guestPendingUploadTtl.ts';
+import { GUEST_ATTACHMENT_MAX_BYTES } from '../guestAttachmentLimits.ts';
 import {
   buildGuestAttachmentStoragePath,
   detectGuestImageMime,
@@ -48,20 +47,28 @@ const messagesRoute = readFileSync(
   fileURLToPath(new URL('../../../app/api/guest/[channel_key]/messages/route.ts', import.meta.url)),
   'utf8',
 );
+const apiSrc = readFileSync(
+  fileURLToPath(new URL('../api.ts', import.meta.url)),
+  'utf8',
+);
+const storeSrc = readFileSync(
+  fileURLToPath(new URL('../store.ts', import.meta.url)),
+  'utf8',
+);
 
-test('1. legacy Guest text POST accepted — empty without attachments rejected', () => {
-  const r = validateGuestMessagePostContent({ trimmedText: 'hello', attachmentCount: 0, sender: 'guest' });
+test('1. legacy Guest text POST accepted — empty without image rejected', () => {
+  const r = validateGuestMessageContent({ trimmedText: 'hello', hasImage: false, sender: 'guest' });
   assert.equal(r.ok, true);
-  const empty = validateGuestMessagePostContent({ trimmedText: '', attachmentCount: 0, sender: 'guest' });
+  const empty = validateGuestMessageContent({ trimmedText: '', hasImage: false, sender: 'guest' });
   assert.equal(empty.ok, false);
   if (!empty.ok) assert.equal(empty.error, 'EMPTY');
 });
 
-test('2. legacy Staff text POST — staff attachments forbidden', () => {
-  const r = validateGuestMessagePostContent({ trimmedText: 'reply', attachmentCount: 0, sender: 'staff' });
+test('2. legacy Staff text POST — staff image forbidden', () => {
+  const r = validateGuestMessageContent({ trimmedText: 'reply', hasImage: false, sender: 'staff' });
   assert.equal(r.ok, true);
-  const withAttach = validateGuestMessagePostContent({ trimmedText: 'x', attachmentCount: 1, sender: 'staff' });
-  assert.equal(withAttach.ok, false);
+  const withImage = validateGuestMessageContent({ trimmedText: 'x', hasImage: true, sender: 'staff' });
+  assert.equal(withImage.ok, false);
 });
 
 test('3. text-only serialization unchanged — attachments normalize to []', () => {
@@ -101,26 +108,13 @@ test('6. image-only skips translation path in route (detectAndTranslate guarded)
   assert.doesNotMatch(imageOnlyBlock, /detectAndTranslateToKorean/);
 });
 
-test('7. empty text + no attachment → 400 EMPTY', () => {
-  const parsed = parseGuestMessagePostBody({ text: '   ' });
-  const v = validateGuestMessagePostContent({
-    trimmedText: parsed.trimmedText,
-    attachmentCount: parsed.attachmentRefs.length,
-    sender: 'guest',
-  });
+test('7. empty text + no image → 400 EMPTY', () => {
+  const v = validateGuestMessageContent({ trimmedText: '', hasImage: false, sender: 'guest' });
   assert.equal(v.ok, false);
 });
 
 test('8. image-only → accepted', () => {
-  const parsed = parseGuestMessagePostBody({
-    text: '',
-    attachments: [{ upload_token: UPLOAD_A }],
-  });
-  const v = validateGuestMessagePostContent({
-    trimmedText: parsed.trimmedText,
-    attachmentCount: parsed.attachmentRefs.length,
-    sender: 'guest',
-  });
+  const v = validateGuestMessageContent({ trimmedText: '', hasImage: true, sender: 'guest' });
   assert.equal(v.ok, true);
 });
 
@@ -197,11 +191,11 @@ test('valid WebP accepted', () => {
   assert.equal(r.ok, true);
 });
 
-test('oversize reject', () => {
+test('oversize reject (>4MB)', () => {
   const r = validateGuestAttachmentFile({
     bytes: jpegBytes(),
     declaredMime: 'image/jpeg',
-    declaredSize: 11 * 1024 * 1024,
+    declaredSize: GUEST_ATTACHMENT_MAX_BYTES + 1,
   });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.error, 'TOO_LARGE');
@@ -218,7 +212,7 @@ test('SVG reject', () => {
   if (!r.ok) assert.equal(r.error, 'SVG_DENIED');
 });
 
-test('non-image reject', () => {
+test('fake MIME reject', () => {
   const r = validateGuestAttachmentFile({
     bytes: Uint8Array.from([0, 1, 2, 3]),
     declaredMime: 'image/jpeg',
@@ -237,50 +231,39 @@ test('forged storage_path pattern rejected by helper', () => {
   assert.equal(isGuestAttachmentStoragePathForSession('evil/evil.jpg', SESSION_A), false);
 });
 
-test('messages route validates pending uploads (not raw storage_path from client)', () => {
-  assert.match(messagesRoute, /validatePendingGuestUploads/);
-  assert.match(messagesRoute, /upload_token/);
+test('messages route uses multipart + server-built storage path (no client tokens)', () => {
+  assert.match(messagesRoute, /multipart\/form-data/);
+  assert.match(messagesRoute, /uploadGuestAttachmentObject/);
+  assert.match(messagesRoute, /appendGuestMessageWithAttachments/);
+  assert.doesNotMatch(messagesRoute, /validatePendingGuestUploads/);
+  assert.doesNotMatch(messagesRoute, /upload_token/);
   assert.doesNotMatch(messagesRoute, /body\.storage_path/);
 });
 
-test('upload route rejects staff uploads in Phase A', () => {
-  const uploadRoute = readFileSync(
-    fileURLToPath(
-      new URL('../../../app/api/guest/[channel_key]/attachments/upload/route.ts', import.meta.url),
-    ),
-    'utf8',
+test('dedicated upload endpoint removed', () => {
+  const uploadRoute = fileURLToPath(
+    new URL('../../../app/api/guest/[channel_key]/attachments/upload/route.ts', import.meta.url),
   );
-  assert.match(uploadRoute, /as.*staff.*FORBIDDEN|FORBIDDEN.*staff/s);
+  assert.equal(existsSync(uploadRoute), false);
 });
 
-test('token expiration TTL is 60 minutes', () => {
-  assert.equal(GUEST_PENDING_UPLOAD_TTL_MS, 60 * 60 * 1000);
+test('client single-request send — no uploadGuestAttachments', () => {
+  assert.doesNotMatch(apiSrc, /uploadGuestAttachments/);
+  assert.match(apiSrc, /FormData/);
+  assert.match(apiSrc, /form\.append\('image'/);
 });
 
-test('expired pending upload detected', () => {
-  const old = new Date(Date.now() - GUEST_PENDING_UPLOAD_TTL_MS - 1000).toISOString();
-  assert.equal(isPendingUploadExpired(old), true);
-  const fresh = new Date().toISOString();
-  assert.equal(isPendingUploadExpired(fresh), false);
+test('RPC failure triggers best-effort storage cleanup', () => {
+  assert.match(messagesRoute, /deleteGuestAttachmentObjectBestEffort/);
 });
 
-test('validatePendingGuestUploads checks EXPIRED (store source)', () => {
-  const storeSrc = readFileSync(
-    fileURLToPath(new URL('../store.ts', import.meta.url)),
-    'utf8',
-  );
-  assert.match(storeSrc, /isPendingUploadExpired/);
-  assert.match(storeSrc, /EXPIRED/);
-});
-
-test('atomic RPC replaces compensating claim/rollback (hardening)', () => {
-  const storeSrc = readFileSync(
-    fileURLToPath(new URL('../store.ts', import.meta.url)),
-    'utf8',
-  );
-  assert.match(storeSrc, /create_guest_message_with_attachments/);
-  assert.doesNotMatch(storeSrc, /claimPendingGuestUploads/);
-  assert.doesNotMatch(storeSrc, /rollbackGuestMessageInsert/);
+test('legacy text-only path still uses appendMessage not RPC', () => {
+  const fn = storeSrc.slice(storeSrc.indexOf('export async function appendMessage'));
+  assert.doesNotMatch(fn.slice(0, 800), /create_guest_message_with_attachments/);
+  const attachFn = storeSrc.slice(storeSrc.indexOf('export async function appendGuestMessageWithAttachments'));
+  assert.match(attachFn.slice(0, 600), /create_guest_message_with_attachments/);
+  assert.doesNotMatch(storeSrc, /validatePendingGuestUploads/);
+  assert.doesNotMatch(storeSrc, /insertPendingGuestUpload/);
 });
 
 test('image-only preview in guestChannelSummary guestPreview path', async () => {
@@ -300,4 +283,8 @@ test('image-only preview in guestChannelSummary guestPreview path', async () => 
     ],
   );
   assert.equal(summaries[0]!.latest_guest_message_preview, GUEST_MESSAGE_PREVIEW_IMAGE);
+});
+
+test('Phase A limits: 1 image, 4MB', () => {
+  assert.equal(GUEST_ATTACHMENT_MAX_BYTES, 4 * 1024 * 1024);
 });
