@@ -3,10 +3,13 @@
 
 export const GUEST_MESSAGE_PREVIEW_MAX = 80;
 export const GUEST_MESSAGE_PREVIEW_EMPTY = '새 고객 메시지';
+export const GUEST_MESSAGE_PREVIEW_IMAGE = '📷 사진';
 
 export type GuestPreviewSource = {
   original_text?: string | null;
   translated_json?: Record<string, string> | null;
+  /** IMAGE-CHAT-01A — when true and text empty → image preview label. */
+  has_attachments?: boolean;
 };
 
 /** Strip C0/C1 controls (keep TAB/LF/CR for whitespace normalize step). */
@@ -71,10 +74,12 @@ function truncatePreview(s: string): string {
  */
 export function buildGuestMessagePreview(source: GuestPreviewSource): string {
   const ko = source.translated_json?.ko;
-  const picked =
-    (typeof ko === 'string' && ko.trim()) ||
-    (typeof source.original_text === 'string' && source.original_text.trim()) ||
-    GUEST_MESSAGE_PREVIEW_EMPTY;
+  const orig = typeof source.original_text === 'string' ? source.original_text.trim() : '';
+  const textPicked = (typeof ko === 'string' && ko.trim()) || orig;
+  if (!textPicked && source.has_attachments) {
+    return GUEST_MESSAGE_PREVIEW_IMAGE;
+  }
+  const picked = textPicked || GUEST_MESSAGE_PREVIEW_EMPTY;
 
   const normalized = normalizeWhitespace(stripControls(picked));
   const base = normalized.length > 0 ? normalized : GUEST_MESSAGE_PREVIEW_EMPTY;

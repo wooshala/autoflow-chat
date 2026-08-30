@@ -50,6 +50,7 @@ export interface UnansweredMessageRow {
   translated_json?: Record<string, string> | null;
   /** Soft-deleted rows are excluded from latest/pending/unanswered (recalculate on alive only). */
   is_deleted?: boolean | null;
+  has_attachments?: boolean;
 }
 
 /**

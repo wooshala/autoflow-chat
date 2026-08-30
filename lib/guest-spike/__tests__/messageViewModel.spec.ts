@@ -19,6 +19,8 @@ test('1. 고객→직원: primary=한국어, secondary=일본어(원문)', () =>
     originalText: 'こんにちは',
     showOriginal: true,
     isDeleted: false,
+    showText: true,
+    attachments: [],
   });
 });
 
@@ -32,6 +34,8 @@ test('2. 직원→고객: primary=일본어, secondary=한국어(원문)', () =>
     originalText: '안녕하세요',
     showOriginal: true,
     isDeleted: false,
+    showText: true,
+    attachments: [],
   });
 });
 
@@ -45,6 +49,8 @@ test('3. 직원 자기 메시지(직원 화면): primary=한국어(원문), seco
     originalText: 'はい、承知しました',
     showOriginal: true,
     isDeleted: false,
+    showText: true,
+    attachments: [],
   });
 });
 
@@ -78,6 +84,8 @@ test('6. 새 언어(en 뷰어, 상대 ko) — 렌더러/분기 없이 동작', (
     originalText: '안녕',
     showOriginal: true,
     isDeleted: false,
+    showText: true,
+    attachments: [],
   });
 });
 
@@ -97,5 +105,32 @@ test('7. soft-deleted → placeholder, no secondary', () => {
     originalText: '',
     showOriginal: false,
     isDeleted: true,
+    showText: true,
+    attachments: [],
   });
+});
+
+test('8. image-only → showText false, attachments preserved', () => {
+  const vm = buildMessageViewModel(
+    {
+      original: '',
+      original_lang: 'ja',
+      translated: {},
+      attachments: [
+        {
+          id: 'a1',
+          mime_type: 'image/jpeg',
+          size_bytes: 100,
+          sort_order: 0,
+          url: 'https://signed.example/a.jpg',
+        },
+      ],
+    },
+    'ko',
+    'ja',
+  );
+  assert.equal(vm.showText, false);
+  assert.equal(vm.displayText, '');
+  assert.equal(vm.attachments.length, 1);
+  assert.equal(vm.attachments[0]!.url, 'https://signed.example/a.jpg');
 });

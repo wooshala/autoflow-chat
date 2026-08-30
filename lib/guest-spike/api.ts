@@ -5,7 +5,7 @@
 //
 // TODO(canonical-namespace): guest-spike → guest-chat (later refactor step).
 
-import type { GuestSpikeMsg } from './types';
+import type { GuestSpikeMsg, GuestUploadDescriptor } from './types';
 import type { GuestChannelSummary } from './guestChannelSummary';
 import { staffSessionAuthHeaders } from '@/lib/auth/staffAccountSession';
 import {
@@ -13,11 +13,13 @@ import {
   parseCloseSessionHttpResult,
 } from './closeSessionResponse';
 
-export type { GuestSpikeMsg };
+export type { GuestSpikeMsg, GuestUploadDescriptor };
 export type { GuestChannelSummary };
 export { CLOSE_SESSION_FAILED_USER_MESSAGE };
 
 const endpoint = (channelKey: string) => `/api/guest/${encodeURIComponent(channelKey)}/messages`;
+const uploadEndpoint = (channelKey: string) =>
+  `/api/guest/${encodeURIComponent(channelKey)}/attachments/upload`;
 const sessionEndpoint = (channelKey: string) => `/api/guest/${encodeURIComponent(channelKey)}/session`;
 const withStaff = (u: string, asStaff?: boolean) => (asStaff ? `${u}?as=staff` : u);
 // Staff requests carry the REAL staff session (Authorization: Bearer). Guest requests carry
@@ -128,22 +130,44 @@ export async function fetchGuestMessages(channelKey: string, asStaff?: boolean):
   }
 
   return {
-    messages: j.messages ?? [],
+    messages: (j.messages ?? []).map(normalizeGuestMessage),
     preferred_language: j.preferred_language ?? null,
     language_source: j.language_source ?? null,
     session_status: j.session_status ?? null,
   };
 }
 
+function normalizeGuestMessage(m: GuestSpikeMsg): GuestSpikeMsg {
+  return { ...m, attachments: m.attachments ?? [] };
+}
+
+export async function uploadGuestAttachments(
+  channelKey: string,
+  files: File[],
+): Promise<GuestUploadDescriptor[]> {
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+  const res = await fetch(uploadEndpoint(channelKey), { method: 'POST', body: form });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.ok || !Array.isArray(j.uploads)) {
+    const err = new Error(`UPLOAD_FAILED_${j?.error ?? res.status}`) as Error & { code?: string };
+    err.code = j?.error ?? undefined;
+    throw err;
+  }
+  return j.uploads as GuestUploadDescriptor[];
+}
+
 export async function sendGuestMessage(
   channelKey: string,
-  input: { text: string; sender: 'guest' | 'staff' },
+  input: { text: string; sender: 'guest' | 'staff'; attachments?: { upload_token: string }[] },
   asStaff?: boolean,
 ): Promise<void> {
+  const body: Record<string, unknown> = { text: input.text, sender: input.sender };
+  if (input.attachments?.length) body.attachments = input.attachments;
   const res = await fetch(withStaff(endpoint(channelKey), asStaff), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...staffHeaders(asStaff) },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`SEND_FAILED_${res.status}`); // caller keeps the draft (incl. 401/409)
 }

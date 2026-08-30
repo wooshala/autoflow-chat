@@ -4,6 +4,14 @@
 //
 // TODO(canonical-namespace): guest-spike → guest-chat (later refactor step).
 
+export interface GuestSpikeAttachment {
+  id: string;
+  mime_type: string;
+  size_bytes: number;
+  sort_order: number;
+  url: string;
+}
+
 export interface GuestSpikeMsg {
   id: string;
   sender: 'guest' | 'staff';
@@ -16,6 +24,15 @@ export interface GuestSpikeMsg {
   deleted_at?: string | null;
   /** Staff sender users.id when sender=staff (for delete ownership). */
   staff_user_id?: string | null;
+  /** IMAGE-CHAT-01A — additive; normalize legacy rows to []. */
+  attachments?: GuestSpikeAttachment[];
+}
+
+/** Opaque upload descriptor from POST .../attachments/upload */
+export interface GuestUploadDescriptor {
+  upload_token: string;
+  mime_type: string;
+  size_bytes: number;
 }
 
 /** Insert payload — id + created_at are assigned by the DB, never by the app. */

@@ -16,13 +16,6 @@
 // Adding a language (en/zh-CN/ru/…) needs NO change here and NONE in the renderer: the
 // caller passes viewerLang + counterpartLang, and translated is a BCP-47 keyed map.
 
-export interface ViewMessage {
-  original: string;
-  original_lang: string;
-  translated: Record<string, string>;
-  is_deleted?: boolean;
-}
-
 export interface MessageViewModel {
   /** primaryText — viewer's reading language (line 1). */
   displayText: string;
@@ -32,6 +25,29 @@ export interface MessageViewModel {
   showOriginal: boolean;
   /** Soft-deleted: renderer must not show original/translation lines. */
   isDeleted: boolean;
+  /** IMAGE-CHAT-01A — hide empty text bubble when image-only. */
+  showText: boolean;
+  attachments: Array<{
+    id: string;
+    mime_type: string;
+    size_bytes: number;
+    sort_order: number;
+    url: string;
+  }>;
+}
+
+export interface ViewMessage {
+  original: string;
+  original_lang: string;
+  translated: Record<string, string>;
+  is_deleted?: boolean;
+  attachments?: Array<{
+    id: string;
+    mime_type: string;
+    size_bytes: number;
+    sort_order: number;
+    url: string;
+  }>;
 }
 
 /** Resolve the message in a given language: the original if it is already that language,
@@ -51,14 +67,21 @@ export function buildMessageViewModel(
       originalText: '',
       showOriginal: false,
       isDeleted: true,
+      showText: true,
+      attachments: [],
     };
   }
-  const primary = inLang(message, viewerLang) ?? message.original; // fallback: never blank
+  const attachments = (message.attachments ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
+  const primary = inLang(message, viewerLang) ?? message.original; // fallback: never blank unless image-only
   const secondary = inLang(message, counterpartLang);
+  const hasText = Boolean(primary.trim());
+  const showText = hasText || attachments.length === 0;
   return {
     displayText: primary,
     originalText: secondary ?? '',
-    showOriginal: secondary != null && secondary !== primary,
+    showOriginal: secondary != null && secondary !== primary && hasText,
     isDeleted: false,
+    showText,
+    attachments,
   };
 }

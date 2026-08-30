@@ -13,7 +13,13 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { isOneOpenConflict } from './sessionConflict';
 import type { OpenSessionRow, SummaryMessageRow } from './guestChannelSummary';
 import type { UnansweredMessageRow, UnansweredSessionRow } from './unansweredSummary';
-import type { GuestSpikeMsg, NewGuestMsg } from './types';
+import {
+  createGuestAttachmentSignedUrl,
+  deleteGuestAttachmentObjectBestEffort,
+  guestAttachmentObjectExists,
+} from './guestAttachmentStorage';
+import { isGuestAttachmentStoragePathForSession } from './guestAttachmentValidation';
+import type { GuestSpikeAttachment, GuestSpikeMsg, NewGuestMsg } from './types';
 import {
   decideGuestMessageDelete,
   type GuestDeleteActor,
@@ -23,8 +29,71 @@ import {
 export type { GuestSpikeMsg, NewGuestMsg };
 
 const TABLE = 'guest_chat_messages';
+const PENDING_UPLOADS = 'guest_chat_pending_uploads';
+const ATTACHMENTS = 'guest_chat_attachments';
 const COLS =
   'id, sender, original_text, original_lang, translated_json, created_at, is_deleted, deleted_at, staff_user_id';
+
+interface AttachmentRow {
+  id: string;
+  message_id: string;
+  session_id: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  sort_order: number;
+  created_at: string;
+}
+
+interface PendingUploadRow {
+  id: string;
+  session_id: string;
+  channel_key: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  consumed_at: string | null;
+}
+
+async function attachmentRowsToClient(
+  rows: AttachmentRow[],
+  includeUrls: boolean,
+): Promise<Map<string, GuestSpikeAttachment[]>> {
+  const byMessage = new Map<string, GuestSpikeAttachment[]>();
+  for (const r of rows) {
+    const url = includeUrls ? (await createGuestAttachmentSignedUrl(r.storage_path)) ?? '' : '';
+    const item: GuestSpikeAttachment = {
+      id: r.id,
+      mime_type: r.mime_type,
+      size_bytes: r.size_bytes,
+      sort_order: r.sort_order,
+      url,
+    };
+    const arr = byMessage.get(r.message_id);
+    if (arr) arr.push(item);
+    else byMessage.set(r.message_id, [item]);
+  }
+  for (const arr of byMessage.values()) {
+    arr.sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
+  }
+  return byMessage;
+}
+
+async function loadAttachmentsForMessages(
+  messageIds: string[],
+  includeUrls: boolean,
+): Promise<Map<string, GuestSpikeAttachment[]>> {
+  if (messageIds.length === 0) return new Map();
+  const { data, error } = await db()
+    .from(ATTACHMENTS)
+    .select('id, message_id, session_id, storage_path, mime_type, size_bytes, sort_order, created_at')
+    .in('message_id', messageIds)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  return attachmentRowsToClient((data as AttachmentRow[] | null) ?? [], includeUrls);
+}
 
 interface Row {
   id: string;
@@ -38,7 +107,7 @@ interface Row {
   staff_user_id?: string | null;
 }
 
-function rowToMsg(r: Row): GuestSpikeMsg {
+function rowToMsg(r: Row, attachments: GuestSpikeAttachment[] = []): GuestSpikeMsg {
   return {
     id: r.id,
     sender: r.sender,
@@ -49,6 +118,7 @@ function rowToMsg(r: Row): GuestSpikeMsg {
     is_deleted: Boolean(r.is_deleted),
     deleted_at: r.deleted_at ?? null,
     staff_user_id: r.staff_user_id ?? null,
+    attachments,
   };
 }
 
@@ -59,7 +129,10 @@ function db() {
 }
 
 /** Messages of ONE session (Phase 1H.7), created_at ASC, id ASC tiebreak. */
-export async function listMessagesBySession(sessionId: string): Promise<GuestSpikeMsg[]> {
+export async function listMessagesBySession(
+  sessionId: string,
+  opts?: { includeAttachmentUrls?: boolean; skipDeletedAttachments?: boolean },
+): Promise<GuestSpikeMsg[]> {
   const { data, error } = await db()
     .from(TABLE)
     .select(COLS)
@@ -67,7 +140,18 @@ export async function listMessagesBySession(sessionId: string): Promise<GuestSpi
     .order('created_at', { ascending: true })
     .order('id', { ascending: true });
   if (error) throw new Error(`DB_ERROR: ${error.message}`);
-  return ((data as Row[] | null) ?? []).map(rowToMsg);
+  const rows = (data as Row[] | null) ?? [];
+  const aliveIds = rows.filter((r) => !opts?.skipDeletedAttachments || !r.is_deleted).map((r) => r.id);
+  const attachMap = await loadAttachmentsForMessages(
+    aliveIds,
+    opts?.includeAttachmentUrls !== false,
+  );
+  return rows.map((r) => {
+    const deleted = Boolean(r.is_deleted);
+    const attachments =
+      deleted && opts?.skipDeletedAttachments ? [] : attachMap.get(r.id) ?? [];
+    return rowToMsg(r, attachments);
+  });
 }
 
 /** Single INSERT into a session (original + translated together). DB assigns id + created_at. */
@@ -89,6 +173,144 @@ export async function appendMessage(
     .single();
   if (error) throw new Error(`DB_ERROR: ${error.message}`);
   return rowToMsg(data as Row);
+}
+
+export async function insertPendingGuestUpload(input: {
+  sessionId: string;
+  channelKey: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<{ uploadToken: string }> {
+  const { data, error } = await db()
+    .from(PENDING_UPLOADS)
+    .insert({
+      session_id: input.sessionId,
+      channel_key: input.channelKey,
+      storage_path: input.storagePath,
+      mime_type: input.mimeType,
+      size_bytes: input.sizeBytes,
+    })
+    .select('id')
+    .single();
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  return { uploadToken: String((data as { id: string }).id) };
+}
+
+export type ValidatePendingUploadsResult =
+  | {
+      ok: true;
+      pending: PendingUploadRow[];
+    }
+  | { ok: false; error: 'INVALID_TOKEN' | 'ALREADY_USED' | 'CROSS_SESSION' | 'MISSING_OBJECT' | 'FORGED_PATH' };
+
+export async function validatePendingGuestUploads(input: {
+  sessionId: string;
+  channelKey: string;
+  uploadTokens: string[];
+}): Promise<ValidatePendingUploadsResult> {
+  const unique = [...new Set(input.uploadTokens)];
+  if (unique.length !== input.uploadTokens.length) {
+    return { ok: false, error: 'INVALID_TOKEN' };
+  }
+  const { data, error } = await db()
+    .from(PENDING_UPLOADS)
+    .select('id, session_id, channel_key, storage_path, mime_type, size_bytes, created_at, consumed_at')
+    .in('id', unique);
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  const rows = (data as PendingUploadRow[] | null) ?? [];
+  if (rows.length !== unique.length) return { ok: false, error: 'INVALID_TOKEN' };
+  for (const row of rows) {
+    if (row.consumed_at) return { ok: false, error: 'ALREADY_USED' };
+    if (row.session_id !== input.sessionId || row.channel_key !== input.channelKey) {
+      return { ok: false, error: 'CROSS_SESSION' };
+    }
+    if (!isGuestAttachmentStoragePathForSession(row.storage_path, input.sessionId)) {
+      return { ok: false, error: 'FORGED_PATH' };
+    }
+    const exists = await guestAttachmentObjectExists(row.storage_path);
+    if (!exists) return { ok: false, error: 'MISSING_OBJECT' };
+  }
+  rows.sort(
+    (a, b) => unique.indexOf(a.id) - unique.indexOf(b.id),
+  );
+  return { ok: true, pending: rows };
+}
+
+export async function appendGuestMessageWithAttachments(
+  input: NewGuestMsg & {
+    channelKey: string;
+    sessionId: string;
+    pending: PendingUploadRow[];
+  },
+): Promise<GuestSpikeMsg> {
+  const { data: msgData, error: msgErr } = await db()
+    .from(TABLE)
+    .insert({
+      channel_key: input.channelKey,
+      session_id: input.sessionId,
+      sender: input.sender,
+      original_text: input.original,
+      original_lang: input.original_lang,
+      translated_json: input.translated,
+      staff_user_id: input.sender === 'staff' ? input.staff_user_id ?? null : null,
+    })
+    .select(COLS)
+    .single();
+  if (msgErr) {
+    for (const p of input.pending) {
+      await deleteGuestAttachmentObjectBestEffort(p.storage_path);
+    }
+    throw new Error(`DB_ERROR: ${msgErr.message}`);
+  }
+  const msgRow = msgData as Row;
+  const attachmentInserts = input.pending.map((p, idx) => ({
+    message_id: msgRow.id,
+    session_id: input.sessionId,
+    storage_path: p.storage_path,
+    mime_type: p.mime_type,
+    size_bytes: p.size_bytes,
+    sort_order: idx,
+  }));
+  const { data: attData, error: attErr } = await db()
+    .from(ATTACHMENTS)
+    .insert(attachmentInserts)
+    .select('id, message_id, session_id, storage_path, mime_type, size_bytes, sort_order, created_at');
+  if (attErr) {
+    for (const p of input.pending) {
+      await deleteGuestAttachmentObjectBestEffort(p.storage_path);
+    }
+    throw new Error(`DB_ERROR: ${attErr.message}`);
+  }
+  const now = new Date().toISOString();
+  const { error: consumeErr } = await db()
+    .from(PENDING_UPLOADS)
+    .update({ consumed_at: now })
+    .in(
+      'id',
+      input.pending.map((p) => p.id),
+    );
+  if (consumeErr) throw new Error(`DB_ERROR: ${consumeErr.message}`);
+
+  const attachMap = await attachmentRowsToClient((attData as AttachmentRow[] | null) ?? [], true);
+  return rowToMsg(msgRow, attachMap.get(msgRow.id) ?? []);
+}
+
+/** Count attachments per message id (for summary preview). */
+export async function countAttachmentsByMessageIds(
+  messageIds: string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (messageIds.length === 0) return out;
+  const { data, error } = await db()
+    .from(ATTACHMENTS)
+    .select('message_id')
+    .in('message_id', messageIds);
+  if (error) throw new Error(`DB_ERROR: ${error.message}`);
+  for (const row of (data as { message_id: string }[] | null) ?? []) {
+    out.set(row.message_id, (out.get(row.message_id) ?? 0) + 1);
+  }
+  return out;
 }
 
 // ── guest sessions (Phase 1H.7) ──────────────────────────────────────────────────
@@ -214,7 +436,13 @@ export async function listOpenChannelSummaryData(): Promise<{
     .select('id, session_id, sender, created_at, original_text, translated_json, is_deleted')
     .in('session_id', ids);
   if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
-  return { sessions: rows, messages: (messages ?? []) as SummaryMessageRow[] };
+  const rawMessages = (messages ?? []) as SummaryMessageRow[];
+  const attachCounts = await countAttachmentsByMessageIds(rawMessages.map((m) => m.id));
+  const enriched = rawMessages.map((m) => ({
+    ...m,
+    has_attachments: (attachCounts.get(m.id) ?? 0) > 0,
+  }));
+  return { sessions: rows, messages: enriched };
 }
 
 export type SoftDeleteGuestMessageResult =
@@ -357,5 +585,11 @@ export async function listUnansweredSummaryData(): Promise<{
     .select('id, session_id, sender, created_at, original_text, translated_json, is_deleted')
     .in('session_id', ids);
   if (mErr) throw new Error(`DB_ERROR: ${mErr.message}`);
-  return { sessions: rows, messages: (messages ?? []) as UnansweredMessageRow[] };
+  const rawMessages = (messages ?? []) as UnansweredMessageRow[];
+  const attachCounts = await countAttachmentsByMessageIds(rawMessages.map((m) => m.id));
+  const enriched = rawMessages.map((m) => ({
+    ...m,
+    has_attachments: (attachCounts.get(m.id) ?? 0) > 0,
+  }));
+  return { sessions: rows, messages: enriched };
 }

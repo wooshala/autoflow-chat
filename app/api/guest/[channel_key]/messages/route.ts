@@ -11,17 +11,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import {
+  appendGuestMessageWithAttachments,
   appendMessage,
   getActiveSession,
   getSessionById,
   listMessagesBySession,
   setGuestSessionLanguage,
+  validatePendingGuestUploads,
   type GuestSession,
 } from '@/lib/guest-spike/store';
 import { detectAndTranslateToKorean, openAiCustomerTranslator } from '@/lib/customer-service/translation';
 import { isGuestLang, resolveOriginalLang, type GuestLang } from '@/lib/guest-spike/languages';
 import { channelCookieName } from '@/lib/guest-spike/sessionCookie';
 import { requireStaff } from '@/lib/guest-spike/staffAuth';
+import {
+  imageOnlyOriginalLang,
+  parseGuestMessagePostBody,
+  validateGuestMessagePostContent,
+} from '@/lib/guest-spike/guestMessagePost';
+import { normalizeAttachmentCount } from '@/lib/guest-spike/guestAttachmentValidation';
 import type { CustomerLang } from '@/lib/customer-service/translationLangs';
 
 export const runtime = 'nodejs';
@@ -92,7 +100,9 @@ export async function GET(req: NextRequest, { params }: { params: { channel_key:
     const { preferred, source } = sessionLanguage(r.session);
     const staffState = isStaff ? { session_status: (r.session ? 'open' : 'none') as 'open' | 'none' } : {};
     if (meta) return NextResponse.json({ ok: true, ...staffState, preferred_language: preferred, language_source: source });
-    const messages = r.session ? await listMessagesBySession(r.session.id) : [];
+    const messages = r.session
+      ? await listMessagesBySession(r.session.id, { skipDeletedAttachments: true })
+      : [];
     return NextResponse.json({ ok: true, ...staffState, messages, preferred_language: preferred, language_source: source });
   } catch (e) {
     return dbError(e);
@@ -105,14 +115,14 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
   // request body. Previously `body.sender === 'staff'` let a cookie-holding guest store a message
   // as staff, which would silently clear that room's unanswered state.
   // `body.sender` is still accepted and ignored so existing clients keep working.
-  let body: { text?: unknown; sender?: unknown };
+  let body: { text?: unknown; sender?: unknown; attachments?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
   }
-  const text = String(body.text ?? '').trim();
-  if (!text) return NextResponse.json({ ok: false, error: 'EMPTY' }, { status: 400 });
+
+  const { trimmedText, attachmentRefs } = parseGuestMessagePostBody(body);
 
   let session: GuestSession;
   let sender: 'guest' | 'staff';
@@ -138,19 +148,59 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
     return dbError(e);
   }
 
+  const contentCheck = validateGuestMessagePostContent({
+    trimmedText,
+    attachmentCount: attachmentRefs.length,
+    sender,
+  });
+  if (!contentCheck.ok) {
+    if (contentCheck.error === 'STAFF_ATTACHMENTS_FORBIDDEN') {
+      return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
+    }
+    return NextResponse.json({ ok: false, error: 'EMPTY' }, { status: 400 });
+  }
+
+  if (attachmentRefs.length > 0) {
+    const countCheck = normalizeAttachmentCount(attachmentRefs.length);
+    if (!countCheck.ok) {
+      return NextResponse.json({ ok: false, error: countCheck.error }, { status: 400 });
+    }
+  }
+
   // Translation language comes from THIS session (staff → active session; guest → own session).
   const { preferred } = sessionLanguage(session);
 
   let originalLang: string;
   const translated: Record<string, string> = {};
+  const text = trimmedText;
+  const hasAttachments = attachmentRefs.length > 0;
+  const isImageOnly = hasAttachments && text.length === 0;
 
   if (sender === 'guest') {
-    const { detected, ko } = await detectAndTranslateToKorean(text);
-    const resolved = resolveOriginalLang({ llmDetected: detected, text, preferred });
-    originalLang = resolved.lang;
-    if (resolved.usedFallback) console.warn('[GUEST_LANGUAGE_DETECTION_FALLBACK]', { channelKey, preferredLanguage: preferred, reason: 'llm_and_heuristic_null' });
-    if (ko) translated.ko = ko;
-    else console.warn('[GUEST_TRANSLATION_FAILED]', { channelKey, sender, originalLang, targetLang: 'ko', reason: 'no_ko_result' });
+    if (isImageOnly) {
+      originalLang = imageOnlyOriginalLang(preferred);
+    } else {
+      const { detected, ko } = await detectAndTranslateToKorean(text);
+      const resolved = resolveOriginalLang({ llmDetected: detected, text, preferred });
+      originalLang = resolved.lang;
+      if (resolved.usedFallback) {
+        console.warn('[GUEST_LANGUAGE_DETECTION_FALLBACK]', {
+          channelKey,
+          preferredLanguage: preferred,
+          reason: 'llm_and_heuristic_null',
+        });
+      }
+      if (ko) translated.ko = ko;
+      else {
+        console.warn('[GUEST_TRANSLATION_FAILED]', {
+          channelKey,
+          sender,
+          originalLang,
+          targetLang: 'ko',
+          reason: 'no_ko_result',
+        });
+      }
+    }
   } else {
     if (!preferred) return NextResponse.json({ ok: false, error: 'LANGUAGE_NOT_SELECTED' }, { status: 409 });
     originalLang = 'ko';
@@ -168,6 +218,34 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
   }
 
   try {
+    if (hasAttachments) {
+      const validated = await validatePendingGuestUploads({
+        sessionId: session.id,
+        channelKey,
+        uploadTokens: attachmentRefs.map((a) => a.upload_token),
+      });
+      if (!validated.ok) {
+        const status =
+          validated.error === 'CROSS_SESSION' || validated.error === 'FORGED_PATH'
+            ? 403
+            : validated.error === 'MISSING_OBJECT' || validated.error === 'INVALID_TOKEN'
+              ? 400
+              : 409;
+        return NextResponse.json({ ok: false, error: validated.error }, { status });
+      }
+      const message = await appendGuestMessageWithAttachments({
+        channelKey,
+        sessionId: session.id,
+        sender,
+        original: text,
+        original_lang: originalLang,
+        translated,
+        staff_user_id: staffUserId,
+        pending: validated.pending,
+      });
+      return NextResponse.json({ ok: true, message }, { status: 201 });
+    }
+
     const message = await appendMessage({
       channelKey,
       sessionId: session.id,
