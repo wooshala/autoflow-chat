@@ -273,24 +273,14 @@ test('validatePendingGuestUploads checks EXPIRED (store source)', () => {
   assert.match(storeSrc, /EXPIRED/);
 });
 
-test('atomic claim before message insert (concurrent-safe consume)', () => {
+test('atomic RPC replaces compensating claim/rollback (hardening)', () => {
   const storeSrc = readFileSync(
     fileURLToPath(new URL('../store.ts', import.meta.url)),
     'utf8',
   );
-  assert.match(storeSrc, /claimPendingGuestUploads/);
-  assert.match(storeSrc, /\.is\('consumed_at', null\)/);
-  assert.match(storeSrc, /rollbackGuestMessageInsert/);
-  assert.match(storeSrc, /releasePendingGuestUploads/);
-});
-
-test('sequential token replay returns ALREADY_USED (route maps 409)', () => {
-  const storeSrc = readFileSync(
-    fileURLToPath(new URL('../store.ts', import.meta.url)),
-    'utf8',
-  );
-  assert.match(storeSrc, /if \(row\.consumed_at\) return \{ ok: false, error: 'ALREADY_USED' \}/);
-  assert.match(messagesRoute, /ALREADY_USED/);
+  assert.match(storeSrc, /create_guest_message_with_attachments/);
+  assert.doesNotMatch(storeSrc, /claimPendingGuestUploads/);
+  assert.doesNotMatch(storeSrc, /rollbackGuestMessageInsert/);
 });
 
 test('image-only preview in guestChannelSummary guestPreview path', async () => {

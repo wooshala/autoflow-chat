@@ -252,6 +252,15 @@ export async function POST(req: NextRequest, { params }: { params: { channel_key
         if (msg === 'PENDING_ALREADY_USED') {
           return NextResponse.json({ ok: false, error: 'ALREADY_USED' }, { status: 409 });
         }
+        if (msg === 'PENDING_EXPIRED') {
+          return NextResponse.json({ ok: false, error: 'EXPIRED' }, { status: 400 });
+        }
+        if (msg === 'PENDING_CROSS_SESSION') {
+          return NextResponse.json({ ok: false, error: 'CROSS_SESSION' }, { status: 403 });
+        }
+        if (msg === 'PENDING_INVALID_TOKEN') {
+          return NextResponse.json({ ok: false, error: 'INVALID_TOKEN' }, { status: 400 });
+        }
         throw e;
       }
       return NextResponse.json({ ok: true, message }, { status: 201 });
