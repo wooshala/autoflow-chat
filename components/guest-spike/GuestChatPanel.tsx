@@ -167,7 +167,7 @@ export function GuestChatPanel({
           onSend={handleSend}
           placeholder={inputPlaceholder}
           sendLabel={sendLabel}
-          enableImages={ownSender === 'guest' && !asStaff}
+          enableImages
         />
       )}
     </div>

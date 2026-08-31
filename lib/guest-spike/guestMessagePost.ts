@@ -1,13 +1,10 @@
-// IMAGE-CHAT-01A — message POST content validation (import-free for node --test).
+// IMAGE-CHAT-01A/01B — message POST content validation (import-free for node --test).
 
 export function validateGuestMessageContent(input: {
   trimmedText: string;
   hasImage: boolean;
   sender: 'guest' | 'staff';
-}): { ok: true } | { ok: false; error: 'EMPTY' | 'STAFF_IMAGE_FORBIDDEN' } {
-  if (input.sender === 'staff' && input.hasImage) {
-    return { ok: false, error: 'STAFF_IMAGE_FORBIDDEN' };
-  }
+}): { ok: true } | { ok: false; error: 'EMPTY' } {
   if (input.trimmedText.length === 0 && !input.hasImage) {
     return { ok: false, error: 'EMPTY' };
   }
