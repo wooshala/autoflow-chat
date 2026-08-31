@@ -64,11 +64,13 @@ test('1. legacy Guest text POST accepted — empty without image rejected', () =
   if (!empty.ok) assert.equal(empty.error, 'EMPTY');
 });
 
-test('2. legacy Staff text POST — staff image forbidden', () => {
+test('2. legacy Staff text POST — staff image allowed (01B)', () => {
   const r = validateGuestMessageContent({ trimmedText: 'reply', hasImage: false, sender: 'staff' });
   assert.equal(r.ok, true);
   const withImage = validateGuestMessageContent({ trimmedText: 'x', hasImage: true, sender: 'staff' });
-  assert.equal(withImage.ok, false);
+  assert.equal(withImage.ok, true);
+  const imageOnly = validateGuestMessageContent({ trimmedText: '', hasImage: true, sender: 'staff' });
+  assert.equal(imageOnly.ok, true);
 });
 
 test('3. text-only serialization unchanged — attachments normalize to []', () => {
