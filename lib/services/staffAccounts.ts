@@ -209,7 +209,43 @@ async function findActiveSession(sessionHash: string): Promise<StaffSessionRow |
   return (data as StaffSessionRow | null) ?? null;
 }
 
-async function touchSession(sessionHash: string): Promise<void> {
+/**
+ * How stale `last_seen_at` must be before a request pays for a write.
+ *
+ * `staff_sessions.last_seen_at` is an activity timestamp only: nothing reads it to
+ * allow or deny a request. Authorisation is `revoked_at IS NULL` plus
+ * `account.is_active`, both re-checked on every call and both unaffected by this.
+ * (The online/offline dot in StaffInvitePanel reads `staff_invites.last_seen_at`,
+ * a different table this does not touch.)
+ *
+ * Without a window, every authenticated request wrote this row — measured at ~214
+ * writes/hour/client while nobody was chatting — and each write produced WAL that
+ * Supabase Realtime then had to decode.
+ */
+export const SESSION_TOUCH_THROTTLE_MS = 60_000;
+
+/** True when `last_seen_at` is recent enough that re-writing it buys nothing. */
+export function isSessionTouchFresh(
+  lastSeenAt: string | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!lastSeenAt) return false;
+  const seen = new Date(lastSeenAt).getTime();
+  if (!Number.isFinite(seen)) return false;
+  const age = now - seen;
+  // A negative age means clock skew (row stamped ahead of us) — write rather than
+  // risk a session that never refreshes again.
+  return age >= 0 && age < SESSION_TOUCH_THROTTLE_MS;
+}
+
+/**
+ * Refresh the session's activity timestamp, skipping the write when the stored
+ * value is already fresh. `lastSeenAt` comes from the row findActiveSession has
+ * just read, so the throttle costs no extra query.
+ */
+async function touchSession(sessionHash: string, lastSeenAt?: string | null): Promise<void> {
+  if (isSessionTouchFresh(lastSeenAt)) return;
+
   if (useMock()) {
     const s = mockSessions().find((x) => x.session_hash === sessionHash && !x.revoked_at);
     if (s) s.last_seen_at = new Date().toISOString();
@@ -286,7 +322,7 @@ export async function validateSessionToken(rawToken: string): Promise<StaffAccou
   const account = await getAccountById(session.staff_account_id);
   if (!account) throw new StaffAccountError('SESSION_INVALID');
   if (!account.is_active) throw new StaffAccountError('ACCOUNT_DEACTIVATED');
-  await touchSession(session.session_hash);
+  await touchSession(session.session_hash, session.last_seen_at);
   return toPublic(account);
 }
 
