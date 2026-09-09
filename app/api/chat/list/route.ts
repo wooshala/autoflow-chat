@@ -63,8 +63,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // DB time probe (diagnostic only)
-    try {
+    // DB time probe (diagnostic only). This is an extra round trip on the hottest
+    // read path in the app — the chat list is polled continuously by every open
+    // tab — so it now runs only when diagnostics are explicitly switched on.
+    // Production default is off: CHAT_DEBUG_VERBOSE is unset.
+    if (DEBUG_VERBOSE) {
+      try {
       if (supabaseAdmin) {
         const { data, error } = await supabaseAdmin.rpc('diag_db_now');
         console.log('[DB_NOW_LIST]', {
@@ -83,14 +87,15 @@ export async function GET(req: NextRequest) {
           error: 'no_supabase_admin_client'
         });
       }
-    } catch (e: any) {
-      console.log('[DB_NOW_LIST]', {
-        db_now: null,
-        admin_chosen_url_host: getAdminChosenUrlHost(),
-        message_id: null,
-        ok: false,
-        error: e?.message || String(e)
-      });
+      } catch (e: any) {
+        console.log('[DB_NOW_LIST]', {
+          db_now: null,
+          admin_chosen_url_host: getAdminChosenUrlHost(),
+          message_id: null,
+          ok: false,
+          error: e?.message || String(e)
+        });
+      }
     }
     console.log('[CHAT_LIST_API_START]', {
       limit,
@@ -105,7 +110,15 @@ export async function GET(req: NextRequest) {
     const probeId = lastSent?.id ? String(lastSent.id) : '';
     const probeRecent = Boolean(lastSent?.at_ms && Date.now() - Number(lastSent.at_ms) < 5 * 60 * 1000);
     let probeIncludedInRawList: boolean | null = null;
-    if (probeId && probeRecent && supabaseAdmin) {
+    // Post-send probe cascade (probe-by-id -> raw list -> diag_chat_list_top -> up to
+    // three retries) — up to six extra round trips on a polled endpoint. It was added
+    // while chat/list could be served from the Next.js Data Cache and miss a row that
+    // had just been written; a06991c removed that cause by opting the route out with
+    // force-dynamic + fetchCache no-store. Send and list share one supabaseAdmin client
+    // against the primary with no read replica, so a committed INSERT is visible to the
+    // next SELECT and the retry has nothing left to recover. Kept behind the diagnostic
+    // gate rather than deleted: set CHAT_DEBUG_VERBOSE=1 to bring it back.
+    if (DEBUG_VERBOSE && probeId && probeRecent && supabaseAdmin) {
       const sb = supabaseAdmin;
       const started = Date.now();
       const { data, error } = await sb
