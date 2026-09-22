@@ -30,6 +30,7 @@ export const messages = {
     sendSuccess: '전송 완료',
     voiceSoon: '음성(워키토키)은 v0.3 예정입니다',
     photoCaption: '사진',
+    videoCaption: '동영상',
     loading: '불러오는 중…',
     retry: '재시도',
     noMessages: '메시지가 없습니다',
@@ -65,7 +66,80 @@ export const messages = {
     ttsNoRussianVoiceBanner:
       '⚠️ 러시아어 음성(TTS) 없음 — 자동 읽기 불가. 알림음은 정상입니다. 기기 설정에서 러시아어 음성 데이터를 설치하세요.',
     ttsVoiceUnavailable: '음성 없음',
-    ttsTapSoundOn: '🔊 음성을 켜주세요 (자동 읽기)'
+    ttsTapSoundOn: '🔊 음성을 켜주세요 (자동 읽기)',
+
+    currentStatus: '현재 상태',
+    statusAvailable: '근무 가능',
+    statusCleaning: '청소 중',
+    statusBreak: '휴식',
+    statusOutside: '외출',
+    statusOffDuty: '퇴근',
+    statusRevoked: '내보냄',
+
+    alertSound: '알림음',
+    replaySound: '다시 듣기',
+    previewVolume: '미리듣기 음량',
+    soundDefault: '기본음',
+    soundBell: '벨',
+    soundIncoming: '수신음',
+    soundNotify1: '알림 1',
+    soundNotify2: '알림 2',
+    soundNotify3: '알림 3',
+
+    noRoom: '객실 없음',
+
+    staffLoginTitle: '직원 로그인',
+    staffLoginSelectName: '이름 선택',
+    staffLoginCodePlaceholder: '4자리 코드',
+    staffLoginSubmit: '로그인',
+    staffLoginSubmitting: '로그인 중…',
+    staffLoginNeedNameCode: '이름을 선택하고 4자리 코드를 입력하세요.',
+    staffLoginLocked: '시도가 많아 잠시 잠겼습니다. 잠시 후 다시 시도하세요.',
+    staffLoginBadCode: '코드가 올바르지 않습니다.',
+    staffLoginNetworkError: '네트워크 오류입니다. 다시 시도하세요.',
+    logout: '로그아웃',
+
+    sttListening: '듣는 중...',
+    sttRecognizing: '음성을 문자로 변환하고 있습니다...',
+    sttDone: '입력창에서 확인 후 전송하세요.',
+    sttFailed: '음성을 인식하지 못했습니다. 다시 말씀해주세요.',
+    enableAlertBeep: '알림음을 켜려면 탭하세요',
+
+    attachPhotoCapture: '📷 사진 촬영',
+    attachPhotoPick: '🖼 사진 선택',
+    attachVideoCapture: '🎥 동영상 촬영',
+    attachVideoPick: '🎞 동영상 선택',
+    attachMenu: '첨부',
+    attachClose: '첨부 메뉴 닫기',
+    voiceInput: '음성',
+
+    deleteConfirm: '삭제하시겠습니까?',
+    delete: '삭제',
+    deleting: '삭제 중',
+    deleteFailed: '삭제 실패',
+    deletedMessage: '삭제된 메시지입니다',
+
+    mediaUnsupported: '사진 또는 동영상만 첨부할 수 있습니다.',
+    mediaVideoTooLarge: '동영상은 4MB 이하만 전송할 수 있습니다. 더 짧게 촬영해 주세요.',
+    mediaImageTooLarge: '10MB 이하만 가능합니다.',
+
+    debugCopy: '복사',
+    debugCopied: '복사됨',
+    debugCopyFail: '실패',
+    debugLogWaiting: '로그 대기 중… (self/TTS/사운드 이벤트)',
+
+    listLoadFailed: '메시지 목록을 불러오지 못했습니다.',
+    listLoadTimeout: '메시지 목록 로드 시간이 초과되었습니다.',
+
+    testNotifyArrived: '🔔 테스트 알림이 도착했습니다.',
+    testNotifyDefaultText: '테스트입니다.',
+
+    pwaInstallTitle: '홈 화면에 추가',
+    pwaInstallBody: '앱처럼 빠르게 열기 — AutoFlow Staff를 홈 화면에 추가하세요.',
+    pwaInstallButton: '설치',
+    pwaInstallInstalling: '설치 중…',
+    pwaInstallDismiss: '나중에',
+    pwaInstallIosHelp: 'Safari에서 공유(□↑) → 「홈 화면에 추가」를 선택하세요.'
   },
   ru: {
     send: 'Отправить',
@@ -94,6 +168,7 @@ export const messages = {
     sendSuccess: 'Отправлено',
     voiceSoon: 'Голос — в v0.3',
     photoCaption: 'Фото',
+    videoCaption: 'Видео',
     loading: 'Загрузка…',
     retry: 'Повтор',
     noMessages: 'Нет сообщений',
@@ -129,7 +204,80 @@ export const messages = {
     ttsNoRussianVoiceBanner:
       '⚠️ Нет русского TTS — авточтение недоступно. Звук уведомления работает. Установите русский голос в настройках.',
     ttsVoiceUnavailable: 'Нет голоса',
-    ttsTapSoundOn: 'Включите 🔊 (авточтение)'
+    ttsTapSoundOn: 'Включите 🔊 (авточтение)',
+
+    currentStatus: 'Текущий статус',
+    statusAvailable: 'На смене',
+    statusCleaning: 'Уборка',
+    statusBreak: 'Перерыв',
+    statusOutside: 'Вне здания',
+    statusOffDuty: 'Не на смене',
+    statusRevoked: 'Исключён',
+
+    alertSound: 'Звук уведомления',
+    replaySound: 'Слушать снова',
+    previewVolume: 'Громкость предпрослушивания',
+    soundDefault: 'По умолчанию',
+    soundBell: 'Звонок',
+    soundIncoming: 'Входящий',
+    soundNotify1: 'Уведомление 1',
+    soundNotify2: 'Уведомление 2',
+    soundNotify3: 'Уведомление 3',
+
+    noRoom: 'Без номера',
+
+    staffLoginTitle: 'Вход сотрудника',
+    staffLoginSelectName: 'Выберите имя',
+    staffLoginCodePlaceholder: '4-значный код',
+    staffLoginSubmit: 'Войти',
+    staffLoginSubmitting: 'Вход…',
+    staffLoginNeedNameCode: 'Выберите имя и введите 4-значный код.',
+    staffLoginLocked: 'Слишком много попыток. Попробуйте позже.',
+    staffLoginBadCode: 'Неверный код.',
+    staffLoginNetworkError: 'Ошибка сети. Попробуйте снова.',
+    logout: 'Выйти',
+
+    sttListening: 'Слушаю...',
+    sttRecognizing: 'Преобразую речь в текст...',
+    sttDone: 'Проверьте текст и отправьте.',
+    sttFailed: 'Не удалось распознать речь. Повторите.',
+    enableAlertBeep: 'Нажмите, чтобы включить звук уведомления',
+
+    attachPhotoCapture: '📷 Сфотографировать',
+    attachPhotoPick: '🖼 Выбрать фото',
+    attachVideoCapture: '🎥 Снять видео',
+    attachVideoPick: '🎞 Выбрать видео',
+    attachMenu: 'Вложение',
+    attachClose: 'Закрыть меню вложений',
+    voiceInput: 'Голос',
+
+    deleteConfirm: 'Удалить?',
+    delete: 'Удалить',
+    deleting: 'Удаление',
+    deleteFailed: 'Не удалось удалить',
+    deletedMessage: 'Сообщение удалено',
+
+    mediaUnsupported: 'Можно прикрепить только фото или видео.',
+    mediaVideoTooLarge: 'Видео — не больше 4 МБ. Снимите короче.',
+    mediaImageTooLarge: 'Не больше 10 МБ.',
+
+    debugCopy: 'Копировать',
+    debugCopied: 'Скопировано',
+    debugCopyFail: 'Ошибка',
+    debugLogWaiting: 'Ожидание логов… (self/TTS/звук)',
+
+    listLoadFailed: 'Не удалось загрузить сообщения.',
+    listLoadTimeout: 'Время ожидания загрузки сообщений истекло.',
+
+    testNotifyArrived: '🔔 Тестовое уведомление получено.',
+    testNotifyDefaultText: 'Тест.',
+
+    pwaInstallTitle: 'Добавить на главный экран',
+    pwaInstallBody: 'Открывайте как приложение — добавьте AutoFlow Staff на главный экран.',
+    pwaInstallButton: 'Установить',
+    pwaInstallInstalling: 'Установка…',
+    pwaInstallDismiss: 'Позже',
+    pwaInstallIosHelp: 'Safari: Поделиться (□↑) → «На экран Домой».'
   }
 } as const;
 
@@ -137,4 +285,9 @@ export type MessageKey = keyof (typeof messages)['ko'];
 
 export function translate(locale: StaffLocale, key: MessageKey): string {
   return messages[locale][key] ?? messages.ko[key] ?? key;
+}
+
+/** All message keys (for completeness tests). */
+export function staffMessageKeys(): MessageKey[] {
+  return Object.keys(messages.ko) as MessageKey[];
 }

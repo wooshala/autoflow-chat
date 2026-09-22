@@ -1,6 +1,8 @@
 // Staff work status (operational state) — shared by staff-chat (self picker) and
 // the admin participant panel. This is separate from online/offline app state.
 
+import { translate, type MessageKey, type StaffLocale } from '@/lib/i18n/messages';
+
 export type StaffWorkStatus =
   | 'available'
   | 'cleaning'
@@ -11,7 +13,7 @@ export type StaffWorkStatus =
 
 export type StaffWorkStatusOption = {
   key: StaffWorkStatus;
-  label: string;
+  labelKey: MessageKey;
   icon: string;
   /** Sort priority for the admin list (lower = shown first). */
   order: number;
@@ -19,16 +21,16 @@ export type StaffWorkStatusOption = {
 
 /** Picker options shown to staff (excludes 'revoked', which the admin controls). */
 export const STAFF_WORK_STATUS_OPTIONS: StaffWorkStatusOption[] = [
-  { key: 'available', label: '근무 가능', icon: '🟢', order: 0 },
-  { key: 'cleaning', label: '청소 중', icon: '🧹', order: 1 },
-  { key: 'break', label: '휴식', icon: '🍽️', order: 2 },
-  { key: 'outside', label: '외출', icon: '🚗', order: 3 },
-  { key: 'off_duty', label: '퇴근', icon: '🏁', order: 4 }
+  { key: 'available', labelKey: 'statusAvailable', icon: '🟢', order: 0 },
+  { key: 'cleaning', labelKey: 'statusCleaning', icon: '🧹', order: 1 },
+  { key: 'break', labelKey: 'statusBreak', icon: '🍽️', order: 2 },
+  { key: 'outside', labelKey: 'statusOutside', icon: '🚗', order: 3 },
+  { key: 'off_duty', labelKey: 'statusOffDuty', icon: '🏁', order: 4 }
 ];
 
 const REVOKED_META: StaffWorkStatusOption = {
   key: 'revoked',
-  label: '내보냄',
+  labelKey: 'statusRevoked',
   icon: '🔴',
   order: 5
 };
@@ -57,6 +59,14 @@ export function normalizeStaffWorkStatus(v: unknown): StaffWorkStatus {
 
 export function staffWorkStatusMeta(v: unknown): StaffWorkStatusOption {
   return BY_KEY[normalizeStaffWorkStatus(v)] ?? STAFF_WORK_STATUS_OPTIONS[0];
+}
+
+/** Localized label for a work status (defaults to Korean for admin PC UI). */
+export function staffWorkStatusLabel(
+  v: unknown,
+  locale: StaffLocale = 'ko'
+): string {
+  return translate(locale, staffWorkStatusMeta(v).labelKey);
 }
 
 /** localStorage key for the staff device's own selected status (display only). */

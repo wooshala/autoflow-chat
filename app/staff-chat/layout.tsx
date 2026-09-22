@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
   title: 'AutoFlow Staff',
-  description: '청소팀 Staff Chat — 객실 상태·사진·긴급 메시지',
+  description: 'AutoFlow Staff Chat — rooms, status, photos, urgent messages',
   applicationName: 'AutoFlow Staff',
   manifest: '/staff-chat/manifest.json',
   appleWebApp: {

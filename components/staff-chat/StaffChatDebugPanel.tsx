@@ -5,12 +5,14 @@ import {
   formatStaffChatDebugLogsForCopy,
   type StaffChatDebugEntry
 } from '@/lib/chat/staffChatDebugLog';
+import type { MessageKey } from '@/lib/i18n/messages';
 
 type Props = {
   logs: StaffChatDebugEntry[];
+  t: (key: MessageKey) => string;
 };
 
-export default function StaffChatDebugPanel({ logs }: Props) {
+export default function StaffChatDebugPanel({ logs, t }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle');
 
@@ -43,7 +45,7 @@ export default function StaffChatDebugPanel({ logs }: Props) {
   }, [logs]);
 
   const copyLabel =
-    copyState === 'ok' ? '복사됨' : copyState === 'fail' ? '실패' : '복사';
+    copyState === 'ok' ? t('debugCopied') : copyState === 'fail' ? t('debugCopyFail') : t('debugCopy');
 
   return (
     <>
@@ -71,7 +73,7 @@ export default function StaffChatDebugPanel({ logs }: Props) {
           </div>
           <div className="max-h-[calc(38vh-2rem)] overflow-y-auto p-2 font-mono text-[10px] leading-snug text-amber-100">
             {logs.length === 0 ? (
-              <p className="text-amber-400/80">로그 대기 중… (self/TTS/사운드 이벤트)</p>
+              <p className="text-amber-400/80">{t('debugLogWaiting')}</p>
             ) : (
               <ul className="space-y-1">
                 {[...logs].reverse().map((e) => (

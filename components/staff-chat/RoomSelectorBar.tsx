@@ -3,13 +3,12 @@
 import { useEffect, useRef } from 'react';
 import { STAFF_ROOM_OPTIONS } from '@/lib/chat/staffRoomOptions';
 
-import type { StaffLocale } from '@/lib/i18n/messages';
-
 type Props = {
   selectedRoom: string;
   onSelect: (roomNo: string) => void;
   disabled?: boolean;
   sectionLabel?: string;
+  noRoomLabel?: string;
   large?: boolean;
   /** Touch-friendly chips with reduced vertical footprint on mobile. */
   compactMobile?: boolean;
@@ -19,7 +18,8 @@ export default function RoomSelectorBar({
   selectedRoom,
   onSelect,
   disabled = false,
-  sectionLabel = '객실',
+  sectionLabel = 'Room',
+  noRoomLabel = 'None',
   large = false,
   compactMobile = false
 }: Props) {
@@ -51,7 +51,6 @@ export default function RoomSelectorBar({
         <span className={`${labelClass} pt-2`}>{sectionLabel}</span>
         <div className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain ${scrollMaxClass}`}>
           <div className={`flex w-max items-center pr-1 ${compactMobile || large ? 'gap-2' : 'gap-1.5'}`}>
-            {/* 객실 없음: 선택 해제 → onSelect('') → room_no null */}
             <button
               key="__none__"
               ref={selectedRoom === '' ? selectedRef : undefined}
@@ -64,7 +63,7 @@ export default function RoomSelectorBar({
                   : 'border-gray-200 bg-gray-50 text-gray-800 active:border-blue-300 active:bg-blue-50'
               }`}
             >
-              객실 없음
+              {noRoomLabel}
             </button>
             {STAFF_ROOM_OPTIONS.map((room) => {
               const selected = selectedRoom === room;
