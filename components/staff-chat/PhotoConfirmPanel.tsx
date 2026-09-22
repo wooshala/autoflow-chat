@@ -12,6 +12,8 @@ type Props = {
   selectedStatusText: string;
   locale: StaffLocale;
   roomLabel: string;
+  roomSuffix: string;
+  noRoomLabel: string;
   statusLabel: string;
   cancelLabel: string;
   sendLabel: string;
@@ -29,6 +31,8 @@ export default function PhotoConfirmPanel({
   selectedStatusText,
   locale,
   roomLabel,
+  roomSuffix,
+  noRoomLabel,
   statusLabel,
   cancelLabel,
   sendLabel,
@@ -59,7 +63,7 @@ export default function PhotoConfirmPanel({
         )}
         {selectedStatusText ? (
           <p className="rounded-lg bg-white px-3 py-2 text-center text-base font-semibold text-gray-800">
-            {photoRoom ? `${photoRoom}${locale === 'ko' ? '호 ' : ' '}` : ''}
+            {photoRoom ? `${photoRoom}${roomSuffix ? `${roomSuffix} ` : ' '}` : ''}
             {selectedStatusText}
           </p>
         ) : null}
@@ -68,6 +72,7 @@ export default function PhotoConfirmPanel({
           onSelect={onRoomSelect}
           disabled={sending}
           sectionLabel={roomLabel}
+          noRoomLabel={noRoomLabel}
           large
           compactMobile
         />

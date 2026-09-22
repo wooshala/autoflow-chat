@@ -43,7 +43,7 @@ function getFirebaseAppReady(): boolean {
 }
 
 function androidChannelId(urgency: StaffFcmDataPayload['urgency']): string {
-  return urgency === 'urgent' ? 'autoflow_staff_urgent' : 'autoflow_staff_messages';
+  return urgency === 'urgent' ? 'autoflow_staff_urgent' : 'autoflow_staff_messages_v3';
 }
 
 function makeMessage(

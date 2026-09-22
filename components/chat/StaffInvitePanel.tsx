@@ -9,6 +9,7 @@ import {
   STAFF_WORK_STATUS_OPTIONS,
   STAFF_STATUS_CHANNEL,
   STAFF_STATUS_EVENT,
+  staffWorkStatusLabel,
   staffWorkStatusMeta,
   type StaffWorkStatus
 } from '@/lib/chat/staffStatus';
@@ -172,7 +173,9 @@ export default function StaffInvitePanel({
           const nextStatus = staffWorkStatusMeta(inv.current_status).key;
           const prev = prevStatusRef.current.get(id);
           if (prev && prev !== nextStatus) {
-            logEvent(`${safeText(inv.display_name, '직원')} → ${staffWorkStatusMeta(nextStatus).label}`);
+            logEvent(
+              `${safeText(inv.display_name, '직원')} → ${staffWorkStatusLabel(nextStatus, 'ko')}`
+            );
           }
           prevStatusRef.current.set(id, nextStatus);
         }
@@ -467,7 +470,7 @@ export default function StaffInvitePanel({
                 {!removed ? (
                   <div className="mt-1 flex items-center gap-1.5 text-sm font-bold text-gray-800">
                     <span aria-hidden>{wsMeta.icon}</span>
-                    <span>{wsMeta.label}</span>
+                    <span>{staffWorkStatusLabel(wsMeta.key, 'ko')}</span>
                   </div>
                 ) : null}
 
@@ -499,7 +502,7 @@ export default function StaffInvitePanel({
                     >
                       {STAFF_WORK_STATUS_OPTIONS.map((o) => (
                         <option key={o.key} value={o.key}>
-                          {o.icon} {o.label}
+                          {o.icon} {staffWorkStatusLabel(o.key, 'ko')}
                         </option>
                       ))}
                     </select>

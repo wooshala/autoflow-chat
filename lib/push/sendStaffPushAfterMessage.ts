@@ -75,7 +75,7 @@ export async function sendStaffPushAfterMessage(message: ChatMessage): Promise<v
     message_id: data.message_id,
     notification_title: notification.title,
     android_channel:
-      data.urgency === 'urgent' ? 'autoflow_staff_urgent' : 'autoflow_staff_messages',
+      data.urgency === 'urgent' ? 'autoflow_staff_urgent' : 'autoflow_staff_messages_v3',
     target_count: tokens.length,
     data_keys: Object.keys(data)
   });

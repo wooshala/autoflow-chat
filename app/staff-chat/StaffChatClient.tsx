@@ -33,6 +33,7 @@ import {
   STAFF_STATUS_CHANNEL,
   STAFF_STATUS_EVENT,
   normalizeStaffWorkStatus,
+  staffWorkStatusLabel,
   staffWorkStatusMeta,
   type StaffWorkStatus
 } from '@/lib/chat/staffStatus';
@@ -304,7 +305,7 @@ function StaffChatPageInner() {
     ch.on('broadcast', { event: 'staff-test' }, (msg: { payload?: Record<string, unknown> }) => {
       const p = msg?.payload;
       if (!p || String(p.target_invite_id ?? '') !== myInviteId) return;
-      const text = typeof p.text === 'string' && p.text.trim() ? p.text : '테스트입니다.';
+      const text = typeof p.text === 'string' && p.text.trim() ? p.text : t('testNotifyDefaultText');
       console.log('[STAFF_TEST_PING_RECEIVED]', { invite_id: myInviteId });
       if (soundEnabled) void playStaffSound(alertSoundSrcRef.current, alertVolumeRef.current);
       const { ttsLang } = resolveStaffTtsLangFromSession({
@@ -313,7 +314,7 @@ function StaffChatPageInner() {
         uiLocale: locale
       });
       runStaffTts(text, ttsLang, false, false);
-      setToast({ kind: 'ok', msg: '🔔 테스트 알림이 도착했습니다.' });
+      setToast({ kind: 'ok', msg: t('testNotifyArrived') });
     });
     ch.subscribe();
     return () => {
@@ -379,7 +380,7 @@ function StaffChatPageInner() {
         }
       }
       const meta = staffWorkStatusMeta(next);
-      setToast({ kind: 'ok', msg: `${meta.icon} ${meta.label}` });
+      setToast({ kind: 'ok', msg: `${meta.icon} ${staffWorkStatusLabel(next, locale)}` });
     },
     [inviteSession?.inviteId, supabase]
   );
@@ -541,7 +542,7 @@ function StaffChatPageInner() {
     const accountId = staffLoginAccountId.trim();
     const code = staffLoginCode.trim();
     if (!accountId || !/^\d{4}$/.test(code)) {
-      setStaffLoginError('이름을 선택하고 4자리 코드를 입력하세요.');
+      setStaffLoginError(t('staffLoginNeedNameCode'));
       return;
     }
     setStaffLoginSubmitting(true);
@@ -556,9 +557,7 @@ function StaffChatPageInner() {
       if (!res.ok || !json?.ok) {
         const err = json?.error;
         setStaffLoginError(
-          err === 'LOGIN_LOCKED'
-            ? '시도가 많아 잠시 잠겼습니다. 잠시 후 다시 시도하세요.'
-            : '코드가 올바르지 않습니다.'
+          err === 'LOGIN_LOCKED' ? t('staffLoginLocked') : t('staffLoginBadCode')
         );
         return;
       }
@@ -569,7 +568,7 @@ function StaffChatPageInner() {
       setSessionSource('account_session');
       setInvitePhase('ready');
     } catch {
-      setStaffLoginError('네트워크 오류입니다. 다시 시도하세요.');
+      setStaffLoginError(t('staffLoginNetworkError'));
     } finally {
       setStaffLoginSubmitting(false);
     }
@@ -751,7 +750,7 @@ function StaffChatPageInner() {
     if (!initialHydrationComplete) return;
     if (initialLoadStatus === 'error') {
       staffChatLog('STAFF_CHAT_LIST_ERROR', { error: 'initial_load_failed', message_count: messages.length });
-      setListError('메시지 목록을 불러오지 못했습니다.');
+      setListError(t('listLoadFailed'));
       setListPhase('error');
       staffChatLog('STAFF_CHAT_READY', {
         staffKey,
@@ -798,7 +797,7 @@ function StaffChatPageInner() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       staffChatLog('STAFF_CHAT_LIST_ERROR', { error: msg, source: 'manual_retry' });
-      setListError('메시지 목록을 불러오지 못했습니다.');
+      setListError(t('listLoadFailed'));
       setListPhase('error');
     }
   }, [loadFull]);
@@ -808,7 +807,7 @@ function StaffChatPageInner() {
       if (listPhase !== 'loading') return;
       if (initialHydrationComplete) return;
       staffChatLog('STAFF_CHAT_LIST_ERROR', { error: 'timeout_5s', initialHydrationComplete });
-      setListError('메시지 목록 로드 시간이 초과되었습니다.');
+      setListError(t('listLoadTimeout'));
       setListPhase('error');
       staffChatLog('STAFF_CHAT_READY', { staffKey, mode: 'timeout_error', hasSession: Boolean(sessionUser) });
     }, 5000);
@@ -1280,8 +1279,12 @@ function StaffChatPageInner() {
         fd.append('actor_name', actorName);
         // 캡션이 비어 있을 때의 기본 문구. 동영상인데 "사진"으로 저장되면
         // 운영 콘솔·알림·검색에서 잘못 표기되므로 미디어 종류로 분기한다.
-        const mediaLabel = image && detectChatMediaKind(image.type) === 'video' ? '동영상' : '사진';
-        fd.append('message', msg || (image ? (r ? `${r}호 ${mediaLabel}` : mediaLabel) : ''));
+        const mediaLabel = image && detectChatMediaKind(image.type) === 'video' ? t('videoCaption') : t('photoCaption');
+        const roomPart = r ? `${r}${t('roomSuffix')}`.trim() : '';
+        fd.append(
+          'message',
+          msg || (image ? (roomPart ? `${roomPart} ${mediaLabel}` : mediaLabel) : '')
+        );
         fd.append('sender_side', 'mobile');
         fd.append('sender_name', actorName);
         if (inviteSession?.inviteId) fd.append('token_id', inviteSession.inviteId);
@@ -1365,7 +1368,7 @@ function StaffChatPageInner() {
           body: JSON.stringify({ message_id: msg.id, user_id: chatSendUserId })
         });
         if (!res.ok) {
-          setToast({ kind: 'error', msg: res.message || '삭제 실패' });
+          setToast({ kind: 'error', msg: res.message || t('deleteFailed') });
           return;
         }
         const deleted = res.data?.message;
@@ -1375,7 +1378,7 @@ function StaffChatPageInner() {
           );
         }
       } catch {
-        setToast({ kind: 'error', msg: '삭제 실패' });
+        setToast({ kind: 'error', msg: t('deleteFailed') });
       } finally {
         setDeletingMessageId(null);
       }
@@ -1401,9 +1404,11 @@ function StaffChatPageInner() {
   function buildPhotoCaption(room: string, statusText: string): string {
     const r = room.trim();
     const status = statusText.trim();
+    const suffix = t('roomSuffix');
     if (!r) return status;
-    if (!status) return locale === 'ko' ? `${r}호` : r;
-    return locale === 'ko' ? `${r}호 ${status}` : `${r} ${status}`;
+    const roomLabel = suffix ? `${r}${suffix}` : r;
+    if (!status) return roomLabel;
+    return `${roomLabel} ${status}`;
   }
 
   function handlePhotoStatusSelect(payload: { phrase_key: string; text: string }) {
@@ -1575,7 +1580,13 @@ function StaffChatPageInner() {
         mime_type: file.type || null,
         file_size: file.size
       });
-      setToast({ kind: 'error', msg: check.rejection.message });
+      const mediaMsg =
+        check.rejection.code === 'UNSUPPORTED_MEDIA_TYPE'
+          ? t('mediaUnsupported')
+          : detectChatMediaKind(file.type) === 'video'
+            ? t('mediaVideoTooLarge')
+            : t('mediaImageTooLarge');
+      setToast({ kind: 'error', msg: mediaMsg });
       return;
     }
     setPendingKind(check.kind);
@@ -1615,7 +1626,7 @@ function StaffChatPageInner() {
         }
       });
     },
-    onFailure: () => setToast({ kind: 'error', msg: '음성을 인식하지 못했습니다. 다시 말씀해주세요.' }),
+    onFailure: () => setToast({ kind: 'error', msg: t('sttFailed') }),
     disabled: !canSendMessages
   });
 
@@ -1699,13 +1710,13 @@ function StaffChatPageInner() {
   if (invitePhase === 'login') {
     return (
       <main className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-[#eceff1] px-6">
-        <h1 className="text-lg font-bold text-gray-900">직원 로그인</h1>
+        <h1 className="text-lg font-bold text-gray-900">{t('staffLoginTitle')}</h1>
         <select
           value={staffLoginAccountId}
           onChange={(e) => setStaffLoginAccountId(e.target.value)}
           className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
         >
-          <option value="">이름 선택</option>
+          <option value="">{t('staffLoginSelectName')}</option>
           {staffLoginRoster.map((r) => (
             <option key={r.accountId} value={r.accountId}>
               {r.displayName}
@@ -1716,7 +1727,7 @@ function StaffChatPageInner() {
           value={staffLoginCode}
           onChange={(e) => setStaffLoginCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
           inputMode="numeric"
-          placeholder="4자리 코드"
+          placeholder={t('staffLoginCodePlaceholder')}
           className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-lg tracking-widest"
         />
         {staffLoginError ? <p className="text-sm text-rose-600">{staffLoginError}</p> : null}
@@ -1726,7 +1737,7 @@ function StaffChatPageInner() {
           onClick={() => void handleStaffLogin()}
           className="rounded-lg bg-[#FEE500] px-6 py-2 text-sm font-bold text-gray-900 disabled:opacity-50"
         >
-          {staffLoginSubmitting ? '로그인 중…' : '로그인'}
+          {staffLoginSubmitting ? t('staffLoginSubmitting') : t('staffLoginSubmit')}
         </button>
       </main>
     );
@@ -1742,24 +1753,24 @@ function StaffChatPageInner() {
         phase={stt.phase}
         rmsElRef={stt.rmsElRef}
         labels={{
-          listening: '듣는 중...',
-          recognizing: '음성을 문자로 변환하고 있습니다...',
-          done: '입력창에서 확인 후 전송하세요.'
+          listening: t('sttListening'),
+          recognizing: t('sttRecognizing'),
+          done: t('sttDone')
         }}
       />
       {/* 상단: 언어 · 소리 · 알림 */}
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-1.5 shadow-sm">
         <div className="mx-auto mb-1 flex max-w-md items-center gap-2">
-          <span className="shrink-0 text-[11px] font-semibold text-gray-500">현재 상태</span>
+          <span className="shrink-0 text-[11px] font-semibold text-gray-500">{t('currentStatus')}</span>
           <select
             value={currentStatus}
             onChange={(e) => void changeStatus(e.target.value as StaffWorkStatus)}
             className="flex-1 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm font-bold text-gray-800"
-            aria-label="현재 상태 선택"
+            aria-label={t('currentStatus')}
           >
             {STAFF_WORK_STATUS_OPTIONS.map((o) => (
               <option key={o.key} value={o.key}>
-                {o.icon} {o.label}
+                {o.icon} {t(o.labelKey)}
               </option>
             ))}
           </select>
@@ -1771,7 +1782,7 @@ function StaffChatPageInner() {
               onClick={() => void unlockNotificationAudio()}
               className="w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-center text-[11px] font-semibold text-amber-900"
             >
-              🔊 {t('soundOn')} — tap to enable alert beep
+              🔊 {t('enableAlertBeep')}
             </button>
           </div>
         ) : null}
@@ -1784,7 +1795,7 @@ function StaffChatPageInner() {
                 onClick={() => void handleStaffLogout()}
                 className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700"
               >
-                로그아웃
+                {t('logout')}
               </button>
             </div>
           ) : null}
@@ -1865,11 +1876,12 @@ function StaffChatPageInner() {
             volume={alertVolume}
             onSoundKeyChange={handleAlertSoundKeyChange}
             onVolumeChange={handleAlertVolumeChange}
+            t={t}
           />
         ) : null}
       </header>
 
-      <StaffPwaInstallBanner lang={locale} />
+      <StaffPwaInstallBanner locale={locale} t={t} />
 
       {ruVoiceReady === false && (autoTtsEnabled || diagMode) ? (
         <div
@@ -1961,7 +1973,7 @@ function StaffChatPageInner() {
                       <div className="text-[10px] text-gray-400 mb-0.5">
                         {m.sender_name || '—'} · {m.sender_side || '?'}
                       </div>
-                      삭제된 메시지입니다
+                      {t('deletedMessage')}
                     </div>
                   </div>
                 );
@@ -2050,7 +2062,7 @@ function StaffChatPageInner() {
                           type="button"
                           disabled={isDeletingThis || deletingMessageId != null}
                           onClick={() => {
-                            if (!confirm('삭제하시겠습니까?')) return;
+                            if (!confirm(t('deleteConfirm'))) return;
                             void handleDeleteMessage(m);
                           }}
                           className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
@@ -2059,7 +2071,7 @@ function StaffChatPageInner() {
                               : 'text-red-600 hover:bg-red-50'
                           } disabled:cursor-not-allowed disabled:opacity-40`}
                         >
-                          {isDeletingThis ? '삭제 중' : '삭제'}
+                          {isDeletingThis ? t('deleting') : t('delete')}
                         </button>
                       </div>
                     ) : null}
@@ -2092,6 +2104,8 @@ function StaffChatPageInner() {
             selectedStatusText={photoStatusText}
             locale={locale}
             roomLabel={t('room')}
+            roomSuffix={t('roomSuffix')}
+            noRoomLabel={t('noRoom')}
             statusLabel={t('quickPhrase')}
             cancelLabel={t('cancel')}
             sendLabel={t('send')}
@@ -2108,6 +2122,7 @@ function StaffChatPageInner() {
           onSelect={handleRoomSelect}
           disabled={sending || !canSendMessages}
           sectionLabel={t('room')}
+          noRoomLabel={t('noRoom')}
           large
           compactMobile
         />
@@ -2166,7 +2181,7 @@ function StaffChatPageInner() {
               <>
                 <button
                   type="button"
-                  aria-label="첨부 메뉴 닫기"
+                  aria-label={t('attachClose')}
                   onClick={() => setAttachMenuOpen(false)}
                   className="fixed inset-0 z-[55] cursor-default"
                 />
@@ -2182,10 +2197,26 @@ function StaffChatPageInner() {
                 >
                   {(
                     [
-                      { id: 'staff-attach-photo', label: '📷 사진 촬영', ref: photoInputRef },
-                      { id: 'staff-attach-photo-pick', label: '🖼 사진 선택', ref: photoPickInputRef },
-                      { id: 'staff-attach-video', label: '🎥 동영상 촬영', ref: videoInputRef },
-                      { id: 'staff-attach-video-pick', label: '🎞 동영상 선택', ref: videoPickInputRef }
+                      {
+                        id: 'staff-attach-photo',
+                        labelKey: 'attachPhotoCapture' as const,
+                        ref: photoInputRef
+                      },
+                      {
+                        id: 'staff-attach-photo-pick',
+                        labelKey: 'attachPhotoPick' as const,
+                        ref: photoPickInputRef
+                      },
+                      {
+                        id: 'staff-attach-video',
+                        labelKey: 'attachVideoCapture' as const,
+                        ref: videoInputRef
+                      },
+                      {
+                        id: 'staff-attach-video-pick',
+                        labelKey: 'attachVideoPick' as const,
+                        ref: videoPickInputRef
+                      }
                     ] as const
                   ).map((item, i) => (
                     <button
@@ -2201,7 +2232,7 @@ function StaffChatPageInner() {
                         i > 0 ? 'border-t border-gray-100' : ''
                       }`}
                     >
-                      {item.label}
+                      {t(item.labelKey)}
                     </button>
                   ))}
                 </div>
@@ -2214,7 +2245,7 @@ function StaffChatPageInner() {
               aria-haspopup="menu"
               aria-expanded={attachMenuOpen}
               className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-2xl active:bg-gray-200 disabled:opacity-40"
-              aria-label="첨부"
+              aria-label={t('attachMenu')}
             >
               📷
             </button>
@@ -2230,7 +2261,7 @@ function StaffChatPageInner() {
               disabled={sending}
               style={{ touchAction: 'none' }}
               className="flex h-12 w-12 shrink-0 select-none items-center justify-center rounded-xl bg-gray-100 text-2xl active:bg-gray-200 disabled:opacity-40"
-              aria-label="음성"
+              aria-label={t('voiceInput')}
             >
               🎤
             </button>

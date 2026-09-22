@@ -50,13 +50,25 @@ export type StaffSoundKey =
   | 'notify-036'
   | 'notify-053';
 
-export const STAFF_SOUND_OPTIONS: { key: StaffSoundKey; label: string; src: string }[] = [
-  { key: 'default', label: '기본음', src: '/sounds/default.wav' },
-  { key: 'bell', label: '벨', src: '/sounds/bell.wav' },
-  { key: 'incoming', label: '수신음', src: '/sounds/incoming.mp3' },
-  { key: 'notify-022', label: '알림 1', src: '/sounds/notify-022.mp3' },
-  { key: 'notify-036', label: '알림 2', src: '/sounds/notify-036.mp3' },
-  { key: 'notify-053', label: '알림 3', src: '/sounds/notify-053.mp3' },
+export type StaffSoundOption = {
+  key: StaffSoundKey;
+  labelKey:
+    | 'soundDefault'
+    | 'soundBell'
+    | 'soundIncoming'
+    | 'soundNotify1'
+    | 'soundNotify2'
+    | 'soundNotify3';
+  src: string;
+};
+
+export const STAFF_SOUND_OPTIONS: StaffSoundOption[] = [
+  { key: 'default', labelKey: 'soundDefault', src: '/sounds/default.wav' },
+  { key: 'bell', labelKey: 'soundBell', src: '/sounds/bell.wav' },
+  { key: 'incoming', labelKey: 'soundIncoming', src: '/sounds/incoming.mp3' },
+  { key: 'notify-022', labelKey: 'soundNotify1', src: '/sounds/notify-022.mp3' },
+  { key: 'notify-036', labelKey: 'soundNotify2', src: '/sounds/notify-036.mp3' },
+  { key: 'notify-053', labelKey: 'soundNotify3', src: '/sounds/notify-053.mp3' }
 ];
 
 const STAFF_SOUND_KEY_SET = new Set<string>(STAFF_SOUND_OPTIONS.map((o) => o.key));

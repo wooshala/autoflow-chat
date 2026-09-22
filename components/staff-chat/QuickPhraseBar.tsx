@@ -35,7 +35,7 @@ export default function QuickPhraseBar({
   compactMobile = false,
   selectedLabel = '',
   onEditClick,
-  editLabel = '편집',
+  editLabel,
   refreshToken = 0
 }: Props) {
   const [phrases, setPhrases] = useState<ChatQuickPhrase[]>([]);
